@@ -36,7 +36,7 @@ struct ProtoCallFrame {
     Register calleeValue;
     Register argCountAndCodeOriginValue;
     Register thisArg;
-    uint32_t paddedArgCount;
+    size_t paddedArgCount;
     JSValue *args;
 
     void init(CodeBlock*, JSScope*, JSObject*, JSValue, int, JSValue* otherArgs = 0);
@@ -53,7 +53,7 @@ struct ProtoCallFrame {
     int argumentCountIncludingThis() const { return argCountAndCodeOriginValue.payload(); }
     int argumentCount() const { return argumentCountIncludingThis() - 1; }
     void setArgumentCountIncludingThis(int count) { argCountAndCodeOriginValue.payload() = count; }
-    void setPaddedArgsCount(uint32_t argCount) { paddedArgCount = argCount; }
+    void setPaddedArgsCount(size_t argCount) { paddedArgCount = argCount; }
 
     void clearCurrentVPC() { argCountAndCodeOriginValue.tag() = 0; }
     

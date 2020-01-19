@@ -83,15 +83,10 @@ ScriptElement::~ScriptElement()
     stopLoadRequest();
 }
 
-bool ScriptElement::shouldNotifySubtreeInsertions(ContainerNode& insertionPoint)
+void ScriptElement::insertedInto(ContainerNode& insertionPoint)
 {
-    return insertionPoint.inDocument() && !m_parserInserted;
-}
-
-void ScriptElement::didNotifySubtreeInsertions(ContainerNode*)
-{
-    ASSERT(!m_parserInserted);
-    prepareScript(); // FIXME: Provide a real starting line number here.
+    if (insertionPoint.inDocument() && !m_parserInserted)
+        prepareScript(); // FIXME: Provide a real starting line number here.
 }
 
 void ScriptElement::childrenChanged()

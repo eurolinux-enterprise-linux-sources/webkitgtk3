@@ -36,15 +36,14 @@ enum MorphologyOperatorType {
 
 class FEMorphology : public FilterEffect {
 public:
-    static PassRefPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
-
-    MorphologyOperatorType morphologyOperator() const { return m_type; }
+    static PassRefPtr<FEMorphology> create(Filter*, MorphologyOperatorType, float radiusX, float radiusY);  
+    MorphologyOperatorType morphologyOperator() const;
     bool setMorphologyOperator(MorphologyOperatorType);
 
-    float radiusX() const { return m_radiusX; }
+    float radiusX() const;
     bool setRadiusX(float);
 
-    float radiusY() const { return m_radiusY; }
+    float radiusY() const;
     bool setRadiusY(float);
 
     virtual void platformApplySoftware();
@@ -78,7 +77,6 @@ public:
     inline void platformApplyGeneric(PaintingData*, const int yStart, const int yEnd);
 private:
     FEMorphology(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
-    bool platformApplyDegenerate(Uint8ClampedArray* dstPixelArray, const IntRect& imageRect, int radiusX, int radiusY);
     
     MorphologyOperatorType m_type;
     float m_radiusX;

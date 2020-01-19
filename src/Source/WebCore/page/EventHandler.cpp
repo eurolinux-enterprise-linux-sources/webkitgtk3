@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov (ap@webkit.org)
  * Copyright (C) 2012 Digia Plc. and/or its subsidiary(-ies)
  *
@@ -92,7 +92,6 @@
 #include <wtf/CurrentTime.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/TemporaryChange.h>
-#include <wtf/WeakPtr.h>
 
 #if ENABLE(SVG)
 #include "SVGDocument.h"
@@ -414,7 +413,7 @@ void EventHandler::clear()
     m_lastInstanceUnderMouse = 0;
 #endif
     m_lastMouseMoveEventSubframe = 0;
-    m_lastScrollbarUnderMouse = nullptr;
+    m_lastScrollbarUnderMouse = 0;
     m_clickCount = 0;
     m_clickNode = 0;
 #if ENABLE(IOS_GESTURE_EVENTS)
@@ -1636,7 +1635,7 @@ bool EventHandler::handleMousePressEvent(const PlatformMouseEvent& mouseEvent)
         HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowShadowContent);
         mev = m_frame.document()->prepareMouseEvent(request, documentPoint, mouseEvent);
         if (wasLastScrollBar && mev.scrollbar() != m_lastScrollbarUnderMouse.get())
-            m_lastScrollbarUnderMouse = nullptr;
+            m_lastScrollbarUnderMouse = 0;
     }
 
     if (swallowEvent) {
@@ -2366,7 +2365,7 @@ void EventHandler::updateMouseEventTargetNode(Node* targetNode, const PlatformMo
 
         if (m_lastElementUnderMouse && &m_lastElementUnderMouse->document() != m_frame.document()) {
             m_lastElementUnderMouse = nullptr;
-            m_lastScrollbarUnderMouse = nullptr;
+            m_lastScrollbarUnderMouse = 0;
 #if ENABLE(SVG)
             m_lastInstanceUnderMouse = 0;
 #endif
@@ -3515,10 +3514,10 @@ bool EventHandler::passMousePressEventToScrollbar(MouseEventWithHitTestResults& 
 }
 
 // If scrollbar (under mouse) is different from last, send a mouse exited. Set
-// last to scrollbar if setLast is true; else set last to nullptr.
+// last to scrollbar if setLast is true; else set last to 0.
 void EventHandler::updateLastScrollbarUnderMouse(Scrollbar* scrollbar, bool setLast)
 {
-    if (m_lastScrollbarUnderMouse.get() != scrollbar) {
+    if (m_lastScrollbarUnderMouse != scrollbar) {
         // Send mouse exited to the old scrollbar.
         if (m_lastScrollbarUnderMouse)
             m_lastScrollbarUnderMouse->mouseExited();
@@ -3527,10 +3526,7 @@ void EventHandler::updateLastScrollbarUnderMouse(Scrollbar* scrollbar, bool setL
         if (scrollbar && setLast)
             scrollbar->mouseEntered();
 
-        if (setLast && scrollbar)
-            m_lastScrollbarUnderMouse = scrollbar->createWeakPtr();
-        else
-            m_lastScrollbarUnderMouse = nullptr;
+        m_lastScrollbarUnderMouse = setLast ? scrollbar : 0;
     }
 }
 

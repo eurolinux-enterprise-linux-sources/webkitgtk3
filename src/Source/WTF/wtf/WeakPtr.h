@@ -104,8 +104,6 @@ public:
 
     T* operator->() const { return m_ref->get(); }
 
-    WeakPtr& operator=(std::nullptr_t) { m_ref = WeakReference<T>::create(nullptr); return *this; }
-
 private:
     RefPtr<WeakReference<T>> m_ref;
 };

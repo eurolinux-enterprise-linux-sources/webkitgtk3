@@ -54,7 +54,6 @@
 #include "HTMLParserIdioms.h"
 #include "HTMLSelectElement.h"
 #include "HTMLTableRowsCollection.h"
-#include "IdTargetObserverRegistry.h"
 #include "InsertionPoint.h"
 #include "KeyboardEvent.h"
 #include "MutationObserverInterestGroup.h"
@@ -1053,13 +1052,11 @@ inline void Element::setAttributeInternal(unsigned index, const QualifiedName& n
         return;
     }
 
-    const Attribute& attribute = attributeAt(index);
-    AtomicString oldValue = attribute.value();
-    bool valueChanged = newValue != oldValue;
-    QualifiedName attributeName = (!inSynchronizationOfLazyAttribute || valueChanged) ? attribute.name() : name;
+    bool valueChanged = newValue != attributeAt(index).value();
+    QualifiedName attributeName = (!inSynchronizationOfLazyAttribute || valueChanged) ? attributeAt(index).name() : name;
 
     if (!inSynchronizationOfLazyAttribute)
-        willModifyAttribute(attributeName, oldValue, newValue);
+        willModifyAttribute(attributeName, attributeAt(index).value(), newValue);
 
     if (valueChanged) {
         // If there is an Attr node hooked to this attribute, the Attr::setValue() call below
@@ -1072,7 +1069,7 @@ inline void Element::setAttributeInternal(unsigned index, const QualifiedName& n
     }
 
     if (!inSynchronizationOfLazyAttribute)
-        didModifyAttribute(attributeName, oldValue, newValue);
+        didModifyAttribute(attributeName, newValue);
 }
 
 static inline AtomicString makeIdForStyleResolution(const AtomicString& value, bool inQuirksMode)
@@ -1092,25 +1089,17 @@ static bool checkNeedsStyleInvalidationForIdChange(const AtomicString& oldId, co
     return false;
 }
 
-void Element::attributeChanged(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue, AttributeModificationReason)
+void Element::attributeChanged(const QualifiedName& name, const AtomicString& newValue, AttributeModificationReason)
 {
     parseAttribute(name, newValue);
 
     document().incDOMTreeVersion();
-
-    if (oldValue == newValue)
-        return;
 
     StyleResolver* styleResolver = document().styleResolverIfExists();
     bool testShouldInvalidateStyle = inRenderedDocument() && styleResolver && styleChangeType() < FullStyleChange;
     bool shouldInvalidateStyle = false;
 
     if (isIdAttributeName(name)) {
-        if (!oldValue.isEmpty())
-            treeScope().idTargetObserverRegistry().notifyObservers(*oldValue.impl());
-        if (!newValue.isEmpty())
-            treeScope().idTargetObserverRegistry().notifyObservers(*newValue.impl());
-
         AtomicString oldId = elementData()->idForStyleResolution();
         AtomicString newId = makeIdForStyleResolution(newValue, document().inQuirksMode());
         if (newId != oldId) {
@@ -1282,7 +1271,7 @@ void Element::parserSetAttributes(const Vector<Attribute>& attributeVector)
 
     // Use attributeVector instead of m_elementData because attributeChanged might modify m_elementData.
     for (unsigned i = 0; i < attributeVector.size(); ++i)
-        attributeChanged(attributeVector[i].name(), nullAtom, attributeVector[i].value(), ModifiedDirectly);
+        attributeChanged(attributeVector[i].name(), attributeVector[i].value(), ModifiedDirectly);
 }
 
 bool Element::hasAttributes() const
@@ -1865,7 +1854,7 @@ void Element::removeAttributeInternal(unsigned index, SynchronizationOfLazyAttri
     elementData.removeAttribute(index);
 
     if (!inSynchronizationOfLazyAttribute)
-        didRemoveAttribute(name, valueBeingRemoved);
+        didRemoveAttribute(name);
 }
 
 void Element::addAttributeInternal(const QualifiedName& name, const AtomicString& value, SynchronizationOfLazyAttribute inSynchronizationOfLazyAttribute)
@@ -2326,17 +2315,10 @@ void Element::normalizeAttributes()
 {
     if (!hasAttributes())
         return;
-
-    auto* attrNodeList = attrNodeListForElement(this);
-    if (!attrNodeList)
-        return;
-
-    // Copy the Attr Vector because Node::normalize() can fire synchronous JS
-    // events (e.g. DOMSubtreeModified) and a JS listener could add / remove
-    // attributes while we are iterating.
-    auto copyOfAttrNodeList = *attrNodeList;
-    for (auto& attrNode : copyOfAttrNodeList)
-        attrNode->normalize();
+    for (const Attribute& attribute : attributesIterator()) {
+        if (RefPtr<Attr> attr = attrIfExists(attribute.name()))
+            attr->normalize();
+    }
 }
 
 PseudoElement* Element::beforePseudoElement() const
@@ -2748,7 +2730,7 @@ void Element::updateNameForDocument(HTMLDocument& document, const AtomicString& 
     }
 }
 
-inline void Element::updateId(const AtomicString& oldId, const AtomicString& newId, NotifyObservers notifyObservers)
+inline void Element::updateId(const AtomicString& oldId, const AtomicString& newId)
 {
     if (!isInTreeScope())
         return;
@@ -2756,7 +2738,7 @@ inline void Element::updateId(const AtomicString& oldId, const AtomicString& new
     if (oldId == newId)
         return;
 
-    updateIdForTreeScope(treeScope(), oldId, newId, notifyObservers);
+    updateIdForTreeScope(treeScope(), oldId, newId);
 
     if (!inDocument())
         return;
@@ -2765,15 +2747,15 @@ inline void Element::updateId(const AtomicString& oldId, const AtomicString& new
     updateIdForDocument(toHTMLDocument(document()), oldId, newId, UpdateHTMLDocumentNamedItemMapsOnlyIfDiffersFromNameAttribute);
 }
 
-void Element::updateIdForTreeScope(TreeScope& scope, const AtomicString& oldId, const AtomicString& newId, NotifyObservers notifyObservers)
+void Element::updateIdForTreeScope(TreeScope& scope, const AtomicString& oldId, const AtomicString& newId)
 {
     ASSERT(isInTreeScope());
     ASSERT(oldId != newId);
 
     if (!oldId.isEmpty())
-        scope.removeElementById(*oldId.impl(), *this, notifyObservers == NotifyObservers::Yes);
+        scope.removeElementById(*oldId.impl(), *this);
     if (!newId.isEmpty())
-        scope.addElementById(*newId.impl(), *this, notifyObservers == NotifyObservers::Yes);
+        scope.addElementById(*newId.impl(), *this);
 }
 
 void Element::updateIdForDocument(HTMLDocument& document, const AtomicString& oldId, const AtomicString& newId, HTMLDocumentNamedItemMapsUpdatingCondition condition)
@@ -2817,7 +2799,7 @@ void Element::updateLabel(TreeScope& scope, const AtomicString& oldForAttributeV
 void Element::willModifyAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
     if (isIdAttributeName(name))
-        updateId(oldValue, newValue, NotifyObservers::No); // Will notify observers after the attribute is actually changed.
+        updateId(oldValue, newValue);
     else if (name == HTMLNames::nameAttr)
         updateName(oldValue, newValue);
     else if (name == HTMLNames::forAttr && hasTagName(labelTag)) {
@@ -2841,21 +2823,21 @@ void Element::willModifyAttribute(const QualifiedName& name, const AtomicString&
 
 void Element::didAddAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    attributeChanged(name, nullAtom, value);
+    attributeChanged(name, value);
     InspectorInstrumentation::didModifyDOMAttr(&document(), this, name.localName(), value);
     dispatchSubtreeModifiedEvent();
 }
 
-void Element::didModifyAttribute(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+void Element::didModifyAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    attributeChanged(name, oldValue, newValue);
-    InspectorInstrumentation::didModifyDOMAttr(&document(), this, name.localName(), newValue);
+    attributeChanged(name, value);
+    InspectorInstrumentation::didModifyDOMAttr(&document(), this, name.localName(), value);
     // Do not dispatch a DOMSubtreeModified event here; see bug 81141.
 }
 
-void Element::didRemoveAttribute(const QualifiedName& name, const AtomicString& oldValue)
+void Element::didRemoveAttribute(const QualifiedName& name)
 {
-    attributeChanged(name, oldValue, nullAtom);
+    attributeChanged(name, nullAtom);
     InspectorInstrumentation::didRemoveDOMAttr(&document(), this, name.localName());
     dispatchSubtreeModifiedEvent();
 }
@@ -3036,7 +3018,7 @@ void Element::cloneAttributesFromElement(const Element& other)
     const AtomicString& newID = other.getIdAttribute();
 
     if (!oldID.isNull() || !newID.isNull())
-        updateId(oldID, newID, NotifyObservers::No); // Will notify observers after the attribute is actually changed.
+        updateId(oldID, newID);
 
     const AtomicString& oldName = getNameAttribute();
     const AtomicString& newName = other.getNameAttribute();
@@ -3056,8 +3038,9 @@ void Element::cloneAttributesFromElement(const Element& other)
     else
         m_elementData = other.m_elementData->makeUniqueCopy();
 
-    for (const Attribute& attribute : attributesIterator())
-        attributeChanged(attribute.name(), nullAtom, attribute.value(), ModifiedByCloning);
+    for (const Attribute& attribute : attributesIterator()) {
+        attributeChanged(attribute.name(), attribute.value(), ModifiedByCloning);
+    }
 }
 
 void Element::cloneDataFromElement(const Element& other)

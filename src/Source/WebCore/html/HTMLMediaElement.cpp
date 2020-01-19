@@ -5183,14 +5183,14 @@ void HTMLMediaElement::configureMediaControls()
 #endif
 
 #if ENABLE(MEDIA_CONTROLS_SCRIPT)
-    if (!controls() || !inDocument() || !inActiveDocument())
+    if (!controls() || !inDocument())
         return;
 
     ensureUserAgentShadowRoot();
     return;
 #endif
 
-    if (!controls() || !inDocument() || !inActiveDocument()) {
+    if (!controls() || !inDocument()) {
         if (hasMediaControls())
             mediaControls()->hide();
         return;

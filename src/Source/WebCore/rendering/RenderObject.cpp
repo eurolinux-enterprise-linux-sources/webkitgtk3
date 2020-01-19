@@ -473,7 +473,7 @@ void RenderObject::resetTextAutosizing()
 RenderLayer* RenderObject::enclosingLayer() const
 {
     for (auto& renderer : lineageOfType<RenderLayerModelObject>(*this)) {
-        if (renderer.hasLayer())
+        if (renderer.layer())
             return renderer.layer();
     }
     return nullptr;

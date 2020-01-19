@@ -1928,16 +1928,10 @@ bool WebGLRenderingContext::validateVertexAttributes(unsigned elementCount, unsi
                 ASSERT(state.stride > 0);
                 if (bytesRemaining >= state.bytesPerElement)
                     numElements = 1 + (bytesRemaining - state.bytesPerElement) / state.stride;
-                unsigned instancesRequired = 0;
-                if (state.divisor) {
-                    instancesRequired = ceil(static_cast<float>(primitiveCount) / state.divisor);
-                    if (instancesRequired > numElements)
-                        return false;
-                } else {
+                if (!state.divisor)
                     sawNonInstancedAttrib = true;
-                    if (elementCount > numElements)
-                        return false;
-                }
+                if ((!state.divisor && elementCount > numElements) || (state.divisor && primitiveCount > numElements))
+                    return false;
             }
         }
     }
@@ -1961,7 +1955,7 @@ bool WebGLRenderingContext::validateWebGLObject(const char* functionName, WebGLO
     return true;
 }
 
-bool WebGLRenderingContext::validateDrawArrays(const char* functionName, GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primitiveCount)
+bool WebGLRenderingContext::validateDrawArrays(const char* functionName, GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount)
 {
     if (isContextLost() || !validateDrawMode(functionName, mode))
         return false;
@@ -1979,7 +1973,7 @@ bool WebGLRenderingContext::validateDrawArrays(const char* functionName, GC3Denu
         return false;
     }
 
-    if (primitiveCount < 0) {
+    if (primcount < 0) {
         synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "primcount < 0");
         return false;
     }
@@ -1989,8 +1983,8 @@ bool WebGLRenderingContext::validateDrawArrays(const char* functionName, GC3Denu
         Checked<GC3Dint, RecordOverflow> checkedFirst(first);
         Checked<GC3Dint, RecordOverflow> checkedCount(count);
         Checked<GC3Dint, RecordOverflow> checkedSum = checkedFirst + checkedCount;
-        Checked<GC3Dint, RecordOverflow> checkedPrimitiveCount(primitiveCount);
-        if (checkedSum.hasOverflowed() || checkedPrimitiveCount.hasOverflowed() || !validateVertexAttributes(checkedSum.unsafeGet(), checkedPrimitiveCount.unsafeGet())) {
+        Checked<GC3Dint, RecordOverflow> checkedPrimCount(primcount);
+        if (checkedSum.hasOverflowed() || checkedPrimCount.hasOverflowed() || !validateVertexAttributes(checkedSum.unsafeGet(), checkedPrimCount.unsafeGet())) {
             synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "attempt to access out of bounds arrays");
             return false;
         }
@@ -2024,9 +2018,7 @@ void WebGLRenderingContext::drawArrays(GC3Denum mode, GC3Dint first, GC3Dsizei c
         vertexAttrib0Simulated = simulateVertexAttrib0(first + count - 1);
     if (!isGLES2NPOTStrict())
         checkTextureCompleteness("drawArrays", true);
-
     m_context->drawArrays(mode, first, count);
-
     if (!isGLES2Compliant() && vertexAttrib0Simulated)
         restoreStatesAfterVertexAttrib0Simulation();
     if (!isGLES2NPOTStrict())
@@ -2034,7 +2026,7 @@ void WebGLRenderingContext::drawArrays(GC3Denum mode, GC3Dint first, GC3Dsizei c
     cleanupAfterGraphicsCall(true);
 }
 
-bool WebGLRenderingContext::validateDrawElements(const char* functionName, GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, unsigned& numElements, GC3Dsizei primitiveCount)
+bool WebGLRenderingContext::validateDrawElements(const char* functionName, GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, unsigned& numElements)
 {
     if (isContextLost() || !validateDrawMode(functionName, mode))
         return false;
@@ -2066,11 +2058,6 @@ bool WebGLRenderingContext::validateDrawElements(const char* functionName, GC3De
         return false;
     }
 
-    if (primitiveCount < 0) {
-        synthesizeGLError(GraphicsContext3D::INVALID_VALUE, functionName, "primcount < 0");
-        return false;
-    }
-
     if (!m_boundVertexArrayObject->getElementArrayBuffer()) {
         synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "no ELEMENT_ARRAY_BUFFER bound");
         return false;
@@ -2084,16 +2071,8 @@ bool WebGLRenderingContext::validateDrawElements(const char* functionName, GC3De
         }
         if (!count)
             return false;
-
-        Checked<GC3Dint, RecordOverflow> checkedCount(count);
-        Checked<GC3Dint, RecordOverflow> checkedPrimitiveCount(primitiveCount);
-        if (checkedCount.hasOverflowed() || checkedPrimitiveCount.hasOverflowed()) {
-            synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "attempt to access out of bounds arrays");
-            return false;
-        }
-
-        if (!validateIndexArrayConservative(type, numElements) || !validateVertexAttributes(numElements, checkedPrimitiveCount.unsafeGet())) {
-            if (!validateIndexArrayPrecise(checkedCount.unsafeGet(), type, static_cast<GC3Dintptr>(offset), numElements) || !validateVertexAttributes(numElements, checkedPrimitiveCount.unsafeGet())) {
+        if (!validateIndexArrayConservative(type, numElements) || !validateVertexAttributes(numElements)) {
+            if (!validateIndexArrayPrecise(count, type, static_cast<GC3Dintptr>(offset), numElements) || !validateVertexAttributes(numElements)) {
                 synthesizeGLError(GraphicsContext3D::INVALID_OPERATION, functionName, "attempt to access out of bounds arrays");
                 return false;
             }
@@ -2119,7 +2098,7 @@ void WebGLRenderingContext::drawElements(GC3Denum mode, GC3Dsizei count, GC3Denu
     UNUSED_PARAM(ec);
 
     unsigned numElements = 0;
-    if (!validateDrawElements("drawElements", mode, count, type, offset, numElements, 0))
+    if (!validateDrawElements("drawElements", mode, count, type, offset, numElements))
         return;
 
     clearIfComposited();
@@ -2132,9 +2111,7 @@ void WebGLRenderingContext::drawElements(GC3Denum mode, GC3Dsizei count, GC3Denu
     }
     if (!isGLES2NPOTStrict())
         checkTextureCompleteness("drawElements", true);
-
     m_context->drawElements(mode, count, type, static_cast<GC3Dintptr>(offset));
-
     if (!isGLES2Compliant() && vertexAttrib0Simulated)
         restoreStatesAfterVertexAttrib0Simulation();
     if (!isGLES2NPOTStrict())
@@ -6181,13 +6158,18 @@ bool WebGLRenderingContext::supportsDrawBuffers()
 
 void WebGLRenderingContext::drawArraysInstanced(GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount)
 {
+    if (!validateDrawArrays("drawArraysInstanced", mode, first, count, primcount))
+        return;
+
+    if (primcount < 0) {
+        synthesizeGLError(GraphicsContext3D::INVALID_VALUE, "drawArraysInstanced", "primcount < 0");
+        return;
+    }
+
     if (!primcount) {
         cleanupAfterGraphicsCall(true);
         return;
     }
-
-    if (!validateDrawArrays("drawArraysInstanced", mode, first, count, primcount))
-        return;
 
     clearIfComposited();
 
@@ -6196,9 +6178,8 @@ void WebGLRenderingContext::drawArraysInstanced(GC3Denum mode, GC3Dint first, GC
         vertexAttrib0Simulated = simulateVertexAttrib0(first + count - 1);
     if (!isGLES2NPOTStrict())
         checkTextureCompleteness("drawArraysInstanced", true);
-
+    UNUSED_PARAM(primcount);
     m_context->drawArraysInstanced(mode, first, count, primcount);
-
     if (!isGLES2Compliant() && vertexAttrib0Simulated)
         restoreStatesAfterVertexAttrib0Simulation();
     if (!isGLES2NPOTStrict())
@@ -6208,14 +6189,19 @@ void WebGLRenderingContext::drawArraysInstanced(GC3Denum mode, GC3Dint first, GC
 
 void WebGLRenderingContext::drawElementsInstanced(GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, GC3Dsizei primcount)
 {
+    unsigned numElements = 0;
+    if (!validateDrawElements("drawElementsInstanced", mode, count, type, offset, numElements))
+        return;
+
+    if (primcount < 0) {
+        synthesizeGLError(GraphicsContext3D::INVALID_VALUE, "drawElementsInstanced", "primcount < 0");
+        return;
+    }
+
     if (!primcount) {
         cleanupAfterGraphicsCall(true);
         return;
     }
-
-    unsigned numElements = 0;
-    if (!validateDrawElements("drawElementsInstanced", mode, count, type, offset, numElements, primcount))
-        return;
 
     clearIfComposited();
 
@@ -6227,9 +6213,7 @@ void WebGLRenderingContext::drawElementsInstanced(GC3Denum mode, GC3Dsizei count
     }
     if (!isGLES2NPOTStrict())
         checkTextureCompleteness("drawElementsInstanced", true);
-
     m_context->drawElementsInstanced(mode, count, type, static_cast<GC3Dintptr>(offset), primcount);
-
     if (!isGLES2Compliant() && vertexAttrib0Simulated)
         restoreStatesAfterVertexAttrib0Simulation();
     if (!isGLES2NPOTStrict())

@@ -429,12 +429,10 @@ Document* SubframeLoader::document() const
 
 bool SubframeLoader::loadPlugin(HTMLPlugInImageElement& pluginElement, const URL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback)
 {
-    if (useFallback)
-        return false;
-
     RenderEmbeddedObject* renderer = pluginElement.renderEmbeddedObject();
+
     // FIXME: This code should not depend on renderer!
-    if (!renderer)
+    if (!renderer || useFallback)
         return false;
 
     pluginElement.subframeLoaderWillCreatePlugIn(url);
@@ -448,11 +446,7 @@ bool SubframeLoader::loadPlugin(HTMLPlugInImageElement& pluginElement, const URL
         loadManually = false;
 #endif
 
-    WeakPtr<RenderWidget> weakRenderer = renderer->createWeakPtr();
-    // createPlugin *may* cause this renderer to disappear from underneath.
     RefPtr<Widget> widget = m_frame.loader().client().createPlugin(contentSize, &pluginElement, url, paramNames, paramValues, mimeType, loadManually);
-    if (!weakRenderer)
-        return false;
 
     if (!widget) {
         if (!renderer->isPluginUnavailable())
