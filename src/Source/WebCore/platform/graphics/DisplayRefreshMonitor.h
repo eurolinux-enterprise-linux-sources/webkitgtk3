@@ -34,9 +34,6 @@
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Threading.h>
-#if PLATFORM(BLACKBERRY)
-#include <BlackBerryPlatformAnimationFrameRateController.h>
-#endif
 
 #if PLATFORM(MAC)
 typedef struct __CVDisplayLink *CVDisplayLinkRef;
@@ -44,6 +41,7 @@ typedef struct __CVDisplayLink *CVDisplayLinkRef;
 
 namespace WebCore {
 
+class DisplayAnimationClient;
 class DisplayRefreshMonitor;
 class DisplayRefreshMonitorManager;
 
@@ -73,17 +71,6 @@ private:
     bool m_displayIDIsSet;
     PlatformDisplayID m_displayID;
 };
-
-#if PLATFORM(BLACKBERRY)
-class DisplayAnimationClient : public BlackBerry::Platform::AnimationFrameRateClient {
-public:
-    DisplayAnimationClient(DisplayRefreshMonitor *);
-    ~DisplayAnimationClient() { }
-private:
-    virtual void animationFrameChanged();
-    DisplayRefreshMonitor *m_monitor;
-};
-#endif
 
 //
 // Monitor for display refresh messages for a given screen
@@ -116,7 +103,7 @@ public:
     }
     
 private:
-    DisplayRefreshMonitor(PlatformDisplayID);
+    explicit DisplayRefreshMonitor(PlatformDisplayID);
 
     void displayDidRefresh();
     static void handleDisplayRefreshedNotificationOnMainThread(void* data);
@@ -128,22 +115,22 @@ private:
     int m_unscheduledFireCount; // Number of times the display link has fired with no clients.
     PlatformDisplayID m_displayID;
     Mutex m_mutex;
-    
-    typedef HashSet<DisplayRefreshMonitorClient*> DisplayRefreshMonitorClientSet;
-    DisplayRefreshMonitorClientSet m_clients;
-#if PLATFORM(BLACKBERRY)
-public:
-    void displayLinkFired();
-private:
-    DisplayAnimationClient *m_animationClient;
-    void startAnimationClient();
-    void stopAnimationClient();
-#endif
-#if PLATFORM(MAC)
+
+    HashSet<DisplayRefreshMonitorClient*> m_clients;
+    HashSet<DisplayRefreshMonitorClient*>* m_clientsToBeNotified;
+
+#if PLATFORM(MAC) && !PLATFORM(IOS)
 public:
     void displayLinkFired(double nowSeconds, double outputTimeSeconds);
 private:
     CVDisplayLinkRef m_displayLink;
+#endif
+
+#if PLATFORM(IOS)
+public:
+    void displayLinkFired(double nowSeconds);
+private:
+    void* m_displayLink;
 #endif
 };
 
@@ -171,7 +158,9 @@ private:
     DisplayRefreshMonitor* ensureMonitorForClient(DisplayRefreshMonitorClient*);
 
     // We know nothing about the values of PlatformDisplayIDs, so use UnsignedWithZeroKeyHashTraits.
-    typedef HashMap<uint64_t, RefPtr<DisplayRefreshMonitor>, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t> > DisplayRefreshMonitorMap;
+    // FIXME: Since we know nothing about these values, this is not sufficient.
+    // Even with UnsignedWithZeroKeyHashTraits, there are still two special values used for empty and deleted hash table slots.
+    typedef HashMap<uint64_t, RefPtr<DisplayRefreshMonitor>, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>> DisplayRefreshMonitorMap;
     DisplayRefreshMonitorMap m_monitors;
 };
 

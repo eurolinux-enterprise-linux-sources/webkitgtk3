@@ -31,36 +31,17 @@
 #include "IntPoint.h"
 #include <wtf/MathExtras.h>
 
-#if PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class FloatPoint;
-}
-}
-#endif
-
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGPoint CGPoint;
 #endif
 
-#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+#if PLATFORM(MAC) && !PLATFORM(IOS)
 #ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
 typedef struct CGPoint NSPoint;
 #else
 typedef struct _NSPoint NSPoint;
 #endif
-#endif
-
-#if PLATFORM(QT)
-#include "qglobal.h"
-QT_BEGIN_NAMESPACE
-class QPointF;
-QT_END_NAMESPACE
-#endif
-
-#if USE(SKIA)
-struct SkPoint;
-#endif
+#endif // PLATFORM(MAC) && !PLATFORM(IOS)
 
 namespace WebCore {
 
@@ -68,15 +49,12 @@ class AffineTransform;
 class TransformationMatrix;
 class IntPoint;
 class IntSize;
-class LayoutPoint;
-class LayoutSize;
 
 class FloatPoint {
 public:
     FloatPoint() : m_x(0), m_y(0) { }
     FloatPoint(float x, float y) : m_x(x), m_y(y) { }
     FloatPoint(const IntPoint&);
-    FloatPoint(const LayoutPoint&);
     explicit FloatPoint(const FloatSize& size) : m_x(size.width()), m_y(size.height()) { }
 
     static FloatPoint zero() { return FloatPoint(); }
@@ -103,7 +81,6 @@ public:
         m_x += a.width();
         m_y += a.height();
     }
-    void move(const LayoutSize&);
     void move(const FloatSize& a)
     {
         m_x += a.width();
@@ -114,7 +91,6 @@ public:
         m_x += a.x();
         m_y += a.y();
     }
-    void moveBy(const LayoutPoint&);
     void moveBy(const FloatPoint& a)
     {
         m_x += a.x();
@@ -150,34 +126,22 @@ public:
         return FloatPoint(m_y, m_x);
     }
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
     FloatPoint(const CGPoint&);
     operator CGPoint() const;
 #endif
 
-#if (PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))) \
-        && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if !PLATFORM(IOS)
+#if PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     FloatPoint(const NSPoint&);
     operator NSPoint() const;
 #endif
-
-#if PLATFORM(QT)
-    FloatPoint(const QPointF&);
-    operator QPointF() const;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-    FloatPoint(const BlackBerry::Platform::FloatPoint&);
-    operator BlackBerry::Platform::FloatPoint() const;
-#endif
-
-#if USE(SKIA)
-    operator SkPoint() const;
-    FloatPoint(const SkPoint&);
-#endif
+#endif // !PLATFORM(IOS)
 
     FloatPoint matrixTransform(const TransformationMatrix&) const;
     FloatPoint matrixTransform(const AffineTransform&) const;
+
+    void dump(PrintStream& out) const;
 
 private:
     float m_x, m_y;

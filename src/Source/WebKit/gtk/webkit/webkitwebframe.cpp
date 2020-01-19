@@ -29,10 +29,10 @@
 
 #include "AXObjectCache.h"
 #include "AnimationController.h"
-#include "DOMObjectCache.h"
 #include "DocumentFragment.h"
 #include "DocumentLoader.h"
 #include "DocumentLoaderGtk.h"
+#include "Editor.h"
 #include "FrameLoadRequest.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClientGtk.h"
@@ -47,6 +47,7 @@
 #include "JSDOMBinding.h"
 #include "JSDOMWindow.h"
 #include "JSElement.h"
+#include "MainFrame.h"
 #include "PlatformContextCairo.h"
 #include "PrintContext.h"
 #include "RenderListItem.h"
@@ -170,8 +171,6 @@ void webkit_web_frame_core_frame_gone(WebKitWebFrame* frame)
 {
     ASSERT(WEBKIT_IS_WEB_FRAME(frame));
     WebKitWebFramePrivate* priv = frame->priv;
-    if (priv->coreFrame)
-        DOMObjectCache::clearByFrame(priv->coreFrame);
     priv->coreFrame = 0;
 }
 
@@ -186,8 +185,7 @@ static void webkit_web_frame_finalize(GObject* object)
     WebKitWebFramePrivate* priv = frame->priv;
 
     if (priv->coreFrame) {
-        DOMObjectCache::clearByFrame(priv->coreFrame);
-        priv->coreFrame->loader()->cancelAndClear();
+        priv->coreFrame->loader().cancelAndClear();
         priv->coreFrame = 0;
     }
 
@@ -206,16 +204,16 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * signals
      */
     webkit_web_frame_signals[CLEARED] = g_signal_new("cleared",
-            G_TYPE_FROM_CLASS(frameClass),
-            (GSignalFlags)G_SIGNAL_RUN_LAST,
-            0,
-            0,
-            0,
-            g_cclosure_marshal_VOID__VOID,
-            G_TYPE_NONE, 0);
+        G_TYPE_FROM_CLASS(frameClass),
+        (GSignalFlags)G_SIGNAL_RUN_LAST,
+        0,
+        0,
+        0,
+        g_cclosure_marshal_VOID__VOID,
+        G_TYPE_NONE, 0);
 
     /**
-     * WebKitWebFrame::load-committed
+     * WebKitWebFrame::load-committed:
      * @web_frame: the object on which the signal is emitted
      *
      * Emitted when frame loading is done.
@@ -223,13 +221,13 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Deprecated: Use the "load-status" property instead.
      */
     webkit_web_frame_signals[LOAD_COMMITTED] = g_signal_new("load-committed",
-            G_TYPE_FROM_CLASS(frameClass),
-            (GSignalFlags)G_SIGNAL_RUN_LAST,
-            0,
-            0,
-            0,
-            g_cclosure_marshal_VOID__VOID,
-            G_TYPE_NONE, 0);
+        G_TYPE_FROM_CLASS(frameClass),
+        (GSignalFlags)G_SIGNAL_RUN_LAST,
+        0,
+        0,
+        0,
+        g_cclosure_marshal_VOID__VOID,
+        G_TYPE_NONE, 0);
 
     /**
      * WebKitWebFrame::title-changed:
@@ -241,24 +239,24 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Deprecated: 1.1.18: Use "notify::title" instead.
      */
     webkit_web_frame_signals[TITLE_CHANGED] = g_signal_new("title-changed",
-            G_TYPE_FROM_CLASS(frameClass),
-            (GSignalFlags)G_SIGNAL_RUN_LAST,
-            0,
-            0,
-            0,
-            webkit_marshal_VOID__STRING,
-            G_TYPE_NONE, 1,
-            G_TYPE_STRING);
+        G_TYPE_FROM_CLASS(frameClass),
+        (GSignalFlags)G_SIGNAL_RUN_LAST,
+        0,
+        0,
+        0,
+        webkit_marshal_VOID__STRING,
+        G_TYPE_NONE, 1,
+        G_TYPE_STRING);
 
     webkit_web_frame_signals[HOVERING_OVER_LINK] = g_signal_new("hovering-over-link",
-            G_TYPE_FROM_CLASS(frameClass),
-            (GSignalFlags)G_SIGNAL_RUN_LAST,
-            0,
-            0,
-            0,
-            webkit_marshal_VOID__STRING_STRING,
-            G_TYPE_NONE, 2,
-            G_TYPE_STRING, G_TYPE_STRING);
+        G_TYPE_FROM_CLASS(frameClass),
+        (GSignalFlags)G_SIGNAL_RUN_LAST,
+        0,
+        0,
+        0,
+        webkit_marshal_VOID__STRING_STRING,
+        G_TYPE_NONE, 2,
+        G_TYPE_STRING, G_TYPE_STRING);
 
     /**
      * WebKitWebFrame::scrollbars-policy-changed:
@@ -286,13 +284,13 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.1.14
      */
     webkit_web_frame_signals[SCROLLBARS_POLICY_CHANGED] = g_signal_new("scrollbars-policy-changed",
-            G_TYPE_FROM_CLASS(frameClass),
-            (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
-            0,
-            g_signal_accumulator_true_handled,
-            0,
-            webkit_marshal_BOOLEAN__VOID,
-            G_TYPE_BOOLEAN, 0);
+        G_TYPE_FROM_CLASS(frameClass),
+        (GSignalFlags)(G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
+        0,
+        g_signal_accumulator_true_handled,
+        0,
+        webkit_marshal_BOOLEAN__VOID,
+        G_TYPE_BOOLEAN, 0);
 
 
     /**
@@ -324,15 +322,15 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.7.5
      */
     webkit_web_frame_signals[RESOURCE_REQUEST_STARTING] = g_signal_new("resource-request-starting",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            webkit_marshal_VOID__OBJECT_OBJECT_OBJECT,
-            G_TYPE_NONE, 3,
-            WEBKIT_TYPE_WEB_RESOURCE,
-            WEBKIT_TYPE_NETWORK_REQUEST,
-            WEBKIT_TYPE_NETWORK_RESPONSE);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        webkit_marshal_VOID__OBJECT_OBJECT_OBJECT,
+        G_TYPE_NONE, 3,
+        WEBKIT_TYPE_WEB_RESOURCE,
+        WEBKIT_TYPE_NETWORK_REQUEST,
+        WEBKIT_TYPE_NETWORK_RESPONSE);
 
     /**
      * WebKitWebFrame::resource-response-received:
@@ -345,14 +343,14 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.7.5
      */
     webkit_web_frame_signals[RESOURCE_RESPONSE_RECEIVED] = g_signal_new("resource-response-received",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            webkit_marshal_VOID__OBJECT_OBJECT,
-            G_TYPE_NONE, 2,
-            WEBKIT_TYPE_WEB_RESOURCE,
-            WEBKIT_TYPE_NETWORK_RESPONSE);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        webkit_marshal_VOID__OBJECT_OBJECT,
+        G_TYPE_NONE, 2,
+        WEBKIT_TYPE_WEB_RESOURCE,
+        WEBKIT_TYPE_NETWORK_RESPONSE);
 
     /**
      * WebKitWebFrame::resource-load-finished:
@@ -364,13 +362,13 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.7.5
      */
     webkit_web_frame_signals[RESOURCE_LOAD_FINISHED] = g_signal_new("resource-load-finished",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            g_cclosure_marshal_VOID__OBJECT,
-            G_TYPE_NONE, 1,
-            WEBKIT_TYPE_WEB_RESOURCE);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        g_cclosure_marshal_VOID__OBJECT,
+        G_TYPE_NONE, 1,
+        WEBKIT_TYPE_WEB_RESOURCE);
 
     /**
      * WebKitWebFrame::resource-content-length-received:
@@ -386,14 +384,14 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.7.5
      */
     webkit_web_frame_signals[RESOURCE_CONTENT_LENGTH_RECEIVED] = g_signal_new("resource-content-length-received",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            webkit_marshal_VOID__OBJECT_INT,
-            G_TYPE_NONE, 2,
-            WEBKIT_TYPE_WEB_RESOURCE,
-            G_TYPE_INT);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        webkit_marshal_VOID__OBJECT_INT,
+        G_TYPE_NONE, 2,
+        WEBKIT_TYPE_WEB_RESOURCE,
+        G_TYPE_INT);
 
     /**
      * WebKitWebFrame::resource-load-failed:
@@ -406,14 +404,14 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.7.5
      */
     webkit_web_frame_signals[RESOURCE_LOAD_FAILED] = g_signal_new("resource-load-failed",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            webkit_marshal_VOID__OBJECT_POINTER,
-            G_TYPE_NONE, 2,
-            WEBKIT_TYPE_WEB_RESOURCE,
-            G_TYPE_POINTER);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        webkit_marshal_VOID__OBJECT_POINTER,
+        G_TYPE_NONE, 2,
+        WEBKIT_TYPE_WEB_RESOURCE,
+        G_TYPE_POINTER);
 
     /**
      * WebKitWebFrame::insecure-content-run:
@@ -428,14 +426,14 @@ static void webkit_web_frame_class_init(WebKitWebFrameClass* frameClass)
      * Since: 1.10.0
      */
     webkit_web_frame_signals[INSECURE_CONTENT_RUN] = g_signal_new("insecure-content-run",
-            G_TYPE_FROM_CLASS(frameClass),
-            G_SIGNAL_RUN_LAST,
-            0,
-            0, 0,
-            webkit_marshal_VOID__OBJECT_STRING,
-            G_TYPE_NONE, 2,
-            WEBKIT_TYPE_SECURITY_ORIGIN,
-            G_TYPE_STRING);
+        G_TYPE_FROM_CLASS(frameClass),
+        G_SIGNAL_RUN_LAST,
+        0,
+        0, 0,
+        webkit_marshal_VOID__OBJECT_STRING,
+        G_TYPE_NONE, 2,
+        WEBKIT_TYPE_SECURITY_ORIGIN,
+        G_TYPE_STRING);
 
     /*
      * implementations of virtual methods
@@ -551,8 +549,8 @@ WebKitWebFrame* webkit_web_frame_new(WebKitWebView* webView)
     WebKitWebViewPrivate* viewPriv = webView->priv;
 
     priv->webView = webView;
-    WebKit::FrameLoaderClient* client = new WebKit::FrameLoaderClient(frame);
-    priv->coreFrame = Frame::create(viewPriv->corePage, 0, client).get();
+    priv->coreFrame = &viewPriv->corePage->mainFrame();
+    static_cast<WebKit::FrameLoaderClient*>(&viewPriv->corePage->mainFrame().loader().client())->setWebFrame(frame);
     priv->coreFrame->init();
 
     priv->origin = 0;
@@ -629,7 +627,7 @@ const gchar* webkit_web_frame_get_name(WebKitWebFrame* frame)
         return "";
 
     WebKitWebFramePrivate* priv = frame->priv;
-    CString frameName = coreFrame->tree()->uniqueName().string().utf8();
+    CString frameName = coreFrame->tree().uniqueName().string().utf8();
     if (!g_strcmp0(frameName.data(), priv->name))
         return priv->name;
 
@@ -654,7 +652,7 @@ WebKitWebFrame* webkit_web_frame_get_parent(WebKitWebFrame* frame)
     if (!coreFrame)
         return 0;
 
-    return kit(coreFrame->tree()->parent());
+    return kit(coreFrame->tree().parent());
 }
 
 /**
@@ -675,7 +673,7 @@ void webkit_web_frame_load_uri(WebKitWebFrame* frame, const gchar* uri)
     if (!coreFrame)
         return;
 
-    coreFrame->loader()->load(FrameLoadRequest(coreFrame, ResourceRequest(KURL(KURL(), String::fromUTF8(uri)))));
+    coreFrame->loader().load(FrameLoadRequest(coreFrame, ResourceRequest(URL(URL(), String::fromUTF8(uri)))));
 }
 
 static void webkit_web_frame_load_data(WebKitWebFrame* frame, const gchar* content, const gchar* mimeType, const gchar* encoding, const gchar* baseURL, const gchar* unreachableURL)
@@ -683,7 +681,7 @@ static void webkit_web_frame_load_data(WebKitWebFrame* frame, const gchar* conte
     Frame* coreFrame = core(frame);
     ASSERT(coreFrame);
 
-    KURL baseKURL = baseURL ? KURL(KURL(), String::fromUTF8(baseURL)) : blankURL();
+    URL baseKURL = baseURL ? URL(URL(), String::fromUTF8(baseURL)) : blankURL();
 
     ResourceRequest request(baseKURL);
 
@@ -691,10 +689,10 @@ static void webkit_web_frame_load_data(WebKitWebFrame* frame, const gchar* conte
     SubstituteData substituteData(sharedBuffer.release(),
                                   mimeType ? String::fromUTF8(mimeType) : String::fromUTF8("text/html"),
                                   encoding ? String::fromUTF8(encoding) : String::fromUTF8("UTF-8"),
-                                  KURL(KURL(), String::fromUTF8(unreachableURL)),
-                                  KURL(KURL(), String::fromUTF8(unreachableURL)));
+                                  URL(URL(), String::fromUTF8(unreachableURL)),
+                                  URL(URL(), String::fromUTF8(unreachableURL)));
 
-    coreFrame->loader()->load(FrameLoadRequest(coreFrame, request, substituteData));
+    coreFrame->loader().load(FrameLoadRequest(coreFrame, request, substituteData));
 }
 
 /**
@@ -763,7 +761,7 @@ void webkit_web_frame_load_request(WebKitWebFrame* frame, WebKitNetworkRequest* 
     if (!coreFrame)
         return;
 
-    coreFrame->loader()->load(FrameLoadRequest(coreFrame->document()->securityOrigin(), core(request)));
+    coreFrame->loader().load(FrameLoadRequest(coreFrame->document()->securityOrigin(), core(request)));
 }
 
 /**
@@ -780,7 +778,7 @@ void webkit_web_frame_stop_loading(WebKitWebFrame* frame)
     if (!coreFrame)
         return;
 
-    coreFrame->loader()->stopAllLoaders();
+    coreFrame->loader().stopAllLoaders();
 }
 
 /**
@@ -797,7 +795,7 @@ void webkit_web_frame_reload(WebKitWebFrame* frame)
     if (!coreFrame)
         return;
 
-    coreFrame->loader()->reload();
+    coreFrame->loader().reload();
 }
 
 /**
@@ -827,7 +825,7 @@ WebKitWebFrame* webkit_web_frame_find_frame(WebKitWebFrame* frame, const gchar* 
         return 0;
 
     String nameString = String::fromUTF8(name);
-    return kit(coreFrame->tree()->find(AtomicString(nameString)));
+    return kit(coreFrame->tree().find(AtomicString(nameString)));
 }
 
 /**
@@ -837,7 +835,7 @@ WebKitWebFrame* webkit_web_frame_find_frame(WebKitWebFrame* frame, const gchar* 
  * Gets the global JavaScript execution context. Use this function to bridge
  * between the WebKit and JavaScriptCore APIs.
  *
- * Return value: (transfer none): the global JavaScript context
+ * Return value: (transfer none): the global JavaScript context #JSGlobalContextRef
  */
 JSGlobalContextRef webkit_web_frame_get_global_context(WebKitWebFrame* frame)
 {
@@ -847,7 +845,7 @@ JSGlobalContextRef webkit_web_frame_get_global_context(WebKitWebFrame* frame)
     if (!coreFrame)
         return 0;
 
-    return toGlobalRef(coreFrame->script()->globalObject(mainThreadNormalWorld())->globalExec());
+    return toGlobalRef(coreFrame->script().globalObject(mainThreadNormalWorld())->globalExec());
 }
 
 /**
@@ -865,7 +863,7 @@ WebKitWebDataSource* webkit_web_frame_get_data_source(WebKitWebFrame* frame)
     g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), 0);
 
     Frame* coreFrame = core(frame);
-    return webkit_web_frame_get_data_source_from_core_loader(coreFrame->loader()->documentLoader());
+    return webkit_web_frame_get_data_source_from_core_loader(coreFrame->loader().documentLoader());
 }
 
 /**
@@ -887,7 +885,7 @@ WebKitWebDataSource* webkit_web_frame_get_provisional_data_source(WebKitWebFrame
     g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), 0);
 
     Frame* coreFrame = core(frame);
-    return webkit_web_frame_get_data_source_from_core_loader(coreFrame->loader()->provisionalDocumentLoader());
+    return webkit_web_frame_get_data_source_from_core_loader(coreFrame->loader().provisionalDocumentLoader());
 }
 
 static void begin_print_callback(GtkPrintOperation* op, GtkPrintContext* context, gpointer user_data)
@@ -1004,7 +1002,7 @@ void webkit_web_frame_print(WebKitWebFrame* frame)
 gchar* webkit_web_frame_get_response_mime_type(WebKitWebFrame* frame)
 {
     Frame* coreFrame = core(frame);
-    WebCore::DocumentLoader* docLoader = coreFrame->loader()->documentLoader();
+    WebCore::DocumentLoader* docLoader = coreFrame->loader().documentLoader();
     String mimeType = docLoader->responseMIMEType();
     return g_strdup(mimeType.utf8().data());
 }
@@ -1112,7 +1110,7 @@ WebKitNetworkResponse* webkit_web_frame_get_network_response(WebKitWebFrame* fra
     if (!coreFrame)
         return 0;
 
-    WebCore::DocumentLoader* loader = coreFrame->loader()->activeDocumentLoader();
+    WebCore::DocumentLoader* loader = coreFrame->loader().activeDocumentLoader();
     if (!loader)
         return 0;
 
@@ -1133,7 +1131,7 @@ void webkit_web_frame_replace_selection(WebKitWebFrame* frame, const char* text)
     Frame* coreFrame = core(frame);
     bool selectReplacement = false;
     bool smartReplace = true;
-    coreFrame->editor()->replaceSelectionWithText(text, selectReplacement, smartReplace);
+    coreFrame->editor().replaceSelectionWithText(text, selectReplacement, smartReplace);
 }
 
 /**
@@ -1143,7 +1141,7 @@ void webkit_web_frame_replace_selection(WebKitWebFrame* frame, const char* text)
  * Returns a #WebKitDOMRange for the word where the caret is currently
  * positioned.
  *
- * Returns: a #WebKitDOMRange spanning the word where the caret
+ * Returns: (transfer none): a #WebKitDOMRange spanning the word where the caret
  * currently is positioned. If there is no caret %NULL will be
  * returned.
  *
@@ -1154,10 +1152,10 @@ WebKitDOMRange* webkit_web_frame_get_range_for_word_around_caret(WebKitWebFrame*
     g_return_val_if_fail(WEBKIT_IS_WEB_FRAME(frame), 0);
 
     Frame* coreFrame = core(frame);
-    FrameSelection* selection = coreFrame->selection();
-    if (selection->isNone() || selection->isRange())
+    FrameSelection& selection = coreFrame->selection();
+    if (selection.isNone() || selection.isRange())
         return 0;
-    VisibleSelection visibleSelection(selection->selection().visibleStart());
+    VisibleSelection visibleSelection(selection.selection().visibleStart());
     visibleSelection.expandUsingGranularity(WordGranularity);
 
     return kit(visibleSelection.firstRange().get());
@@ -1166,7 +1164,7 @@ WebKitDOMRange* webkit_web_frame_get_range_for_word_around_caret(WebKitWebFrame*
 /**
  * webkit_web_frame_get_dom_document:
  * @frame: a #WebKitWebFrame
- * 
+ *
  * Returns: (transfer none): the #WebKitDOMDocument currently loaded
  * in the @frame or %NULL if no document is loaded
  *
@@ -1209,9 +1207,7 @@ WebKitWebFrame* kit(WebCore::Frame* coreFrame)
     if (!coreFrame)
         return 0;
 
-    ASSERT(coreFrame->loader());
-    WebKit::FrameLoaderClient* client = static_cast<WebKit::FrameLoaderClient*>(coreFrame->loader()->client());
-    return client ? client->webFrame() : 0;
+    return static_cast<WebKit::FrameLoaderClient&>(coreFrame->loader().client()).webFrame();
 }
 
 }

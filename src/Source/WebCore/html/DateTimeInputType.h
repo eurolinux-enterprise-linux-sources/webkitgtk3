@@ -31,40 +31,26 @@
 #ifndef DateTimeInputType_h
 #define DateTimeInputType_h
 
-#if ENABLE(INPUT_TYPE_DATETIME)
+#if ENABLE(INPUT_TYPE_DATETIME_INCOMPLETE)
 #include "BaseChooserOnlyDateAndTimeInputType.h"
 #include "BaseDateAndTimeInputType.h"
-#include "BaseMultipleFieldsDateAndTimeInputType.h"
 
 namespace WebCore {
 
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-typedef BaseMultipleFieldsDateAndTimeInputType BaseDateTimeInputType;
-#else
-typedef BaseChooserOnlyDateAndTimeInputType BaseDateTimeInputType;
-#endif
-
-class DateTimeInputType : public BaseDateTimeInputType {
+class DateTimeInputType : public BaseChooserOnlyDateAndTimeInputType {
 public:
-    static PassOwnPtr<InputType> create(HTMLInputElement*);
+    explicit DateTimeInputType(HTMLInputElement& element) : BaseDateTimeInputType(element) { }
 
 private:
-    DateTimeInputType(HTMLInputElement* element) : BaseDateTimeInputType(element) { }
-    virtual void attach() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual DateComponents::Type dateType() const OVERRIDE;
-    virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;
-    virtual Decimal defaultValueForStepUp() const OVERRIDE;
-    virtual bool parseToDateComponentsInternal(const UChar*, unsigned length, DateComponents*) const OVERRIDE;
-    virtual bool setMillisecondToDateComponents(double, DateComponents*) const OVERRIDE;
-    virtual bool isDateTimeField() const OVERRIDE;
-    virtual String sanitizeValue(const String&) const OVERRIDE;
-
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    // BaseMultipleFieldsDateAndTimeInputType functions
-    virtual String formatDateTimeFieldsState(const DateTimeFieldsState&) const OVERRIDE FINAL;
-    virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const OVERRIDE FINAL;
-#endif
+    virtual void attach() override;
+    virtual const AtomicString& formControlType() const override;
+    virtual DateComponents::Type dateType() const override;
+    virtual StepRange createStepRange(AnyStepHandling) const override;
+    virtual Decimal defaultValueForStepUp() const override;
+    virtual bool parseToDateComponentsInternal(const UChar*, unsigned length, DateComponents*) const override;
+    virtual bool setMillisecondToDateComponents(double, DateComponents*) const override;
+    virtual bool isDateTimeField() const override;
+    virtual String sanitizeValue(const String&) const override;
 };
 
 } // namespace WebCore

@@ -28,11 +28,9 @@
 #include "HTMLElementStack.h"
 
 #include "DocumentFragment.h"
-#include "Element.h"
-#include "HTMLNames.h"
-#include "MathMLNames.h"
-#include "SVGNames.h"
-#include <wtf/PassOwnPtr.h>
+#include "HTMLOptGroupElement.h"
+#include "HTMLOptionElement.h"
+#include "HTMLTableElement.h"
 
 namespace WebCore {
 
@@ -53,7 +51,7 @@ inline bool isScopeMarker(HTMLStackItem* item)
         || item->hasTagName(captionTag)
         || item->hasTagName(marqueeTag)
         || item->hasTagName(objectTag)
-        || item->hasTagName(tableTag)
+        || isHTMLTableElement(item->node())
         || item->hasTagName(tdTag)
         || item->hasTagName(thTag)
         || item->hasTagName(MathMLNames::miTag)
@@ -80,7 +78,7 @@ inline bool isListItemScopeMarker(HTMLStackItem* item)
 
 inline bool isTableScopeMarker(HTMLStackItem* item)
 {
-    return item->hasTagName(tableTag)
+    return isHTMLTableElement(item->node())
 #if ENABLE(TEMPLATE_ELEMENT)
         || item->hasTagName(templateTag)
 #endif
@@ -122,15 +120,14 @@ inline bool isButtonScopeMarker(HTMLStackItem* item)
 
 inline bool isSelectScopeMarker(HTMLStackItem* item)
 {
-    return !item->hasTagName(optgroupTag)
-        && !item->hasTagName(optionTag);
+    return !isHTMLOptGroupElement(item->node()) && !isHTMLOptionElement(item->node());
 }
 
 }
 
-HTMLElementStack::ElementRecord::ElementRecord(PassRefPtr<HTMLStackItem> item, PassOwnPtr<ElementRecord> next)
+HTMLElementStack::ElementRecord::ElementRecord(PassRefPtr<HTMLStackItem> item, std::unique_ptr<ElementRecord> next)
     : m_item(item)
-    , m_next(next)
+    , m_next(std::move(next))
 {
     ASSERT(m_item);
 }
@@ -219,9 +216,8 @@ void HTMLElementStack::pop()
 
 void HTMLElementStack::popUntil(const AtomicString& tagName)
 {
-    while (!topStackItem()->hasLocalName(tagName)) {
-        // pop() will ASSERT at <body> if callers fail to check that there is an
-        // element with localName |tagName| on the stack of open elements.
+    while (!topStackItem()->matchesHTMLTag(tagName)) {
+        // pop() will ASSERT if a <body>, <head> or <html> will be popped.
         pop();
     }
 }
@@ -290,7 +286,7 @@ bool HTMLElementStack::isHTMLIntegrationPoint(HTMLStackItem* item)
     if (!item->isElementNode())
         return false;
     if (item->hasTagName(MathMLNames::annotation_xmlTag)) {
-        Attribute* encodingAttr = item->token()->getAttributeItem(MathMLNames::encodingAttr);
+        Attribute* encodingAttr = item->getAttributeItem(MathMLNames::encodingAttr);
         if (encodingAttr) {
             const String& encoding = encodingAttr->value();
             return equalIgnoringCase(encoding, "text/html")
@@ -363,7 +359,7 @@ void HTMLElementStack::insertAbove(PassRefPtr<HTMLStackItem> item, ElementRecord
     ASSERT(!item->hasTagName(HTMLNames::headTag));
     ASSERT(!item->hasTagName(HTMLNames::bodyTag));
     ASSERT(m_rootNode);
-    if (recordBelow == m_top) {
+    if (recordBelow == m_top.get()) {
         push(item);
         return;
     }
@@ -373,7 +369,7 @@ void HTMLElementStack::insertAbove(PassRefPtr<HTMLStackItem> item, ElementRecord
             continue;
 
         m_stackDepth++;
-        recordAbove->setNext(adoptPtr(new ElementRecord(item, recordAbove->releaseNext())));
+        recordAbove->setNext(std::make_unique<ElementRecord>(item, recordAbove->releaseNext()));
         recordAbove->next()->element()->beginParsingChildren();
         return;
     }
@@ -429,7 +425,7 @@ HTMLElementStack::ElementRecord* HTMLElementStack::find(Element* element) const
 HTMLElementStack::ElementRecord* HTMLElementStack::topmost(const AtomicString& tagName) const
 {
     for (ElementRecord* pos = m_top.get(); pos; pos = pos->next()) {
-        if (pos->stackItem()->hasLocalName(tagName))
+        if (pos->stackItem()->matchesHTMLTag(tagName))
             return pos;
     }
     return 0;
@@ -450,7 +446,7 @@ bool inScopeCommon(HTMLElementStack::ElementRecord* top, const AtomicString& tar
 {
     for (HTMLElementStack::ElementRecord* pos = top; pos; pos = pos->next()) {
         HTMLStackItem* item = pos->stackItem().get();
-        if (item->hasLocalName(targetTag))
+        if (item->matchesHTMLTag(targetTag))
             return true;
         if (isMarker(item))
             return false;
@@ -492,7 +488,6 @@ bool HTMLElementStack::inScope(const AtomicString& targetTag) const
 
 bool HTMLElementStack::inScope(const QualifiedName& tagName) const
 {
-    // FIXME: Is localName() right for non-html elements?
     return inScope(tagName.localName());
 }
 
@@ -503,7 +498,6 @@ bool HTMLElementStack::inListItemScope(const AtomicString& targetTag) const
 
 bool HTMLElementStack::inListItemScope(const QualifiedName& tagName) const
 {
-    // FIXME: Is localName() right for non-html elements?
     return inListItemScope(tagName.localName());
 }
 
@@ -514,7 +508,6 @@ bool HTMLElementStack::inTableScope(const AtomicString& targetTag) const
 
 bool HTMLElementStack::inTableScope(const QualifiedName& tagName) const
 {
-    // FIXME: Is localName() right for non-html elements?
     return inTableScope(tagName.localName());
 }
 
@@ -525,7 +518,6 @@ bool HTMLElementStack::inButtonScope(const AtomicString& targetTag) const
 
 bool HTMLElementStack::inButtonScope(const QualifiedName& tagName) const
 {
-    // FIXME: Is localName() right for non-html elements?
     return inButtonScope(tagName.localName());
 }
 
@@ -536,7 +528,6 @@ bool HTMLElementStack::inSelectScope(const AtomicString& targetTag) const
 
 bool HTMLElementStack::inSelectScope(const QualifiedName& tagName) const
 {
-    // FIXME: Is localName() right for non-html elements?
     return inSelectScope(tagName.localName());
 }
 
@@ -576,7 +567,7 @@ void HTMLElementStack::pushCommon(PassRefPtr<HTMLStackItem> item)
     ASSERT(m_rootNode);
 
     m_stackDepth++;
-    m_top = adoptPtr(new ElementRecord(item, m_top.release()));
+    m_top = std::make_unique<ElementRecord>(item, std::move(m_top));
 }
 
 void HTMLElementStack::popCommon()

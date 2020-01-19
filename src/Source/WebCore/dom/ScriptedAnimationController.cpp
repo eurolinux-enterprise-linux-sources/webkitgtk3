@@ -34,15 +34,15 @@
 #include "InspectorInstrumentation.h"
 #include "RequestAnimationFrameCallback.h"
 #include "Settings.h"
+#include <wtf/Ref.h>
 
 #if USE(REQUEST_ANIMATION_FRAME_TIMER)
 #include <algorithm>
 #include <wtf/CurrentTime.h>
 
-using namespace std;
-
 // Allow a little more than 60fps to make sure we can at least hit that frame rate.
 #define MinimumAnimationInterval 0.015
+#define MinimumThrottledAnimationInterval 10
 #endif
 
 namespace WebCore {
@@ -55,7 +55,8 @@ ScriptedAnimationController::ScriptedAnimationController(Document* document, Pla
     , m_animationTimer(this, &ScriptedAnimationController::animationTimerFired)
     , m_lastAnimationFrameTimeMonotonic(0)
 #if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-    , m_useTimer(false)
+    , m_isUsingTimer(false)
+    , m_isThrottled(false)
 #endif
 #endif
 {
@@ -80,6 +81,22 @@ void ScriptedAnimationController::resume()
 
     if (!m_suspendCount && m_callbacks.size())
         scheduleAnimation();
+}
+
+void ScriptedAnimationController::setThrottled(bool isThrottled)
+{
+#if USE(REQUEST_ANIMATION_FRAME_TIMER) && USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
+    if (m_isThrottled == isThrottled)
+        return;
+
+    m_isThrottled = isThrottled;
+    if (m_animationTimer.isActive()) {
+        m_animationTimer.stop();
+        scheduleAnimation();
+    }
+#else
+    UNUSED_PARAM(isThrottled);
+#endif
 }
 
 ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassRefPtr<RequestAnimationFrameCallback> callback)
@@ -122,7 +139,7 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
 
     // Invoking callbacks may detach elements from our document, which clears the document's
     // reference to us, so take a defensive reference.
-    RefPtr<ScriptedAnimationController> protector(this);
+    Ref<ScriptedAnimationController> protect(*this);
 
     for (size_t i = 0; i < callbacks.size(); ++i) {
         RequestAnimationFrameCallback* callback = callbacks[i].get();
@@ -167,17 +184,23 @@ void ScriptedAnimationController::scheduleAnimation()
 
 #if USE(REQUEST_ANIMATION_FRAME_TIMER)
 #if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-    if (!m_useTimer) {
+    if (!m_isUsingTimer && !m_isThrottled) {
         if (DisplayRefreshMonitorManager::sharedManager()->scheduleAnimation(this))
             return;
 
-        m_useTimer = true;
+        m_isUsingTimer = true;
     }
 #endif
     if (m_animationTimer.isActive())
         return;
 
-    double scheduleDelay = max<double>(MinimumAnimationInterval - (monotonicallyIncreasingTime() - m_lastAnimationFrameTimeMonotonic), 0);
+    double animationInterval = MinimumAnimationInterval;
+#if USE(REQUEST_ANIMATION_FRAME_TIMER) && USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
+    if (m_isThrottled)
+        animationInterval = MinimumThrottledAnimationInterval;
+#endif
+
+    double scheduleDelay = std::max<double>(animationInterval - (monotonicallyIncreasingTime() - m_lastAnimationFrameTimeMonotonic), 0);
     m_animationTimer.startOneShot(scheduleDelay);
 #else
     if (FrameView* frameView = m_document->view())
@@ -186,7 +209,7 @@ void ScriptedAnimationController::scheduleAnimation()
 }
 
 #if USE(REQUEST_ANIMATION_FRAME_TIMER)
-void ScriptedAnimationController::animationTimerFired(Timer<ScriptedAnimationController>*)
+void ScriptedAnimationController::animationTimerFired(Timer<ScriptedAnimationController>&)
 {
     m_lastAnimationFrameTimeMonotonic = monotonicallyIncreasingTime();
     serviceScriptedAnimations(m_lastAnimationFrameTimeMonotonic);

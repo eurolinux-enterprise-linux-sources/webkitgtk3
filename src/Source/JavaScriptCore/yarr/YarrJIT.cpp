@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -40,19 +40,30 @@ namespace JSC { namespace Yarr {
 
 template<YarrJITCompileMode compileMode>
 class YarrGenerator : private MacroAssembler {
-    friend void jitCompile(JSGlobalData*, YarrCodeBlock& jitObject, const String& pattern, unsigned& numSubpatterns, const char*& error, bool ignoreCase, bool multiline);
+    friend void jitCompile(VM*, YarrCodeBlock& jitObject, const String& pattern, unsigned& numSubpatterns, const char*& error, bool ignoreCase, bool multiline);
 
 #if CPU(ARM)
     static const RegisterID input = ARMRegisters::r0;
     static const RegisterID index = ARMRegisters::r1;
     static const RegisterID length = ARMRegisters::r2;
-    static const RegisterID output = ARMRegisters::r4;
+    static const RegisterID output = ARMRegisters::r3;
 
-    static const RegisterID regT0 = ARMRegisters::r5;
-    static const RegisterID regT1 = ARMRegisters::r6;
+    static const RegisterID regT0 = ARMRegisters::r4;
+    static const RegisterID regT1 = ARMRegisters::r5;
 
     static const RegisterID returnRegister = ARMRegisters::r0;
     static const RegisterID returnRegister2 = ARMRegisters::r1;
+#elif CPU(ARM64)
+    static const RegisterID input = ARM64Registers::x0;
+    static const RegisterID index = ARM64Registers::x1;
+    static const RegisterID length = ARM64Registers::x2;
+    static const RegisterID output = ARM64Registers::x3;
+
+    static const RegisterID regT0 = ARM64Registers::x4;
+    static const RegisterID regT1 = ARM64Registers::x5;
+
+    static const RegisterID returnRegister = ARM64Registers::x0;
+    static const RegisterID returnRegister2 = ARM64Registers::x1;
 #elif CPU(MIPS)
     static const RegisterID input = MIPSRegisters::a0;
     static const RegisterID index = MIPSRegisters::a1;
@@ -87,10 +98,20 @@ class YarrGenerator : private MacroAssembler {
     static const RegisterID returnRegister = X86Registers::eax;
     static const RegisterID returnRegister2 = X86Registers::edx;
 #elif CPU(X86_64)
+#if !OS(WINDOWS)
     static const RegisterID input = X86Registers::edi;
     static const RegisterID index = X86Registers::esi;
     static const RegisterID length = X86Registers::edx;
     static const RegisterID output = X86Registers::ecx;
+#else
+    // If the return value doesn't fit in 64bits, its destination is pointed by rcx and the parameters are shifted.
+    // http://msdn.microsoft.com/en-us/library/7572ztz4.aspx
+    COMPILE_ASSERT(sizeof(MatchResult) > sizeof(void*), MatchResult_does_not_fit_in_64bits);
+    static const RegisterID input = X86Registers::edx;
+    static const RegisterID index = X86Registers::r8;
+    static const RegisterID length = X86Registers::r9;
+    static const RegisterID output = X86Registers::r10;
+#endif
 
     static const RegisterID regT0 = X86Registers::eax;
     static const RegisterID regT1 = X86Registers::ebx;
@@ -169,8 +190,8 @@ class YarrGenerator : private MacroAssembler {
     void matchCharacterClass(RegisterID character, JumpList& matchDest, const CharacterClass* charClass)
     {
         if (charClass->m_table) {
-            ExtendedAddress tableEntry(character, reinterpret_cast<intptr_t>(charClass->m_table->m_table));
-            matchDest.append(branchTest8(charClass->m_table->m_inverted ? Zero : NonZero, tableEntry));
+            ExtendedAddress tableEntry(character, reinterpret_cast<intptr_t>(charClass->m_table));
+            matchDest.append(branchTest8(charClass->m_tableInverted ? Zero : NonZero, tableEntry));
             return;
         }
         Jump unicodeFail;
@@ -312,17 +333,27 @@ class YarrGenerator : private MacroAssembler {
         jump(Address(stackPointerRegister, frameLocation * sizeof(void*)));
     }
 
+    unsigned alignCallFrameSizeInBytes(unsigned callFrameSize)
+    {
+        callFrameSize *= sizeof(void*);
+        if (callFrameSize / sizeof(void*) != m_pattern.m_body->m_callFrameSize)
+            CRASH();
+        callFrameSize = (callFrameSize + 0x3f) & ~0x3f;
+        if (!callFrameSize)
+            CRASH();
+        return callFrameSize;
+    }
     void initCallFrame()
     {
         unsigned callFrameSize = m_pattern.m_body->m_callFrameSize;
         if (callFrameSize)
-            subPtr(Imm32(callFrameSize * sizeof(void*)), stackPointerRegister);
+            subPtr(Imm32(alignCallFrameSizeInBytes(callFrameSize)), stackPointerRegister);
     }
     void removeCallFrame()
     {
         unsigned callFrameSize = m_pattern.m_body->m_callFrameSize;
         if (callFrameSize)
-            addPtr(Imm32(callFrameSize * sizeof(void*)), stackPointerRegister);
+            addPtr(Imm32(alignCallFrameSizeInBytes(callFrameSize)), stackPointerRegister);
     }
 
     // Used to record subpatters, should only be called if compileMode is IncludeSubpatterns.
@@ -2315,7 +2346,7 @@ class YarrGenerator : private MacroAssembler {
         m_ops.append(alternativeBeginOpCode);
         m_ops.last().m_previousOp = notFound;
         m_ops.last().m_term = term;
-        Vector<OwnPtr<PatternAlternative> >& alternatives =  term->parentheses.disjunction->m_alternatives;
+        Vector<OwnPtr<PatternAlternative>>& alternatives =  term->parentheses.disjunction->m_alternatives;
         for (unsigned i = 0; i < alternatives.size(); ++i) {
             size_t lastOpIndex = m_ops.size() - 1;
 
@@ -2366,7 +2397,7 @@ class YarrGenerator : private MacroAssembler {
         m_ops.append(OpSimpleNestedAlternativeBegin);
         m_ops.last().m_previousOp = notFound;
         m_ops.last().m_term = term;
-        Vector<OwnPtr<PatternAlternative> >& alternatives =  term->parentheses.disjunction->m_alternatives;
+        Vector<OwnPtr<PatternAlternative>>& alternatives =  term->parentheses.disjunction->m_alternatives;
         for (unsigned i = 0; i < alternatives.size(); ++i) {
             size_t lastOpIndex = m_ops.size() - 1;
 
@@ -2440,7 +2471,7 @@ class YarrGenerator : private MacroAssembler {
     // to return the failing result.
     void opCompileBody(PatternDisjunction* disjunction)
     {
-        Vector<OwnPtr<PatternAlternative> >& alternatives = disjunction->m_alternatives;
+        Vector<OwnPtr<PatternAlternative>>& alternatives = disjunction->m_alternatives;
         size_t currentAlternativeIndex = 0;
 
         // Emit the 'once through' alternatives.
@@ -2514,6 +2545,13 @@ class YarrGenerator : private MacroAssembler {
         push(X86Registers::ebp);
         move(stackPointerRegister, X86Registers::ebp);
         push(X86Registers::ebx);
+        // The ABI doesn't guarantee the upper bits are zero on unsigned arguments, so clear them ourselves.
+        zeroExtend32ToPtr(index, index);
+        zeroExtend32ToPtr(length, length);
+#if OS(WINDOWS)
+        if (compileMode == IncludeSubpatterns)
+            loadPtr(Address(X86Registers::ebp, 6 * sizeof(void*)), output);
+#endif
 #elif CPU(X86)
         push(X86Registers::ebp);
         move(stackPointerRegister, X86Registers::ebp);
@@ -2532,15 +2570,14 @@ class YarrGenerator : private MacroAssembler {
         if (compileMode == IncludeSubpatterns)
             loadPtr(Address(X86Registers::ebp, 2 * sizeof(void*)), output);
     #endif
+#elif CPU(ARM64)
+        // The ABI doesn't guarantee the upper bits are zero on unsigned arguments, so clear them ourselves.
+        zeroExtend32ToPtr(index, index);
+        zeroExtend32ToPtr(length, length);
 #elif CPU(ARM)
         push(ARMRegisters::r4);
         push(ARMRegisters::r5);
         push(ARMRegisters::r6);
-#if CPU(ARM_TRADITIONAL)
-        push(ARMRegisters::r8); // scratch register
-#endif
-        if (compileMode == IncludeSubpatterns)
-            move(ARMRegisters::r3, output);
 #elif CPU(SH4)
         push(SH4Registers::r11);
         push(SH4Registers::r13);
@@ -2552,6 +2589,12 @@ class YarrGenerator : private MacroAssembler {
     void generateReturn()
     {
 #if CPU(X86_64)
+#if OS(WINDOWS)
+        // Store the return value in the allocated space pointed by rcx.
+        store64(returnRegister, Address(X86Registers::ecx));
+        store64(returnRegister2, Address(X86Registers::ecx, sizeof(void*)));
+        move(X86Registers::ecx, returnRegister);
+#endif
         pop(X86Registers::ebx);
         pop(X86Registers::ebp);
 #elif CPU(X86)
@@ -2560,9 +2603,6 @@ class YarrGenerator : private MacroAssembler {
         pop(X86Registers::ebx);
         pop(X86Registers::ebp);
 #elif CPU(ARM)
-#if CPU(ARM_TRADITIONAL)
-        pop(ARMRegisters::r8); // scratch register
-#endif
         pop(ARMRegisters::r6);
         pop(ARMRegisters::r5);
         pop(ARMRegisters::r4);
@@ -2585,7 +2625,7 @@ public:
     {
     }
 
-    void compile(JSGlobalData* globalData, YarrCodeBlock& jitObject)
+    void compile(VM* vm, YarrCodeBlock& jitObject)
     {
         generateEnter();
 
@@ -2619,7 +2659,7 @@ public:
         backtrack();
 
         // Link & finalize the code.
-        LinkBuffer linkBuffer(*globalData, this, REGEXP_CODE_ID);
+        LinkBuffer linkBuffer(*vm, this, REGEXP_CODE_ID);
         m_backtrackingState.linkDataLabels(linkBuffer);
 
         if (compileMode == MatchOnly) {
@@ -2666,12 +2706,12 @@ private:
     BacktrackingState m_backtrackingState;
 };
 
-void jitCompile(YarrPattern& pattern, YarrCharSize charSize, JSGlobalData* globalData, YarrCodeBlock& jitObject, YarrJITCompileMode mode)
+void jitCompile(YarrPattern& pattern, YarrCharSize charSize, VM* vm, YarrCodeBlock& jitObject, YarrJITCompileMode mode)
 {
     if (mode == MatchOnly)
-        YarrGenerator<MatchOnly>(pattern, charSize).compile(globalData, jitObject);
+        YarrGenerator<MatchOnly>(pattern, charSize).compile(vm, jitObject);
     else
-        YarrGenerator<IncludeSubpatterns>(pattern, charSize).compile(globalData, jitObject);
+        YarrGenerator<IncludeSubpatterns>(pattern, charSize).compile(vm, jitObject);
 }
 
 }}

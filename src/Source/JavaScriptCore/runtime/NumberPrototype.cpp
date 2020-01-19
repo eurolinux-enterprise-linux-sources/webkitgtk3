@@ -68,29 +68,24 @@ const ClassInfo NumberPrototype::s_info = { "Number", &NumberObject::s_info, 0, 
 @end
 */
 
-ASSERT_HAS_TRIVIAL_DESTRUCTOR(NumberPrototype);
+STATIC_ASSERT_IS_TRIVIALLY_DESTRUCTIBLE(NumberPrototype);
 
-NumberPrototype::NumberPrototype(ExecState* exec, Structure* structure)
-    : NumberObject(exec->globalData(), structure)
+NumberPrototype::NumberPrototype(VM& vm, Structure* structure)
+    : NumberObject(vm, structure)
 {
 }
 
-void NumberPrototype::finishCreation(ExecState* exec, JSGlobalObject*)
+void NumberPrototype::finishCreation(VM& vm, JSGlobalObject*)
 {
-    Base::finishCreation(exec->globalData());
-    setInternalValue(exec->globalData(), jsNumber(0));
+    Base::finishCreation(vm);
+    setInternalValue(vm, jsNumber(0));
 
-    ASSERT(inherits(&s_info));
+    ASSERT(inherits(info()));
 }
 
-bool NumberPrototype::getOwnPropertySlot(JSCell* cell, ExecState* exec, PropertyName propertyName, PropertySlot &slot)
+bool NumberPrototype::getOwnPropertySlot(JSObject* object, ExecState* exec, PropertyName propertyName, PropertySlot &slot)
 {
-    return getStaticFunctionSlot<NumberObject>(exec, ExecState::numberPrototypeTable(exec), jsCast<NumberPrototype*>(cell), propertyName, slot);
-}
-
-bool NumberPrototype::getOwnPropertyDescriptor(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
-{
-    return getStaticFunctionDescriptor<NumberObject>(exec, ExecState::numberPrototypeTable(exec), jsCast<NumberPrototype*>(object), propertyName, descriptor);
+    return getStaticFunctionSlot<NumberObject>(exec, ExecState::numberPrototypeTable(exec->vm()), jsCast<NumberPrototype*>(object), propertyName, slot);
 }
 
 // ------------------------------ Functions ---------------------------
@@ -475,13 +470,13 @@ static inline EncodedJSValue integerValueToString(ExecState* exec, int32_t radix
     if (static_cast<unsigned>(value) < static_cast<unsigned>(radix)) {
         ASSERT(value <= 36);
         ASSERT(value >= 0);
-        JSGlobalData* globalData = &exec->globalData();
-        return JSValue::encode(globalData->smallStrings.singleCharacterString(globalData, radixDigits[value]));
+        VM* vm = &exec->vm();
+        return JSValue::encode(vm->smallStrings.singleCharacterString(radixDigits[value]));
     }
 
     if (radix == 10) {
-        JSGlobalData* globalData = &exec->globalData();
-        return JSValue::encode(jsString(globalData, globalData->numericStrings.add(value)));
+        VM* vm = &exec->vm();
+        return JSValue::encode(jsString(vm, vm->numericStrings.add(value)));
     }
 
     return JSValue::encode(jsString(exec, toStringWithRadix(value, radix)));
@@ -503,8 +498,8 @@ EncodedJSValue JSC_HOST_CALL numberProtoFuncToString(ExecState* exec)
         return integerValueToString(exec, radix, integerValue);
 
     if (radix == 10) {
-        JSGlobalData* globalData = &exec->globalData();
-        return JSValue::encode(jsString(globalData, globalData->numericStrings.add(doubleValue)));
+        VM* vm = &exec->vm();
+        return JSValue::encode(jsString(vm, vm->numericStrings.add(doubleValue)));
     }
 
     if (!std::isfinite(doubleValue))

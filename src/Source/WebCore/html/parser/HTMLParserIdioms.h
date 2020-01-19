@@ -25,19 +25,19 @@
 #ifndef HTMLParserIdioms_h
 #define HTMLParserIdioms_h
 
+#include "QualifiedName.h"
 #include <wtf/Forward.h>
 #include <wtf/text/WTFString.h>
-#include <wtf/unicode/Unicode.h>
 
 namespace WebCore {
 
 class Decimal;
-class QualifiedName;
 
 // Space characters as defined by the HTML specification.
 bool isHTMLSpace(UChar);
 bool isHTMLLineBreak(UChar);
 bool isNotHTMLSpace(UChar);
+bool isHTMLSpaceButNotLineBreak(UChar character);
 
 // Strip leading and trailing whitespace as defined by the HTML specification. 
 String stripLeadingAndTrailingHTMLSpaces(const String&);
@@ -92,8 +92,14 @@ inline bool isNotHTMLSpace(UChar character)
     return !isHTMLSpace(character);
 }
 
+inline bool isHTMLSpaceButNotLineBreak(UChar character)
+{
+    return isHTMLSpace(character) && !isHTMLLineBreak(character);
+}
+
 bool threadSafeMatch(const QualifiedName&, const QualifiedName&);
-bool threadSafeMatch(const String&, const QualifiedName&);
+
+String bestFitSourceForImageAttributes(float deviceScaleFactor, const String& srcAttribute, const String& sourceSetAttribute);
 
 }
 

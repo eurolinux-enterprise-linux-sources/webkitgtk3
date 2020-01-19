@@ -35,6 +35,7 @@
 namespace WebCore {
 
 class AccessibilityTableCell;
+class RenderTableSection;
     
 class AccessibilityTable : public AccessibilityRenderObject {
 
@@ -44,34 +45,32 @@ public:
     static PassRefPtr<AccessibilityTable> create(RenderObject*);
     virtual ~AccessibilityTable();
 
-    virtual void init();
+    virtual void init() override;
 
-    virtual bool isAccessibilityTable() const;
-    virtual bool isDataTable() const;
-
-    virtual AccessibilityRole roleValue() const;
+    virtual AccessibilityRole roleValue() const override;
     virtual bool isAriaTable() const { return false; }
     
-    virtual void addChildren();
-    virtual void clearChildren();
+    virtual void addChildren() override;
+    virtual void clearChildren() override;
     
-    AccessibilityChildrenVector& columns();
-    AccessibilityChildrenVector& rows();
+    const AccessibilityChildrenVector& columns();
+    const AccessibilityChildrenVector& rows();
     
     virtual bool supportsSelectedRows() { return false; }
     unsigned columnCount();
     unsigned rowCount();
-    virtual int tableLevel() const;
+    virtual int tableLevel() const override;
     
-    virtual String title() const;
+    virtual String title() const override;
     
     // all the cells in the table
     void cells(AccessibilityChildrenVector&);
-    virtual AccessibilityTableCell* cellForColumnAndRow(unsigned column, unsigned row);
+    AccessibilityTableCell* cellForColumnAndRow(unsigned column, unsigned row);
     
     void columnHeaders(AccessibilityChildrenVector&);
     void rowHeaders(AccessibilityChildrenVector&);
-
+    void visibleRows(AccessibilityChildrenVector&);
+    
     // an object that contains, as children, all the objects that act as headers
     AccessibilityObject* headerContainer();
 
@@ -83,16 +82,24 @@ protected:
     bool m_isAccessibilityTable;
 
     bool hasARIARole() const;
+
+    // isTable is whether it's an AccessibilityTable object.
+    virtual bool isTable() const override { return true; }
+    // isAccessibilityTable is whether it is exposed as an AccessibilityTable to the platform.
+    virtual bool isAccessibilityTable() const override;
+    // isDataTable is whether it is exposed as an AccessibilityTable because the heuristic
+    // think this "looks" like a data-based table (instead of a table used for layout).
+    virtual bool isDataTable() const override;
+
     virtual bool isTableExposableThroughAccessibility() const;
-    virtual bool computeAccessibilityIsIgnored() const;
+    virtual bool computeAccessibilityIsIgnored() const override;
+
+private:
+    virtual void titleElementText(Vector<AccessibilityText>&) const override;
 };
-    
-inline AccessibilityTable* toAccessibilityTable(AccessibilityObject* object)
-{
-    ASSERT(!object || object->isAccessibilityTable());
-    return static_cast<AccessibilityTable*>(object);
-}
-    
+
+ACCESSIBILITY_OBJECT_TYPE_CASTS(AccessibilityTable, isTable())
+
 } // namespace WebCore 
 
 #endif // AccessibilityTable_h

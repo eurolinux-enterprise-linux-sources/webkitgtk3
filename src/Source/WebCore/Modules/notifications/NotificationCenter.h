@@ -54,21 +54,6 @@ public:
     static PassRefPtr<NotificationCenter> create(ScriptExecutionContext*, NotificationClient*);
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    PassRefPtr<Notification> createHTMLNotification(const String& URI, ExceptionCode& ec)
-    {
-        if (!client()) {
-            ec = INVALID_STATE_ERR;
-            return 0;
-        }
-        if (URI.isEmpty()) {
-            ec = SYNTAX_ERR;
-            return 0;
-        }
-        return Notification::create(scriptExecutionContext()->completeURL(URI), scriptExecutionContext(), ec, this);
-    }
-#endif
-
-#if ENABLE(LEGACY_NOTIFICATIONS)
     PassRefPtr<Notification> createNotification(const String& iconURI, const String& title, const String& body, ExceptionCode& ec)
     {
         if (!client()) {
@@ -83,19 +68,20 @@ public:
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
     int checkPermission();
-    void requestPermission(PassRefPtr<VoidCallback>);
+    void requestPermission(PassRefPtr<VoidCallback> = 0);
 #endif
-
-    virtual void stop() OVERRIDE;
 
 private:
     NotificationCenter(ScriptExecutionContext*, NotificationClient*);
+
+    // ActiveDOMObject
+    virtual void stop() override;
 
     class NotificationRequestCallback : public RefCounted<NotificationRequestCallback> {
     public:
         static PassRefPtr<NotificationRequestCallback> createAndStartTimer(NotificationCenter*, PassRefPtr<VoidCallback>);
         void startTimer();
-        void timerFired(Timer<NotificationRequestCallback>*);
+        void timerFired(Timer<NotificationRequestCallback>&);
     private:
         NotificationRequestCallback(NotificationCenter*, PassRefPtr<VoidCallback>);
 
@@ -107,7 +93,7 @@ private:
     void requestTimedOut(NotificationRequestCallback*);
 
     NotificationClient* m_client;
-    HashSet<RefPtr<NotificationRequestCallback> > m_callbacks;
+    HashSet<RefPtr<NotificationRequestCallback>> m_callbacks;
 };
 
 } // namespace WebCore

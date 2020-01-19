@@ -36,24 +36,20 @@ namespace WebCore {
 
 namespace WebKit {
 
-class InjectedBundleScriptWorld : public APIObject {
+class InjectedBundleScriptWorld : public API::ObjectImpl<API::Object::Type::BundleScriptWorld> {
 public:
-    static const Type APIType = TypeBundleScriptWorld;
-
     static PassRefPtr<InjectedBundleScriptWorld> create();
-    static PassRefPtr<InjectedBundleScriptWorld> getOrCreate(WebCore::DOMWrapperWorld*);
+    static PassRefPtr<InjectedBundleScriptWorld> getOrCreate(WebCore::DOMWrapperWorld&);
     static InjectedBundleScriptWorld* normalWorld();
 
     virtual ~InjectedBundleScriptWorld();
 
-    WebCore::DOMWrapperWorld* coreWorld() const;
+    WebCore::DOMWrapperWorld& coreWorld() const;
     
     void clearWrappers();
 
 private:
     InjectedBundleScriptWorld(PassRefPtr<WebCore::DOMWrapperWorld>);
-
-    virtual Type type() const { return APIType; }
 
     RefPtr<WebCore::DOMWrapperWorld> m_world;
 };

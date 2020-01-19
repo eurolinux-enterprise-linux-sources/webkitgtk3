@@ -20,24 +20,16 @@
 #ifndef TextureMapper_h
 #define TextureMapper_h
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && USE(TEXTURE_MAPPER)
 
-#if PLATFORM(QT)
-#include <qglobal.h>
-#if defined(QT_OPENGL_ES_2) && !defined(TEXMAP_OPENGL_ES_2)
-    #define TEXMAP_OPENGL_ES_2
-#endif
-#endif
-#if PLATFORM(GTK) && USE(OPENGL_ES_2)
+#if (PLATFORM(GTK) || PLATFORM(EFL)) && USE(OPENGL_ES_2)
 #define TEXMAP_OPENGL_ES_2
 #endif
 
-#include "FilterOperations.h"
 #include "GraphicsContext.h"
 #include "IntRect.h"
 #include "IntSize.h"
 #include "TransformationMatrix.h"
-#include <wtf/UnusedParam.h>
 
 /*
     TextureMapper is a mechanism that enables hardware acceleration of CSS animations (accelerated compositing) without
@@ -47,14 +39,15 @@
 namespace WebCore {
 
 class BitmapTexturePool;
-class CustomFilterProgram;
 class GraphicsLayer;
 class TextureMapper;
+class FilterOperations;
 
 // A 2D texture that can be the target of software or GL rendering.
 class BitmapTexture : public RefCounted<BitmapTexture> {
 public:
     enum Flag {
+        NoFlag = 0,
         SupportsAlpha = 0x01
     };
 
@@ -95,7 +88,7 @@ public:
     inline bool isOpaque() const { return !(m_flags & SupportsAlpha); }
 
 #if ENABLE(CSS_FILTERS)
-    virtual PassRefPtr<BitmapTexture> applyFilters(TextureMapper*, const BitmapTexture& contentTexture, const FilterOperations&) { return this; }
+    virtual PassRefPtr<BitmapTexture> applyFilters(TextureMapper*, const FilterOperations&) { return this; }
 #endif
 
 protected:
@@ -115,6 +108,12 @@ public:
     enum PaintFlag {
         PaintingMirrored = 1 << 0,
     };
+
+    enum WrapMode {
+        StretchWrap,
+        RepeatWrap
+    };
+
     typedef unsigned PaintFlags;
 
     static PassOwnPtr<TextureMapper> create(AccelerationMode newMode = SoftwareMode);
@@ -132,7 +131,7 @@ public:
     virtual void drawBorder(const Color&, float borderWidth, const FloatRect&, const TransformationMatrix&) = 0;
     virtual void drawNumber(int number, const Color&, const FloatPoint&, const TransformationMatrix&) = 0;
 
-    virtual void drawTexture(const BitmapTexture&, const FloatRect& target, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0f, const BitmapTexture* maskTexture = 0, unsigned exposedEdges = AllEdges) = 0;
+    virtual void drawTexture(const BitmapTexture&, const FloatRect& target, const TransformationMatrix& modelViewMatrix = TransformationMatrix(), float opacity = 1.0f, unsigned exposedEdges = AllEdges) = 0;
     virtual void drawSolidColor(const FloatRect&, const TransformationMatrix&, const Color&) = 0;
 
     // makes a surface the target for the following drawTexture calls.
@@ -141,6 +140,7 @@ public:
     GraphicsContext* graphicsContext() { return m_context; }
     virtual void beginClip(const TransformationMatrix&, const FloatRect&) = 0;
     virtual void endClip() = 0;
+    virtual IntRect clipBounds() = 0;
     virtual PassRefPtr<BitmapTexture> createTexture() = 0;
 
     void setImageInterpolationQuality(InterpolationQuality quality) { m_interpolationQuality = quality; }
@@ -153,18 +153,23 @@ public:
     virtual void beginPainting(PaintFlags = 0) { }
     virtual void endPainting() { }
 
+    void setMaskMode(bool m) { m_isMaskMode = m; }
+
     virtual IntSize maxTextureSize() const = 0;
 
-    virtual PassRefPtr<BitmapTexture> acquireTextureFromPool(const IntSize&);
+    virtual PassRefPtr<BitmapTexture> acquireTextureFromPool(const IntSize&, const BitmapTexture::Flags = BitmapTexture::SupportsAlpha);
 
-#if ENABLE(CSS_SHADERS)
-    virtual void removeCachedCustomFilterProgram(CustomFilterProgram*) { }
-#endif
+    void setPatternTransform(const TransformationMatrix& p) { m_patternTransform = p; }
+    void setWrapMode(WrapMode m) { m_wrapMode = m; }
 
 protected:
     explicit TextureMapper(AccelerationMode);
 
     GraphicsContext* m_context;
+
+    bool isInMaskMode() const { return m_isMaskMode; }
+    WrapMode wrapMode() const { return m_wrapMode; }
+    const TransformationMatrix& patternTransform() const { return m_patternTransform; }
 
 private:
 #if USE(TEXTURE_MAPPER_GL)
@@ -179,6 +184,9 @@ private:
     TextDrawingModeFlags m_textDrawingMode;
     OwnPtr<BitmapTexturePool> m_texturePool;
     AccelerationMode m_accelerationMode;
+    bool m_isMaskMode;
+    TransformationMatrix m_patternTransform;
+    WrapMode m_wrapMode;
 };
 
 }

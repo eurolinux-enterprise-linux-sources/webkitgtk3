@@ -39,12 +39,9 @@
 namespace WebCore {
 
 class ContextMenuItem;
-class DOMFileSystem;
 class Event;
 class FrontendMenuProvider;
-class InspectorClient;
 class InspectorFrontendClient;
-class Node;
 class Page;
 
 class InspectorFrontendHost : public RefCounted<InspectorFrontendHost> {
@@ -64,43 +61,43 @@ public:
     void setZoomFactor(float);
     void inspectedURLChanged(const String&);
 
-    void setAttachedWindowHeight(unsigned height);
+    void setAttachedWindowHeight(unsigned);
+    void setAttachedWindowWidth(unsigned);
+    void setToolbarHeight(unsigned);
+
     void moveWindowBy(float x, float y) const;
-    void setInjectedScriptForOrigin(const String& origin, const String& script);
 
     String localizedStringsURL();
-    String hiddenPanels();
+    String debuggableType();
 
     void copyText(const String& text);
     void openInNewTab(const String& url);
     bool canSave();
-    void save(const String& url, const String& content, bool forceSaveAs);
+    void save(const String& url, const String& content, bool base64Encoded, bool forceSaveAs);
     void append(const String& url, const String& content);
     void close(const String& url);
 
-    bool canInspectWorkers();
-
+#if ENABLE(CONTEXT_MENUS)
     // Called from [Custom] implementations.
     void showContextMenu(Event*, const Vector<ContextMenuItem>& items);
+#endif
     void sendMessageToBackend(const String& message);
+    void dispatchEventAsContextMenuEvent(Event*);
 
     String loadResourceSynchronously(const String& url);
 
-    bool supportsFileSystems();
-    void requestFileSystems();
-    void addFileSystem();
-    void removeFileSystem(const String& fileSystemPath);
-#if ENABLE(FILE_SYSTEM)
-    PassRefPtr<DOMFileSystem> isolatedFileSystem(const String& fileSystemName, const String& rootURL);
-#endif
-
     bool isUnderTest();
+
+    void beep();
+
+    bool canInspectWorkers();
+    bool canSaveAs();
 
 private:
 #if ENABLE(CONTEXT_MENUS)
     friend class FrontendMenuProvider;
 #endif
-    InspectorFrontendHost(InspectorFrontendClient* client, Page* frontendPage);
+    InspectorFrontendHost(InspectorFrontendClient*, Page* frontendPage);
 
     InspectorFrontendClient* m_client;
     Page* m_frontendPage;

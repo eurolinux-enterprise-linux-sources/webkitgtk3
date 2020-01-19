@@ -27,7 +27,7 @@
 #define WebFrameProxy_h
 
 #include "APIObject.h"
-#include "ImmutableArray.h"
+#include "FrameLoadState.h"
 #include "GenericCallback.h"
 #include "WebFrameListenerProxy.h"
 #include <WebCore/FrameLoaderTypes.h>
@@ -35,15 +35,16 @@
 #include <wtf/PassRefPtr.h>
 #include <wtf/text/WTFString.h>
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class Connection;
 }
 
-namespace WebKit {
+namespace WebCore {
+class CertificateInfo;
+}
 
-class ImmutableArray;
-class PlatformCertificateInfo;
+namespace WebKit {
 class WebCertificateInfo;
 class WebFormSubmissionListenerProxy;
 class WebFramePolicyListenerProxy;
@@ -51,22 +52,14 @@ class WebPageProxy;
 
 typedef GenericCallback<WKDataRef> DataCallback;
 
-class WebFrameProxy : public APIObject {
+class WebFrameProxy : public API::ObjectImpl<API::Object::Type::Frame> {
 public:
-    static const Type APIType = TypeFrame;
-
     static PassRefPtr<WebFrameProxy> create(WebPageProxy* page, uint64_t frameID)
     {
         return adoptRef(new WebFrameProxy(page, frameID));
     }
 
     virtual ~WebFrameProxy();
-
-    enum LoadState {
-        LoadStateProvisional,
-        LoadStateCommitted,
-        LoadStateFinished
-    };
 
     uint64_t frameID() const { return m_frameID; }
     WebPageProxy* page() const { return m_page; }
@@ -78,15 +71,16 @@ public:
     void setIsFrameSet(bool value) { m_isFrameSet = value; }
     bool isFrameSet() const { return m_isFrameSet; }
 
-    LoadState loadState() const { return m_loadState; }
-    
+    FrameLoadState& frameLoadState() { return m_frameLoadState; }
+
+    void loadURL(const String&);
     void stopLoading() const;
 
-    const String& url() const { return m_url; }
-    const String& provisionalURL() const { return m_provisionalURL; }
+    const String& url() const { return m_frameLoadState.m_url; }
+    const String& provisionalURL() const { return m_frameLoadState.m_provisionalURL; }
 
     void setUnreachableURL(const String&);
-    const String& unreachableURL() const { return m_unreachableURL; }
+    const String& unreachableURL() const { return m_frameLoadState.m_unreachableURL; }
 
     const String& mimeType() const { return m_MIMEType; }
 
@@ -103,12 +97,12 @@ public:
 
     void getWebArchive(PassRefPtr<DataCallback>);
     void getMainResourceData(PassRefPtr<DataCallback>);
-    void getResourceData(WebURL*, PassRefPtr<DataCallback>);
+    void getResourceData(API::URL*, PassRefPtr<DataCallback>);
 
     void didStartProvisionalLoad(const String& url);
     void didReceiveServerRedirectForProvisionalLoad(const String& url);
     void didFailProvisionalLoad();
-    void didCommitLoad(const String& contentType, const PlatformCertificateInfo&);
+    void didCommitLoad(const String& contentType, const WebCore::CertificateInfo&);
     void didFinishLoad();
     void didFailLoad();
     void didSameDocumentNavigation(const String&); // eg. anchor navigation, session state change.
@@ -122,14 +116,10 @@ public:
 private:
     WebFrameProxy(WebPageProxy* page, uint64_t frameID);
 
-    virtual Type type() const { return APIType; }
-
     WebPageProxy* m_page;
-    LoadState m_loadState;
-    String m_url;
-    String m_provisionalURL;
-    String m_unreachableURL;
-    String m_lastUnreachableURL;
+
+    FrameLoadState m_frameLoadState;
+
     String m_MIMEType;
     String m_title;
     bool m_isFrameSet;

@@ -23,7 +23,6 @@
 #define DOMWrapperWorld_h
 
 #include "JSDOMGlobalObject.h"
-#include <heap/Weak.h>
 #include <runtime/WeakGCMap.h>
 #include <wtf/Forward.h>
 
@@ -33,14 +32,14 @@ class CSSValue;
 class JSDOMWrapper;
 class ScriptController;
 
-typedef HashMap<void*, JSC::Weak<JSDOMWrapper> > DOMObjectWrapperMap;
-typedef JSC::WeakGCMap<StringImpl*, JSC::JSString, PtrHash<StringImpl*> > JSStringCache;
+typedef HashMap<void*, JSC::Weak<JSC::JSObject>> DOMObjectWrapperMap;
+typedef JSC::WeakGCMap<StringImpl*, JSC::JSString, PtrHash<StringImpl*>> JSStringCache;
 
 class DOMWrapperWorld : public RefCounted<DOMWrapperWorld> {
 public:
-    static PassRefPtr<DOMWrapperWorld> create(JSC::JSGlobalData* globalData, bool isNormal = false)
+    static PassRefPtr<DOMWrapperWorld> create(JSC::VM* vm, bool isNormal = false)
     {
-        return adoptRef(new DOMWrapperWorld(globalData, isNormal));
+        return adoptRef(new DOMWrapperWorld(vm, isNormal));
     }
     ~DOMWrapperWorld();
 
@@ -57,23 +56,23 @@ public:
 
     bool isNormal() const { return m_isNormal; }
 
-    JSC::JSGlobalData* globalData() const { return m_globalData; }
+    JSC::VM* vm() const { return m_vm; }
 
 protected:
-    DOMWrapperWorld(JSC::JSGlobalData*, bool isNormal);
+    DOMWrapperWorld(JSC::VM*, bool isNormal);
 
 private:
-    JSC::JSGlobalData* m_globalData;
+    JSC::VM* m_vm;
     HashSet<ScriptController*> m_scriptControllersWithWindowShells;
     bool m_isNormal;
 };
 
-DOMWrapperWorld* normalWorld(JSC::JSGlobalData&);
-DOMWrapperWorld* mainThreadNormalWorld();
-inline DOMWrapperWorld* debuggerWorld() { return mainThreadNormalWorld(); }
-inline DOMWrapperWorld* pluginWorld() { return mainThreadNormalWorld(); }
+DOMWrapperWorld& normalWorld(JSC::VM&);
+DOMWrapperWorld& mainThreadNormalWorld();
+inline DOMWrapperWorld& debuggerWorld() { return mainThreadNormalWorld(); }
+inline DOMWrapperWorld& pluginWorld() { return mainThreadNormalWorld(); }
 
-inline DOMWrapperWorld* currentWorld(JSC::ExecState* exec)
+inline DOMWrapperWorld& currentWorld(JSC::ExecState* exec)
 {
     return JSC::jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject())->world();
 }

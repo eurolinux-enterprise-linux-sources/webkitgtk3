@@ -28,7 +28,7 @@
 
 #include <stdint.h>
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -47,15 +47,13 @@ public:
     LayerTreeContext();
     ~LayerTreeContext();
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, LayerTreeContext&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, LayerTreeContext&);
 
     bool isEmpty() const;
 
 #if PLATFORM(MAC)
     uint32_t contextID;
-#elif PLATFORM(QT)
-    uint32_t coordinatedLayerID;
 #elif PLATFORM(GTK)
     uint64_t windowHandle;
 #elif PLATFORM(EFL)

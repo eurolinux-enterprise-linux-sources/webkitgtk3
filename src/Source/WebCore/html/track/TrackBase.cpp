@@ -26,12 +26,20 @@
 #include "config.h"
 #include "TrackBase.h"
 
+#include "HTMLMediaElement.h"
+
 #if ENABLE(VIDEO_TRACK)
 
 namespace WebCore {
 
-TrackBase::TrackBase(ScriptExecutionContext* context, Type type)
-    : m_scriptExecutionContext(context)
+TrackBase::TrackBase(Type type, const AtomicString& id, const AtomicString& label, const AtomicString& language)
+    : m_mediaElement(0)
+#if ENABLE(MEDIA_SOURCE)
+    , m_sourceBuffer(0)
+#endif
+    , m_id(id)
+    , m_label(label)
+    , m_language(language)
 {
     ASSERT(type != BaseTrack);
     m_type = type;
@@ -41,24 +49,24 @@ TrackBase::~TrackBase()
 {
 }
 
-const AtomicString& TrackBase::interfaceName() const
+Element* TrackBase::element()
 {
-    return eventNames().interfaceForTextTrack;
+    return m_mediaElement;
 }
 
-ScriptExecutionContext* TrackBase::scriptExecutionContext() const
+void TrackBase::setKind(const AtomicString& kind)
 {
-    return m_scriptExecutionContext;
+    setKindInternal(kind);
 }
 
-EventTargetData* TrackBase::eventTargetData()
+void TrackBase::setKindInternal(const AtomicString& kind)
 {
-    return &m_eventTargetData;
-}
+    String oldKind = m_kind;
 
-EventTargetData* TrackBase::ensureEventTargetData()
-{
-    return &m_eventTargetData;
+    if (isValidKind(kind))
+        m_kind = kind;
+    else
+        m_kind = defaultKindKeyword();
 }
 
 } // namespace WebCore

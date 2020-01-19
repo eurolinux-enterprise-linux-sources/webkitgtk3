@@ -35,15 +35,14 @@
 #if ENABLE(VIDEO_TRACK)
 
 #include "EventTarget.h"
-#include "HTMLDivElement.h"
 #include "HTMLElement.h"
-#include "TextTrack.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
 
 class DocumentFragment;
+class HTMLSpanElement;
 class ScriptExecutionContext;
 class TextTrack;
 class TextTrackCue;
@@ -52,7 +51,7 @@ class TextTrackCue;
 
 class TextTrackCueBox : public HTMLElement {
 public:
-    static PassRefPtr<TextTrackCueBox> create(Document* document, TextTrackCue* cue)
+    static PassRefPtr<TextTrackCueBox> create(Document& document, TextTrackCue* cue)
     {
         return adoptRef(new TextTrackCueBox(document, cue));
     }
@@ -63,18 +62,18 @@ public:
     static const AtomicString& textTrackCueBoxShadowPseudoId();
 
 protected:
-    TextTrackCueBox(Document*, TextTrackCue*);
+    TextTrackCueBox(Document&, TextTrackCue*);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
 
     TextTrackCue* m_cue;
 };
 
 // ----------------------------
 
-class TextTrackCue : public RefCounted<TextTrackCue>, public EventTarget {
+class TextTrackCue : public RefCounted<TextTrackCue>, public EventTargetWithInlineData {
 public:
-    static PassRefPtr<TextTrackCue> create(ScriptExecutionContext* context, double start, double end, const String& content)
+    static PassRefPtr<TextTrackCue> create(ScriptExecutionContext& context, double start, double end, const String& content)
     {
         return adoptRef(new TextTrackCue(context, start, end, content));
     }
@@ -86,8 +85,6 @@ public:
     }
 
     virtual ~TextTrackCue();
-
-    static const AtomicString& allNodesShadowPseudoId();
 
     TextTrack* track() const;
     void setTrack(TextTrack*);
@@ -135,26 +132,35 @@ public:
     PassRefPtr<DocumentFragment> createCueRenderingTree();
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtr<Event>) override;
+
+#if ENABLE(WEBVTT_REGIONS)
+    const String& regionId() const { return m_regionId; }
+    void setRegionId(const String&);
+#endif
 
     bool isActive();
     void setIsActive(bool);
 
-    PassRefPtr<TextTrackCueBox> getDisplayTree(const IntSize& videoSize);
-    PassRefPtr<HTMLDivElement> element() const { return m_allDocumentNodes; }
+    bool hasDisplayTree() const { return m_displayTree; }
+    TextTrackCueBox* getDisplayTree(const IntSize& videoSize);
+    HTMLSpanElement* element() const { return m_cueBackgroundBox.get(); }
 
-    void updateDisplayTree(float);
+    void updateDisplayTree(double);
     void removeDisplayTree();
     void markFutureAndPastNodes(ContainerNode*, double, double);
 
     int calculateComputedLinePosition();
+    std::pair<double, double> getPositionCoordinates() const;
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
+    virtual EventTargetInterface eventTargetInterface() const override final { return TextTrackCueEventTargetInterfaceType; }
+    virtual ScriptExecutionContext* scriptExecutionContext() const override final { return &m_scriptExecutionContext; }
 
     std::pair<double, double> getCSSPosition() const;
+
     int getCSSSize() const;
-    int getCSSWritingMode() const;
+    CSSValueID getCSSWritingDirection() const;
+    CSSValueID getCSSWritingMode() const;
 
     enum WritingDirection {
         Horizontal,
@@ -171,18 +177,25 @@ public:
     };
     CueAlignment getAlignment() const { return m_cueAlignment; }
 
-    virtual bool operator==(const TextTrackCue&) const;
-    virtual bool operator!=(const TextTrackCue& cue) const
-    {
-        return !(*this == cue);
-    }
-    
+    virtual void setFontSize(int, const IntSize&, bool important);
+
+    enum CueMatchRules {
+        MatchAllFields,
+        IgnoreDuration,
+    };
+    virtual bool isEqual(const TextTrackCue&, CueMatchRules) const;
+
+    virtual bool isOrderedBefore(const TextTrackCue*) const;
+
     enum CueType {
         Generic,
         WebVTT
     };
     virtual CueType cueType() const { return WebVTT; }
 
+    void willChange();
+    void didChange();
+    
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
@@ -190,29 +203,36 @@ public:
     using RefCounted<TextTrackCue>::deref;
 
 protected:
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    TextTrackCue(ScriptExecutionContext&, double start, double end, const String& content);
 
-    TextTrackCue(ScriptExecutionContext*, double start, double end, const String& content);
-
-    Document* ownerDocument() { return static_cast<Document*>(m_scriptExecutionContext); }
+    Document& ownerDocument() { return toDocument(m_scriptExecutionContext); }
 
     virtual PassRefPtr<TextTrackCueBox> createDisplayTree();
-    PassRefPtr<TextTrackCueBox> displayTreeInternal();
+    TextTrackCueBox* displayTreeInternal();
 
 private:
-    std::pair<double, double> getPositionCoordinates() const;
+    void createWebVTTNodeTree();
+    void copyWebVTTNodeToDOMTree(ContainerNode* WebVTTNode, ContainerNode* root);
+
     void parseSettings(const String&);
 
+    void determineTextDirection();
     void calculateDisplayParameters();
 
-    void cueWillChange();
-    void cueDidChange();
+    virtual void refEventTarget() override final { ref(); }
+    virtual void derefEventTarget() override final { deref(); }
 
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-
-    enum CueSetting { None, Vertical, Line, Position, Size, Align };
+    enum CueSetting {
+        None,
+        Vertical,
+        Line,
+        Position,
+        Size,
+        Align,
+#if ENABLE(WEBVTT_REGIONS)
+        RegionId
+#endif
+    };
     CueSetting settingName(const String&);
 
     String m_id;
@@ -225,6 +245,7 @@ private:
     int m_textPosition;
     int m_cueSize;
     int m_cueIndex;
+    int m_processingCueChanges;
 
     WritingDirection m_writingDirection;
 
@@ -233,29 +254,28 @@ private:
     RefPtr<DocumentFragment> m_webVTTNodeTree;
     TextTrack* m_track;
 
-    EventTargetData m_eventTargetData;
-    ScriptExecutionContext* m_scriptExecutionContext;
+    ScriptExecutionContext& m_scriptExecutionContext;
 
     bool m_isActive;
     bool m_pauseOnExit;
     bool m_snapToLines;
 
-    RefPtr<HTMLDivElement> m_allDocumentNodes;
+    RefPtr<HTMLSpanElement> m_cueBackgroundBox;
 
     bool m_displayTreeShouldChange;
     RefPtr<TextTrackCueBox> m_displayTree;
 
-    int m_displayDirection;
+    CSSValueID m_displayDirection;
 
-    int m_displayWritingModeMap[NumberOfWritingDirections];
-    int m_displayWritingMode;
+    CSSValueID m_displayWritingModeMap[NumberOfWritingDirections];
+    CSSValueID m_displayWritingMode;
 
     int m_displaySize;
 
     std::pair<float, float> m_displayPosition;
-
-    void createWebVTTNodeTree();
-    void copyWebVTTNodeToDOMTree(ContainerNode* WebVTTNode, ContainerNode* root);
+#if ENABLE(WEBVTT_REGIONS)
+    String m_regionId;
+#endif
 };
 
 } // namespace WebCore

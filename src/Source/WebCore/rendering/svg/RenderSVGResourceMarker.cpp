@@ -25,20 +25,15 @@
 #include "RenderSVGResourceMarker.h"
 
 #include "GraphicsContext.h"
-#include "RenderSVGContainer.h"
 #include "RenderSVGRoot.h"
-#include "SVGElement.h"
-#include "SVGMarkerElement.h"
-#include "SVGRenderSupport.h"
-#include "SVGStyledElement.h"
-#include "SVGStyledTransformableElement.h"
+#include <wtf/StackStats.h>
 
 namespace WebCore {
 
 RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
 
-RenderSVGResourceMarker::RenderSVGResourceMarker(SVGMarkerElement* node)
-    : RenderSVGResourceContainer(node)
+RenderSVGResourceMarker::RenderSVGResourceMarker(SVGMarkerElement& element, PassRef<RenderStyle> style)
+    : RenderSVGResourceContainer(element, std::move(style))
 {
 }
 
@@ -64,15 +59,14 @@ void RenderSVGResourceMarker::removeAllClientsFromCache(bool markForInvalidation
     markAllClientsForInvalidation(markForInvalidation ? LayoutAndBoundariesInvalidation : ParentOnlyInvalidation);
 }
 
-void RenderSVGResourceMarker::removeClientFromCache(RenderObject* client, bool markForInvalidation)
+void RenderSVGResourceMarker::removeClientFromCache(RenderObject& client, bool markForInvalidation)
 {
-    ASSERT(client);
     markClientForInvalidation(client, markForInvalidation ? BoundariesInvalidation : ParentOnlyInvalidation);
 }
 
 void RenderSVGResourceMarker::applyViewportClip(PaintInfo& paintInfo)
 {
-    if (SVGRenderSupport::isOverflowHidden(this))
+    if (SVGRenderSupport::isOverflowHidden(*this))
         paintInfo.context->clip(m_viewport);
 }
 
@@ -96,32 +90,23 @@ const AffineTransform& RenderSVGResourceMarker::localToParentTransform() const
 
 FloatPoint RenderSVGResourceMarker::referencePoint() const
 {
-    SVGMarkerElement* marker = static_cast<SVGMarkerElement*>(node());
-    ASSERT(marker);
-
-    SVGLengthContext lengthContext(marker);
-    return FloatPoint(marker->refX().value(lengthContext), marker->refY().value(lengthContext));
+    SVGLengthContext lengthContext(&markerElement());
+    return FloatPoint(markerElement().refX().value(lengthContext), markerElement().refY().value(lengthContext));
 }
 
 float RenderSVGResourceMarker::angle() const
 {
-    SVGMarkerElement* marker = static_cast<SVGMarkerElement*>(node());
-    ASSERT(marker);
-
     float angle = -1;
-    if (marker->orientType() == SVGMarkerOrientAngle)
-        angle = marker->orientAngle().value();
+    if (markerElement().orientType() == SVGMarkerOrientAngle)
+        angle = markerElement().orientAngle().value();
 
     return angle;
 }
 
 AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& origin, float autoAngle, float strokeWidth) const
 {
-    SVGMarkerElement* marker = static_cast<SVGMarkerElement*>(node());
-    ASSERT(marker);
-
     float markerAngle = angle();
-    bool useStrokeWidth = marker->markerUnits() == SVGMarkerUnitsStrokeWidth;
+    bool useStrokeWidth = markerElement().markerUnits() == SVGMarkerUnitsStrokeWidth;
 
     AffineTransform transform;
     transform.translate(origin.x(), origin.y());
@@ -132,6 +117,10 @@ AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& 
 
 void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& transform)
 {
+    // An empty viewBox disables rendering.
+    if (markerElement().hasAttribute(SVGNames::viewBoxAttr) && markerElement().viewBoxIsValid() && markerElement().viewBox().isEmpty())
+        return;
+
     PaintInfo info(paintInfo);
     GraphicsContextStateSaver stateSaver(*info.context);
     info.applyTransform(transform);
@@ -153,10 +142,7 @@ AffineTransform RenderSVGResourceMarker::markerContentTransformation(const Affin
 
 AffineTransform RenderSVGResourceMarker::viewportTransform() const
 {
-    SVGMarkerElement* marker = static_cast<SVGMarkerElement*>(node());
-    ASSERT(marker);
-
-    return marker->viewBoxToViewTransform(m_viewport.width(), m_viewport.height());
+    return markerElement().viewBoxToViewTransform(m_viewport.width(), m_viewport.height());
 }
 
 void RenderSVGResourceMarker::calcViewport()
@@ -164,12 +150,9 @@ void RenderSVGResourceMarker::calcViewport()
     if (!selfNeedsLayout())
         return;
 
-    SVGMarkerElement* marker = static_cast<SVGMarkerElement*>(node());
-    ASSERT(marker);
-    
-    SVGLengthContext lengthContext(marker);
-    float w = marker->markerWidth().value(lengthContext);
-    float h = marker->markerHeight().value(lengthContext);
+    SVGLengthContext lengthContext(&markerElement());
+    float w = markerElement().markerWidth().value(lengthContext);
+    float h = markerElement().markerHeight().value(lengthContext);
     m_viewport = FloatRect(0, 0, w, h);
 }
 

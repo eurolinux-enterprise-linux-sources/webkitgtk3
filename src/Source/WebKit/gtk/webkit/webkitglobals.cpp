@@ -26,20 +26,21 @@
 #include "ContextMenuItem.h"
 #include "FrameNetworkingContextGtk.h"
 #include "IconDatabase.h"
-#include "InitializeLogging.h"
+#include "Logging.h"
 #include "MemoryCache.h"
 #include "Page.h"
 #include "PageCache.h"
 #include "PageGroup.h"
-#include "PlatformStrategiesGtk.h"
-#include "TextEncodingRegistry.h"
 #include "Pasteboard.h"
 #include "PasteboardHelperGtk.h"
+#include "PlatformStrategiesGtk.h"
 #include "ResourceHandle.h"
 #include "ResourceHandleClient.h"
 #include "ResourceHandleInternal.h"
 #include "ResourceResponse.h"
 #include "SchemeRegistry.h"
+#include "SoupNetworkSession.h"
+#include "TextEncodingRegistry.h"
 #include "webkitapplicationcache.h"
 #include "webkitfavicondatabase.h"
 #include "webkitglobalsprivate.h"
@@ -52,12 +53,8 @@
 #include <runtime/InitializeThreading.h>
 #include <stdlib.h>
 #include <wtf/MainThread.h>
-#include <wtf/gobject/GOwnPtr.h>
 #include <wtf/gobject/GRefPtr.h>
-
-#if USE(CLUTTER)
-#include <clutter-gtk/clutter-gtk.h>
-#endif
+#include <wtf/gobject/GUniquePtr.h>
 
 static WebKitCacheModel cacheModel = WEBKIT_CACHE_MODEL_DEFAULT;
 
@@ -87,7 +84,7 @@ using namespace WebCore;
 SoupSession* webkit_get_default_session ()
 {
     webkitInit();
-    return ResourceHandle::defaultSession();
+    return SoupNetworkSession::defaultSession().soupSession();
 }
 
 /**
@@ -254,7 +251,6 @@ static GRefPtr<WebKitSpellChecker> textChecker = 0;
 
 static void webkitExit()
 {
-    g_object_unref(webkit_get_default_session());
 #if ENABLE(ICONDATABASE)
     g_object_unref(webkit_get_favicon_database());
 #endif
@@ -264,7 +260,7 @@ static void webkitExit()
 /**
  * webkit_get_text_checker:
  *
- * Returns: the #WebKitSpellChecker used by WebKit, or %NULL if spell
+ * Returns: (transfer none): the #WebKitSpellChecker used by WebKit, or %NULL if spell
  * checking is not enabled
  *
  * Since: 1.5.1
@@ -553,22 +549,20 @@ void webkitInit()
     // that may only be done by the main thread.
     atomicCanonicalTextEncodingName("UTF-8");
 
-    GOwnPtr<gchar> databaseDirectory(g_build_filename(g_get_user_data_dir(), "webkit", "databases", NULL));
+    GUniquePtr<gchar> databaseDirectory(g_build_filename(g_get_user_data_dir(), "webkit", "databases", NULL));
     webkit_set_web_database_directory_path(databaseDirectory.get());
 
-    GOwnPtr<gchar> cacheDirectory(g_build_filename(g_get_user_cache_dir(), "webkitgtk", "applications", NULL));
+    GUniquePtr<gchar> cacheDirectory(g_build_filename(g_get_user_cache_dir(), "webkitgtk", "applications", NULL));
     WebCore::cacheStorage().setCacheDirectory(cacheDirectory.get());
 
     PageGroup::setShouldTrackVisitedLinks(true);
 
-    GOwnPtr<gchar> iconDatabasePath(g_build_filename(g_get_user_data_dir(), "webkit", "icondatabase", NULL));
+    GUniquePtr<gchar> iconDatabasePath(g_build_filename(g_get_user_cache_dir(), "webkit", "icondatabase", NULL));
     webkit_icon_database_set_path(webkit_get_icon_database(), iconDatabasePath.get());
 
     WebCore::ResourceHandle::setIgnoreSSLErrors(true);
 
-#if USE(CLUTTER)
-    gtk_clutter_init(0, 0);
-#endif
+    WebCore::SchemeRegistry::registerURLSchemeAsLocal("resource");
 
     atexit(webkitExit);
 }

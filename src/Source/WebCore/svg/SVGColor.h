@@ -40,23 +40,23 @@ public:
         SVG_COLORTYPE_CURRENTCOLOR = 3
     };
 
-    static PassRefPtr<SVGColor> createFromString(const String& rgbColor)
+    static PassRef<SVGColor> createFromString(const String& rgbColor)
     {
-        RefPtr<SVGColor> color = adoptRef(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
-        color->setColor(colorFromRGBColorString(rgbColor));
-        return color.release();
+        auto color = adoptRef(*new SVGColor(SVG_COLORTYPE_RGBCOLOR));
+        color.get().setColor(colorFromRGBColorString(rgbColor));
+        return color;
     }
 
-    static PassRefPtr<SVGColor> createFromColor(const Color& rgbColor)
+    static PassRef<SVGColor> createFromColor(const Color& rgbColor)
     {
-        RefPtr<SVGColor> color = adoptRef(new SVGColor(SVG_COLORTYPE_RGBCOLOR));
-        color->setColor(rgbColor);
-        return color.release();
+        auto color = adoptRef(*new SVGColor(SVG_COLORTYPE_RGBCOLOR));
+        color.get().setColor(rgbColor);
+        return color;
     }
 
-    static PassRefPtr<SVGColor> createCurrentColor()
+    static PassRef<SVGColor> createCurrentColor()
     {
-        return adoptRef(new SVGColor(SVG_COLORTYPE_CURRENTCOLOR));
+        return adoptRef(*new SVGColor(SVG_COLORTYPE_CURRENTCOLOR));
     }
 
     const Color& color() const { return m_color; }
@@ -69,15 +69,13 @@ public:
     void setRGBColorICCColor(const String& rgbColor, const String& iccColor, ExceptionCode&);
     void setColor(unsigned short colorType, const String& rgbColor, const String& iccColor, ExceptionCode&);
 
-    String customCssText() const;
+    String customCSSText() const;
 
     ~SVGColor() { }
     
     PassRefPtr<SVGColor> cloneForCSSOM() const;
 
     bool equals(const SVGColor&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 protected:
     friend class CSSComputedStyleDeclaration;
@@ -94,6 +92,8 @@ private:
     Color m_color;
     SVGColorType m_colorType;
 };
+
+CSS_VALUE_TYPE_CASTS(SVGColor, isSVGColor());
 
 } // namespace WebCore
 

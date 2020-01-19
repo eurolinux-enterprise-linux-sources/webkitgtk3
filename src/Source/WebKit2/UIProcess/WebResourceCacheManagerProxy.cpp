@@ -26,13 +26,16 @@
 #include "config.h"
 #include "WebResourceCacheManagerProxy.h"
 
-#include "ImmutableArray.h"
 #include "ImmutableDictionary.h"
 #include "SecurityOriginData.h"
 #include "WebContext.h"
 #include "WebResourceCacheManagerMessages.h"
 #include "WebResourceCacheManagerProxyMessages.h"
 #include "WebSecurityOrigin.h"
+
+#if ENABLE(NETWORK_PROCESS)
+#include "NetworkProcessMessages.h"
+#endif
 
 using namespace WebCore;
 
@@ -51,7 +54,7 @@ PassRefPtr<WebResourceCacheManagerProxy> WebResourceCacheManagerProxy::create(We
 WebResourceCacheManagerProxy::WebResourceCacheManagerProxy(WebContext* webContext)
     : WebContextSupplement(webContext)
 {
-    WebContextSupplement::context()->addMessageReceiver(Messages::WebResourceCacheManagerProxy::messageReceiverName(), this);
+    WebContextSupplement::context()->addMessageReceiver(Messages::WebResourceCacheManagerProxy::messageReceiverName(), *this);
 }
 
 WebResourceCacheManagerProxy::~WebResourceCacheManagerProxy()
@@ -77,12 +80,12 @@ bool WebResourceCacheManagerProxy::shouldTerminate(WebProcessProxy*) const
 
 void WebResourceCacheManagerProxy::refWebContextSupplement()
 {
-    APIObject::ref();
+    API::Object::ref();
 }
 
 void WebResourceCacheManagerProxy::derefWebContextSupplement()
 {
-    APIObject::deref();
+    API::Object::deref();
 }
 
 void WebResourceCacheManagerProxy::getCacheOrigins(PassRefPtr<ArrayCallback> prpCallback)
@@ -114,6 +117,10 @@ void WebResourceCacheManagerProxy::clearCacheForOrigin(WebSecurityOrigin* origin
 
 void WebResourceCacheManagerProxy::clearCacheForAllOrigins(ResourceCachesToClear cachesToClear)
 {
+#if ENABLE(NETWORK_PROCESS)
+    context()->sendToNetworkingProcessRelaunchingIfNecessary(Messages::NetworkProcess::ClearCacheForAllOrigins(cachesToClear));
+#endif
+
     // FIXME (Multi-WebProcess): <rdar://problem/12239765> There is no need to relaunch all processes. One process to take care of persistent cache is enough.
     context()->sendToAllProcessesRelaunchingThemIfNecessary(Messages::WebResourceCacheManager::ClearCacheForAllOrigins(cachesToClear));
 }

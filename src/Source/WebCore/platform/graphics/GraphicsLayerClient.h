@@ -42,6 +42,7 @@ enum GraphicsLayerPaintingPhaseFlags {
     GraphicsLayerPaintForeground = (1 << 1),
     GraphicsLayerPaintMask = (1 << 2),
     GraphicsLayerPaintOverflowContents = (1 << 3),
+    GraphicsLayerPaintCompositedScroll = (1 << 4),
     GraphicsLayerPaintAllWithOverflowClip = (GraphicsLayerPaintBackground | GraphicsLayerPaintForeground | GraphicsLayerPaintMask)
 };
 typedef unsigned GraphicsLayerPaintingPhase;
@@ -58,7 +59,8 @@ class GraphicsLayerClient {
 public:
     virtual ~GraphicsLayerClient() {}
 
-    virtual bool shouldUseTileCache(const GraphicsLayer*) const { return false; }
+    virtual bool shouldUseTiledBacking(const GraphicsLayer*) const { return false; }
+    virtual void tiledBackingUsageChanged(const GraphicsLayer*, bool /*usingTiledBacking*/) { }
     
     // Callback for when hardware-accelerated animation started.
     virtual void notifyAnimationStarted(const GraphicsLayer*, double time) = 0;
@@ -86,7 +88,12 @@ public:
     // Page scale factor.
     virtual float pageScaleFactor() const { return 1; }
 
+    virtual float contentsScaleMultiplierForNewTiles(const GraphicsLayer*) const { return 1; }
+
     virtual bool isTrackingRepaints() const { return false; }
+
+    virtual bool shouldSkipLayerInDump(const GraphicsLayer*) const { return false; }
+    virtual bool shouldDumpPropertyForLayer(const GraphicsLayer*, const char*) const { return true; }
 
 #ifndef NDEBUG
     // RenderLayerBacking overrides this to verify that it is not
@@ -95,10 +102,6 @@ public:
     // to verify that we don't create or destroy GraphicsLayers
     // while painting.
     virtual void verifyNotPainting() { }
-#endif
-
-#if PLATFORM(BLACKBERRY)
-    virtual bool contentsVisible(const GraphicsLayer*, const IntRect& contentRect) const { return false; }
 #endif
 };
 

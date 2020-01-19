@@ -22,7 +22,7 @@
 #define RenderSVGGradientStop_h
 
 #if ENABLE(SVG)
-#include "RenderObject.h"
+#include "RenderElement.h"
 
 namespace WebCore {
     
@@ -30,9 +30,9 @@ class SVGGradientElement;
 class SVGStopElement;
 
 // This class exists mostly so we can hear about gradient stop style changes
-class RenderSVGGradientStop : public RenderObject {
+class RenderSVGGradientStop final : public RenderElement {
 public:
-    RenderSVGGradientStop(SVGStopElement*);
+    RenderSVGGradientStop(SVGStopElement&, PassRef<RenderStyle>);
     virtual ~RenderSVGGradientStop();
 
     virtual bool isSVGGradientStop() const { return true; }
@@ -43,23 +43,23 @@ public:
     // This overrides are needed to prevent ASSERTs on <svg><stop /></svg>
     // RenderObject's default implementations ASSERT_NOT_REACHED()
     // https://bugs.webkit.org/show_bug.cgi?id=20400
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject*) const OVERRIDE { return LayoutRect(); }
+    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject*) const override { return LayoutRect(); }
     virtual FloatRect objectBoundingBox() const { return FloatRect(); }
     virtual FloatRect strokeBoundingBox() const { return FloatRect(); }
     virtual FloatRect repaintRectInLocalCoordinates() const { return FloatRect(); }
+    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint&, HitTestAction) override { return false; }
 
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
 private:
+    virtual bool canHaveChildren() const override { return false; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final { }
+
     SVGGradientElement* gradientElement() const;
 };
 
-inline const RenderSVGGradientStop* toRenderSVGGradientStop(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGGradientStop());
-    return static_cast<const RenderSVGGradientStop*>(object);
-}
+RENDER_OBJECT_TYPE_CASTS(RenderSVGGradientStop, isSVGGradientStop())
 
 }
 

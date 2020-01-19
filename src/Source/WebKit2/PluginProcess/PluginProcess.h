@@ -26,10 +26,11 @@
 #ifndef PluginProcess_h
 #define PluginProcess_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "ChildProcess.h"
 #include <wtf/Forward.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebKit {
@@ -40,13 +41,8 @@ struct PluginProcessCreationParameters;
         
 class PluginProcess : public ChildProcess {
     WTF_MAKE_NONCOPYABLE(PluginProcess);
+    friend class NeverDestroyed<PluginProcess>;
 public:
-    enum Type {
-        // Start with value one since default HashTraits<> disallows zero as key.
-        TypeRegularProcess = 1,
-        TypeSnapshotProcess
-    };
-
     static PluginProcess& shared();
 
     void removeWebProcessConnection(WebProcessConnection*);
@@ -62,6 +58,11 @@ public:
 #if USE(ACCELERATED_COMPOSITING)
     mach_port_t compositingRenderServerPort() const { return m_compositingRenderServerPort; }
 #endif
+
+    bool launchProcess(const String& launchPath, const Vector<String>& arguments);
+    bool launchApplicationAtURL(const String& urlString, const Vector<String>& arguments);
+    bool openURL(const String& urlString, int32_t& status, String& launchedURLString);
+    bool openFile(const String& urlString);
 #endif
 
 private:
@@ -69,19 +70,23 @@ private:
     ~PluginProcess();
 
     // ChildProcess
-    virtual void initializeProcess(const ChildProcessInitializationParameters&) OVERRIDE;
-    virtual void initializeProcessName(const ChildProcessInitializationParameters&) OVERRIDE;
-    virtual void initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&) OVERRIDE;
-    virtual bool shouldTerminate() OVERRIDE;
+    virtual void initializeProcess(const ChildProcessInitializationParameters&) override;
+    virtual void initializeProcessName(const ChildProcessInitializationParameters&) override;
+    virtual void initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&) override;
+    virtual bool shouldTerminate() override;
     void platformInitializeProcess(const ChildProcessInitializationParameters&);
 
-    // CoreIPC::Connection::Client
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
-    virtual void didClose(CoreIPC::Connection*) OVERRIDE;
-    virtual void didReceiveInvalidMessage(CoreIPC::Connection*, CoreIPC::StringReference messageReceiverName, CoreIPC::StringReference messageName) OVERRIDE;
+#if PLATFORM(MAC)
+    virtual void stopRunLoop() override;
+#endif
+
+    // IPC::Connection::Client
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
+    virtual void didClose(IPC::Connection*) override;
+    virtual void didReceiveInvalidMessage(IPC::Connection*, IPC::StringReference messageReceiverName, IPC::StringReference messageName) override;
 
     // Message handlers.
-    void didReceivePluginProcessMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
+    void didReceivePluginProcessMessage(IPC::Connection*, IPC::MessageDecoder&);
     void initializePluginProcess(const PluginProcessCreationParameters&);
     void createWebProcessConnection();
     void getSitesWithData(uint64_t callbackID);
@@ -92,17 +97,21 @@ private:
     void setMinimumLifetime(double);
     void minimumLifetimeTimerFired();
     // Our web process connections.
-    Vector<RefPtr<WebProcessConnection> > m_webProcessConnections;
+    Vector<RefPtr<WebProcessConnection>> m_webProcessConnections;
 
     // The plug-in path.
     String m_pluginPath;
+
+#if PLATFORM(MAC)
+    String m_pluginBundleIdentifier;
+#endif
 
     // The plug-in module.
     RefPtr<NetscapePluginModule> m_pluginModule;
     
     bool m_supportsAsynchronousPluginInitialization;
 
-    WebCore::RunLoop::Timer<PluginProcess> m_minimumLifetimeTimer;
+    RunLoop::Timer<PluginProcess> m_minimumLifetimeTimer;
 
 #if USE(ACCELERATED_COMPOSITING) && PLATFORM(MAC)
     // The Mach port used for accelerated compositing.
@@ -114,13 +123,6 @@ private:
 
 } // namespace WebKit
 
-namespace WTF {
-
-template<> struct DefaultHash<WebKit::PluginProcess::Type> { typedef DefaultHash<uint32_t>::Hash Hash; };
-template<> struct IsInteger<WebKit::PluginProcess::Type> { static const bool value = true; };
-
-} // namespace WTF
-
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginProcess_h

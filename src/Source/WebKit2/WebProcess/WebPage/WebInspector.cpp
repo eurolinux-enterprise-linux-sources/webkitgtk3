@@ -34,8 +34,13 @@
 #include "WebPageCreationParameters.h"
 #include "WebProcess.h"
 #include <WebCore/InspectorController.h>
-#include <WebCore/InspectorFrontendChannel.h>
+#include <WebCore/InspectorFrontendClient.h>
+#include <WebCore/MainFrame.h>
 #include <WebCore/Page.h>
+#include <WebCore/ScriptController.h>
+#include <inspector/InspectorAgentBase.h>
+#include <bindings/ScriptValue.h>
+#include <wtf/text/StringConcatenate.h>
 
 using namespace WebCore;
 
@@ -53,7 +58,6 @@ WebInspector::WebInspector(WebPage* page, InspectorFrontendChannel* frontendChan
     , m_frontendChannel(frontendChannel)
 #if PLATFORM(MAC)
     , m_hasLocalizedStringsURL(false)
-    , m_usesWebKitUserInterface(false)
 #endif
 #if ENABLE(INSPECTOR_SERVER)
     , m_remoteFrontendConnected(false)
@@ -73,9 +77,9 @@ WebPage* WebInspector::createInspectorPage()
     uint64_t inspectorPageID = 0;
     WebPageCreationParameters parameters;
 
-    if (!WebProcess::shared().connection()->sendSync(Messages::WebInspectorProxy::CreateInspectorPage(),
+    if (!WebProcess::shared().parentProcessConnection()->sendSync(Messages::WebInspectorProxy::CreateInspectorPage(),
             Messages::WebInspectorProxy::CreateInspectorPage::Reply(inspectorPageID, parameters),
-            m_page->pageID(), CoreIPC::Connection::NoTimeout)) {
+            m_page->pageID(), std::chrono::milliseconds::max())) {
         return 0;
     }
 
@@ -86,9 +90,9 @@ WebPage* WebInspector::createInspectorPage()
     m_inspectorPage = WebProcess::shared().webPage(inspectorPageID);
     ASSERT(m_inspectorPage);
 
-    OwnPtr<WebInspectorFrontendClient> frontendClient = adoptPtr(new WebInspectorFrontendClient(m_page, m_inspectorPage));
+    auto frontendClient = std::make_unique<WebInspectorFrontendClient>(m_page, m_inspectorPage);
     m_frontendClient = frontendClient.get();
-    m_inspectorPage->corePage()->inspectorController()->setInspectorFrontendClient(frontendClient.release());
+    m_inspectorPage->corePage()->inspectorController().setInspectorFrontendClient(std::move(frontendClient));
     return m_inspectorPage;
 }
 
@@ -100,74 +104,118 @@ void WebInspector::destroyInspectorPage()
 }
 
 // Called from WebInspectorFrontendClient
-void WebInspector::didLoadInspectorPage()
-{
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::DidLoadInspectorPage(), m_page->pageID());
-}
-
 void WebInspector::didClose()
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::DidClose(), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::DidClose(), m_page->pageID());
     destroyInspectorPage();
 }
 
 void WebInspector::bringToFront()
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::BringToFront(), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::BringToFront(), m_page->pageID());
 }
 
 void WebInspector::inspectedURLChanged(const String& urlString)
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::InspectedURLChanged(urlString), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::InspectedURLChanged(urlString), m_page->pageID());
 }
 
-void WebInspector::attach()
+void WebInspector::save(const String& filename, const String& content, bool base64Encoded, bool forceSaveAs)
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::Attach(), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::Save(filename, content, base64Encoded, forceSaveAs), m_page->pageID());
+}
+
+void WebInspector::append(const String& filename, const String& content)
+{
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::Append(filename, content), m_page->pageID());
+}
+
+void WebInspector::attachBottom()
+{
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::AttachBottom(), m_page->pageID());
+}
+
+void WebInspector::attachRight()
+{
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::AttachRight(), m_page->pageID());
 }
 
 void WebInspector::detach()
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::Detach(), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::Detach(), m_page->pageID());
 }
 
 void WebInspector::setAttachedWindowHeight(unsigned height)
 {
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::SetAttachedWindowHeight(height), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::SetAttachedWindowHeight(height), m_page->pageID());
+}
+
+void WebInspector::setAttachedWindowWidth(unsigned width)
+{
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::SetAttachedWindowWidth(width), m_page->pageID());
+}
+
+void WebInspector::setToolbarHeight(unsigned height)
+{
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::SetToolbarHeight(height), m_page->pageID());
 }
 
 // Called by WebInspector messages
 void WebInspector::show()
 {
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
 }
 
 void WebInspector::close()
 {
-    m_page->corePage()->inspectorController()->close();
+    m_page->corePage()->inspectorController().close();
 }
 
-void WebInspector::setAttachedWindow(bool attached)
+void WebInspector::didSave(const String& url)
+{
+    ASSERT(m_inspectorPage);
+    m_inspectorPage->corePage()->mainFrame().script().executeScript(makeString("InspectorFrontendAPI.savedURL(\"", url, "\")"));
+}
+
+void WebInspector::didAppend(const String& url)
+{
+    ASSERT(m_inspectorPage);
+    m_inspectorPage->corePage()->mainFrame().script().executeScript(makeString("InspectorFrontendAPI.appendedToURL(\"", url, "\")"));
+}
+
+void WebInspector::attachedBottom()
 {
     if (m_frontendClient)
-        m_frontendClient->setAttachedWindow(attached);
+        m_frontendClient->setAttachedWindow(InspectorFrontendClient::DOCKED_TO_BOTTOM);
+}
+
+void WebInspector::attachedRight()
+{
+    if (m_frontendClient)
+        m_frontendClient->setAttachedWindow(InspectorFrontendClient::DOCKED_TO_RIGHT);
+}
+
+void WebInspector::detached()
+{
+    if (m_frontendClient)
+        m_frontendClient->setAttachedWindow(InspectorFrontendClient::UNDOCKED);
 }
 
 void WebInspector::evaluateScriptForTest(long callID, const String& script)
 {
-    m_page->corePage()->inspectorController()->evaluateForTestInFrontend(callID, script);
+    m_page->corePage()->inspectorController().evaluateForTestInFrontend(callID, script);
 }
 
 void WebInspector::showConsole()
 {
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->showConsole();
 }
 
 void WebInspector::showResources()
 {
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->showResources();
 }
@@ -178,68 +226,58 @@ void WebInspector::showMainResourceForFrame(uint64_t frameID)
     if (!frame)
         return;
 
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->showMainResourceForFrame(frame->coreFrame());
 }
 
 void WebInspector::startJavaScriptDebugging()
 {
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->setDebuggingEnabled(true);
-#endif
 }
 
 void WebInspector::stopJavaScriptDebugging()
 {
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->setDebuggingEnabled(false);
-#endif
 }
 
 void WebInspector::setJavaScriptProfilingEnabled(bool enabled)
 {
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (!m_frontendClient)
         return;
 
-    m_page->corePage()->inspectorController()->setProfilerEnabled(enabled);
-#endif
+    m_page->corePage()->inspectorController().setProfilerEnabled(enabled);
 }
 
 void WebInspector::startJavaScriptProfiling()
 {
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->startProfilingJavaScript();
-#endif
 }
 
 void WebInspector::stopJavaScriptProfiling()
 {
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->stopProfilingJavaScript();
-#endif
 }
 
 void WebInspector::startPageProfiling()
 {
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->setTimelineProfilingEnabled(true);
 }
 
 void WebInspector::stopPageProfiling()
 {
-    m_page->corePage()->inspectorController()->show();
+    m_page->corePage()->inspectorController().show();
     if (m_frontendClient)
         m_frontendClient->setTimelineProfilingEnabled(false);
 }
@@ -250,7 +288,7 @@ void WebInspector::updateDockingAvailability()
         return;
 
     bool canAttachWindow = m_frontendClient->canAttachWindow();
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::AttachAvailabilityChanged(canAttachWindow), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::AttachAvailabilityChanged(canAttachWindow), m_page->pageID());
     m_frontendClient->setDockingUnavailable(!canAttachWindow);
 }
 
@@ -258,12 +296,12 @@ void WebInspector::updateDockingAvailability()
 void WebInspector::sendMessageToRemoteFrontend(const String& message)
 {
     ASSERT(m_remoteFrontendConnected);
-    WebProcess::shared().connection()->send(Messages::WebInspectorProxy::SendMessageToRemoteFrontend(message), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebInspectorProxy::SendMessageToRemoteFrontend(message), m_page->pageID());
 }
 
 void WebInspector::dispatchMessageFromRemoteFrontend(const String& message)
 {
-    m_page->corePage()->inspectorController()->dispatchMessageFromFrontend(message);
+    m_page->corePage()->inspectorController().dispatchMessageFromFrontend(message);
 }
 
 void WebInspector::remoteFrontendConnected()
@@ -272,14 +310,14 @@ void WebInspector::remoteFrontendConnected()
     // Switching between in-process and remote inspectors isn't supported yet.
     ASSERT(!m_inspectorPage);
     
-    m_page->corePage()->inspectorController()->connectFrontend(m_frontendChannel);
+    m_page->corePage()->inspectorController().connectFrontend(m_frontendChannel);
     m_remoteFrontendConnected = true;
 }
 
 void WebInspector::remoteFrontendDisconnected()
 {
     ASSERT(m_remoteFrontendConnected);
-    m_page->corePage()->inspectorController()->disconnectFrontend();
+    m_page->corePage()->inspectorController().disconnectFrontend(Inspector::InspectorDisconnectReason::InspectorDestroyed);
     m_remoteFrontendConnected = false;
 }
 #endif

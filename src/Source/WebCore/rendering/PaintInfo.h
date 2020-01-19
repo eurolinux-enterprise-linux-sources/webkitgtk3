@@ -42,6 +42,7 @@ namespace WebCore {
 
 class OverlapTestRequestClient;
 class RenderInline;
+class RenderLayerModelObject;
 class RenderObject;
 class RenderRegion;
 
@@ -52,35 +53,36 @@ typedef HashMap<OverlapTestRequestClient*, IntRect> OverlapTestRequestMap;
  * (tx|ty) is the calculated position of the parent
  */
 struct PaintInfo {
-    PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
-              RenderObject* newPaintingRoot = 0, RenderRegion* region = 0, ListHashSet<RenderInline*>* newOutlineObjects = 0,
-              OverlapTestRequestMap* overlapTestRequests = 0)
+    PaintInfo(GraphicsContext* newContext, const LayoutRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
+        RenderObject* newSubtreePaintRoot = nullptr, RenderRegion* region = nullptr, ListHashSet<RenderInline*>* newOutlineObjects = nullptr,
+        OverlapTestRequestMap* overlapTestRequests = nullptr, const RenderLayerModelObject* newPaintContainer = nullptr)
         : context(newContext)
         , rect(newRect)
         , phase(newPhase)
         , paintBehavior(newPaintBehavior)
-        , paintingRoot(newPaintingRoot)
+        , subtreePaintRoot(newSubtreePaintRoot)
         , renderRegion(region)
         , outlineObjects(newOutlineObjects)
         , overlapTestRequests(overlapTestRequests)
+        , paintContainer(newPaintContainer)
     {
     }
 
-    void updatePaintingRootForChildren(const RenderObject* renderer)
+    void updateSubtreePaintRootForChildren(const RenderObject* renderer)
     {
-        if (!paintingRoot)
+        if (!subtreePaintRoot)
             return;
 
-        // If we're the painting root, kids draw normally, and see root of 0.
-        if (paintingRoot == renderer) {
-            paintingRoot = 0; 
+        // If we're the painting root, kids draw normally, and see root of nullptr.
+        if (subtreePaintRoot == renderer) {
+            subtreePaintRoot = nullptr;
             return;
         }
     }
 
-    bool shouldPaintWithinRoot(const RenderObject* renderer) const
+    bool shouldPaintWithinRoot(const RenderObject& renderer) const
     {
-        return !paintingRoot || paintingRoot == renderer;
+        return !subtreePaintRoot || subtreePaintRoot == &renderer;
     }
 
     bool forceBlackText() const { return paintBehavior & PaintBehaviorForceBlackText; }
@@ -96,24 +98,24 @@ struct PaintInfo {
 
         context->concatCTM(localToAncestorTransform);
 
-        if (rect == infiniteRect())
+        if (rect == LayoutRect::infiniteRect())
             return;
 
-        rect = localToAncestorTransform.inverse().mapRect(rect);
+        FloatRect tranformedRect(localToAncestorTransform.inverse().mapRect(rect));
+        rect.setLocation(LayoutPoint(tranformedRect.location()));
+        rect.setSize(LayoutSize(tranformedRect.size()));
     }
 #endif
 
-    static IntRect infiniteRect() { return IntRect(LayoutRect::infiniteRect()); }
-
-    // FIXME: Introduce setters/getters at some point. Requires a lot of changes throughout rendering/.
     GraphicsContext* context;
-    IntRect rect;
+    LayoutRect rect;
     PaintPhase phase;
     PaintBehavior paintBehavior;
-    RenderObject* paintingRoot; // used to draw just one element and its visual kids
+    RenderObject* subtreePaintRoot; // used to draw just one element and its visual children
     RenderRegion* renderRegion;
     ListHashSet<RenderInline*>* outlineObjects; // used to list outlines that should be painted by a block with inline children
     OverlapTestRequestMap* overlapTestRequests;
+    const RenderLayerModelObject* paintContainer; // the layer object that originates the current painting
 };
 
 } // namespace WebCore

@@ -27,7 +27,7 @@
 #ifndef  RedirectedXCompositeWindow_h
 #define  RedirectedXCompositeWindow_h
 
-#if USE(GLX)
+#if USE(OPENGL) && PLATFORM(X11)
 
 #include "GLContext.h"
 #include "IntSize.h"
@@ -70,7 +70,6 @@ private:
     GLContextNeeded m_needsContext;
     OwnPtr<GLContext> m_context;
     RefPtr<cairo_surface_t> m_surface;
-    unsigned int m_pendingResizeSourceId;
     bool m_needsNewPixmapAfterResize;
 
     Damage m_damage;
@@ -80,6 +79,6 @@ private:
 
 } // namespace WebCore
 
-#endif // USE(GLX)
+#endif // USE(OPENGL) && PLATFORM(X11)
 
 #endif // RedirectedXCompositeWindow_h

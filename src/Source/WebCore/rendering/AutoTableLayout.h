@@ -33,11 +33,12 @@ class RenderTableCell;
 
 class AutoTableLayout : public TableLayout {
 public:
-    AutoTableLayout(RenderTable*);
-    ~AutoTableLayout();
+    explicit AutoTableLayout(RenderTable*);
+    virtual ~AutoTableLayout();
 
-    virtual void computePreferredLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth);
-    virtual void layout();
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) override;
+    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const override;
+    virtual void layout() override;
 
 private:
     void fullRecalc();

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,58 +28,70 @@
 
 #include "CSSValue.h"
 #include "IntSizeHash.h"
+#include "Timer.h"
 #include <wtf/HashCountedSet.h>
-#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
+class CachedImage;
 class CachedResourceLoader;
+class GeneratedImage;
 class Image;
-class RenderObject;
+class RenderElement;
 class StyleResolver;
-
-struct SizeAndCount {
-    SizeAndCount(IntSize newSize = IntSize(), int newCount = 0)
-        : size(newSize)
-        , count(newCount)
-    {
-    }
-
-    IntSize size;
-    int count;
-};
-
-typedef HashMap<const RenderObject*, SizeAndCount> RenderObjectSizeCountMap;
 
 class CSSImageGeneratorValue : public CSSValue {
 public:
     ~CSSImageGeneratorValue();
 
-    void addClient(RenderObject*, const IntSize&);
-    void removeClient(RenderObject*);
-    PassRefPtr<Image> image(RenderObject*, const IntSize&);
+    void addClient(RenderElement*);
+    void removeClient(RenderElement*);
+
+    PassRefPtr<Image> image(RenderElement*, const IntSize&);
 
     bool isFixedSize() const;
-    IntSize fixedSize(const RenderObject*);
+    IntSize fixedSize(const RenderElement*);
 
     bool isPending() const;
-    bool knownToBeOpaque(const RenderObject*) const;
+    bool knownToBeOpaque(const RenderElement*) const;
 
     void loadSubimages(CachedResourceLoader*);
 
 protected:
     CSSImageGeneratorValue(ClassType);
 
-    Image* getImage(RenderObject*, const IntSize&);
-    void putImage(const IntSize&, PassRefPtr<Image>);
-    const RenderObjectSizeCountMap& clients() const { return m_clients; }
+    GeneratedImage* cachedImageForSize(IntSize);
+    void saveCachedImageForSize(IntSize, PassRefPtr<GeneratedImage>);
+    const HashCountedSet<RenderElement*>& clients() const { return m_clients; }
 
-    void reportBaseClassMemoryUsage(MemoryObjectInfo*) const;
+    // Helper functions for Crossfade and Filter.
+    static CachedImage* cachedImageForCSSValue(CSSValue*, CachedResourceLoader*);
+    static bool subimageIsPending(CSSValue*);
 
-    HashCountedSet<IntSize> m_sizes; // A count of how many times a given image size is in use.
-    RenderObjectSizeCountMap m_clients; // A map from RenderObjects (with entry count) to image sizes.
-    HashMap<IntSize, RefPtr<Image> > m_images; // A cache of Image objects by image size.
+private:
+    class CachedGeneratedImage {
+    public:
+        CachedGeneratedImage(CSSImageGeneratorValue&, IntSize, PassRefPtr<GeneratedImage>);
+        GeneratedImage* image() { return m_image.get(); }
+        void puntEvictionTimer() { m_evictionTimer.restart(); }
+
+    private:
+        void evictionTimerFired(DeferrableOneShotTimer<CachedGeneratedImage>&);
+
+        CSSImageGeneratorValue& m_owner;
+        IntSize m_size;
+        RefPtr<GeneratedImage> m_image;
+        DeferrableOneShotTimer<CachedGeneratedImage> m_evictionTimer;
+    };
+
+    friend class CachedGeneratedImage;
+    void evictCachedGeneratedImage(IntSize);
+
+    HashCountedSet<RenderElement*> m_clients;
+    HashMap<IntSize, std::unique_ptr<CachedGeneratedImage>> m_images;
 };
+
+CSS_VALUE_TYPE_CASTS(CSSImageGeneratorValue, isImageGeneratorValue())
 
 } // namespace WebCore
 

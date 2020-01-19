@@ -25,9 +25,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(HAVE_CONFIG_H) && HAVE_CONFIG_H
+#ifdef BUILDING_WITH_CMAKE
+#include "cmakeconfig.h"
+#else
 #include "autotoolsconfig.h"
+#endif
+#endif
+
 #include "LauncherInspectorWindow.h"
 #include <errno.h>
+#include <gdk/gdkkeysyms.h>
 #ifdef WTF_USE_GSTREAMER
 #include <gst/gst.h>
 #endif
@@ -107,6 +115,11 @@ static void goForwardCb(GtkWidget* widget, WebKitWebView* webView)
     webkit_web_view_go_forward(webView);
 }
 
+static void reloadCb(GtkWidget* widget, WebKitWebView* webView)
+{
+    webkit_web_view_reload(webView);
+}
+
 static WebKitWebView*
 createWebViewCb(WebKitWebView* webView, WebKitWebFrame* web_frame, GtkWidget* window)
 {
@@ -151,7 +164,8 @@ static gboolean webViewWindowStateEvent(GtkWidget *widget, GdkEventWindowState *
                                                     GTK_BUTTONS_CLOSE,
                                                     "%s is now full screen. Press ESC or f to exit.", uri);
         g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_widget_destroy), dialog);
-        g_timeout_add(1500, (GSourceFunc) webViewFullscreenMessageWindowClose, dialog);
+        guint id = g_timeout_add(1500, (GSourceFunc) webViewFullscreenMessageWindowClose, dialog);
+        g_source_set_name_by_id(id, "[WebKit] webViewFullscreenMessageWindowClose");
         gtk_dialog_run(GTK_DIALOG(dialog));
     }
     return TRUE;
@@ -225,7 +239,7 @@ static GtkWidget* createBrowser(GtkWidget* window, GtkWidget* uriEntry, GtkWidge
 
     gtk_container_add(GTK_CONTAINER(scrolledWindow), GTK_WIDGET(webView));
 
-    iconDatabasePath = g_build_filename(g_get_user_data_dir(), "webkit", "icondatabase", NULL);
+    iconDatabasePath = g_build_filename(g_get_user_cache_dir(), "GtkLauncher", "icondatabase", NULL);
     webkit_favicon_database_set_path(webkit_get_favicon_database(), iconDatabasePath);
     g_free(iconDatabasePath);
 
@@ -254,18 +268,18 @@ static GtkWidget* createStatusbar()
     return GTK_WIDGET(statusbar);
 }
 
-static GtkWidget* createToolbar(GtkWidget* uriEntry, WebKitWebView* webView)
+static GtkWidget* createToolbar(GtkWidget* window, GtkWidget* uriEntry, WebKitWebView* webView)
 {
     GtkWidget *toolbar = gtk_toolbar_new();
 
-#if GTK_CHECK_VERSION(2, 15, 0)
     gtk_orientable_set_orientation(GTK_ORIENTABLE(toolbar), GTK_ORIENTATION_HORIZONTAL);
-#else
-    gtk_toolbar_set_orientation(GTK_TOOLBAR(toolbar), GTK_ORIENTATION_HORIZONTAL);
-#endif
     gtk_toolbar_set_style(GTK_TOOLBAR(toolbar), GTK_TOOLBAR_BOTH_HORIZ);
 
     GtkToolItem *item;
+
+    /* Keyboard accelerators */
+    GtkAccelGroup *accelGroup = gtk_accel_group_new();
+    gtk_window_add_accel_group(GTK_WINDOW(window), accelGroup);
 
     /* the back button */
     item = gtk_tool_button_new_from_stock(GTK_STOCK_GO_BACK);
@@ -276,6 +290,12 @@ static GtkWidget* createToolbar(GtkWidget* uriEntry, WebKitWebView* webView)
     item = gtk_tool_button_new_from_stock(GTK_STOCK_GO_FORWARD);
     g_signal_connect(G_OBJECT(item), "clicked", G_CALLBACK(goForwardCb), webView);
     gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+
+    /* The reload button */
+    item = gtk_tool_button_new_from_stock(GTK_STOCK_REFRESH);
+    g_signal_connect(G_OBJECT(item), "clicked", G_CALLBACK(reloadCb), webView);
+    gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item, -1);
+    gtk_widget_add_accelerator(GTK_WIDGET(item), "clicked", accelGroup, GDK_KEY_F5, 0, GTK_ACCEL_VISIBLE);
 
     /* The URL entry */
     item = gtk_tool_item_new();
@@ -315,8 +335,8 @@ static GtkWidget* createWindow(WebKitWebView** outWebView)
 #else
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 #endif
-    statusbar = createStatusbar(webView);
-    gtk_box_pack_start(GTK_BOX(vbox), createToolbar(uriEntry, webView), FALSE, FALSE, 0);
+    statusbar = createStatusbar();
+    gtk_box_pack_start(GTK_BOX(vbox), createToolbar(window, uriEntry, webView), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(vbox), createBrowser(window, uriEntry, statusbar, webView, vbox), TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(vbox), statusbar, FALSE, FALSE, 0);
 
@@ -521,10 +541,6 @@ int main(int argc, char* argv[])
         soup_uri_free(proxyUri);
     }
 #endif
-
-#ifdef WEBKIT_EXEC_PATH
-    g_setenv("WEBKIT_INSPECTOR_PATH", WEBKIT_EXEC_PATH "resources/inspector", FALSE);
-#endif /* WEBKIT_EXEC_PATH */
 
     WebKitWebView *webView;
     GtkWidget *main_window = createWindow(&webView);

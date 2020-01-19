@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2007, 2010 Apple Inc. All rights reserved.
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,26 +33,26 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLAudioElement::HTMLAudioElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+HTMLAudioElement::HTMLAudioElement(const QualifiedName& tagName, Document& document, bool createdByParser)
     : HTMLMediaElement(tagName, document, createdByParser)
 {
     ASSERT(hasTagName(audioTag));
 }
 
-PassRefPtr<HTMLAudioElement> HTMLAudioElement::create(const QualifiedName& tagName, Document* document, bool createdByParser)
+PassRefPtr<HTMLAudioElement> HTMLAudioElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
 {
     RefPtr<HTMLAudioElement> audioElement(adoptRef(new HTMLAudioElement(tagName, document, createdByParser)));
     audioElement->suspendIfNeeded();
     return audioElement.release();
 }
 
-PassRefPtr<HTMLAudioElement> HTMLAudioElement::createForJSConstructor(Document* document, const String& src)
+PassRefPtr<HTMLAudioElement> HTMLAudioElement::createForJSConstructor(Document& document, const String& src)
 {
     RefPtr<HTMLAudioElement> audio = adoptRef(new HTMLAudioElement(audioTag, document, false));
     audio->setPreload("auto");
     if (!src.isNull()) {
         audio->setSrc(src);
-        audio->scheduleLoad(HTMLMediaElement::MediaResource);
+        audio->scheduleDelayedAction(HTMLMediaElement::LoadMediaResource);
     }
     audio->suspendIfNeeded();
     return audio.release();

@@ -32,29 +32,32 @@
 #define ScriptCallFrame_h
 
 #if ENABLE(INSPECTOR)
-#include "InspectorTypeBuilder.h"
+#include "InspectorWebTypeBuilders.h"
 #endif
 
 #include <wtf/Forward.h>
 #include <wtf/text/WTFString.h>
 
-namespace WebCore {
-
+namespace Inspector {
 class InspectorObject;
+}
+
+namespace WebCore {
 
 class ScriptCallFrame  {
 public:
-    ScriptCallFrame(const String& functionName, const String& scriptName, unsigned lineNumber, unsigned column = 0);
+    ScriptCallFrame(const String& functionName, const String& scriptName, unsigned lineNumber, unsigned column);
     ~ScriptCallFrame();
 
     const String& functionName() const { return m_functionName; }
     const String& sourceURL() const { return m_scriptName; }
     unsigned lineNumber() const { return m_lineNumber; }
+    unsigned columnNumber() const { return m_column; }
 
     bool isEqual(const ScriptCallFrame&) const;
 
 #if ENABLE(INSPECTOR)
-    PassRefPtr<TypeBuilder::Console::CallFrame> buildInspectorObject() const;
+    PassRefPtr<Inspector::TypeBuilder::Console::CallFrame> buildInspectorObject() const;
 #endif
 
 private:

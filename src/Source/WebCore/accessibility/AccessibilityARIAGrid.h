@@ -45,18 +45,17 @@ public:
     static PassRefPtr<AccessibilityARIAGrid> create(RenderObject*);
     virtual ~AccessibilityARIAGrid();
 
-    virtual bool isAriaTable() const { return true; }    
+    virtual bool isAriaTable() const override { return true; }
     
-    virtual void addChildren();
+    virtual void addChildren() override;
     
-    virtual AccessibilityTableCell* cellForColumnAndRow(unsigned column, unsigned row);
-
 private:
     // ARIA treegrids and grids support selected rows.
-    virtual bool supportsSelectedRows() { return true; }    
-    virtual bool isMultiSelectable() const { return true; }
-    virtual bool isTableExposableThroughAccessibility() const { return true; }
+    virtual bool supportsSelectedRows() override { return true; }
+    virtual bool isMultiSelectable() const override { return true; }
+    virtual bool isTableExposableThroughAccessibility() const override { return true; }
     
+    void addRowDescendant(AccessibilityObject*, HashSet<AccessibilityObject*>& appendedRows, unsigned& columnCount);
     bool addTableCellChild(AccessibilityObject*, HashSet<AccessibilityObject*>& appendedRows, unsigned& columnCount);
 };
 

@@ -31,9 +31,9 @@ class DOMImplementation;
 class SVGElement;
 class SVGSVGElement;
 
-class SVGDocument : public Document {
+class SVGDocument final : public Document {
 public:
-    static PassRefPtr<SVGDocument> create(Frame* frame, const KURL& url)
+    static PassRefPtr<SVGDocument> create(Frame* frame, const URL& url)
     {
         return adoptRef(new SVGDocument(frame, url));
     }
@@ -49,14 +49,19 @@ public:
     void updatePan(const FloatPoint& pos) const;
 
 private:
-    SVGDocument(Frame*, const KURL&);
+    SVGDocument(Frame*, const URL&);
 
-    virtual bool isSVGDocument() const { return true; }
+    virtual bool childShouldCreateRenderer(const Node&) const override;
 
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
+    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() const override;
 
     FloatPoint m_translate;
 };
+
+inline bool isSVGDocument(const Document& document) { return document.isSVGDocument(); }
+void isSVGDocument(const SVGDocument&); // Catch unnecessary runtime check of type known at compile time.
+
+DOCUMENT_TYPE_CASTS(SVGDocument)
 
 } // namespace WebCore
 

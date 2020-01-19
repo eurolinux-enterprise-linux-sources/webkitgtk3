@@ -33,21 +33,48 @@
 
 namespace WebCore {
 
-MediaControlsGtk::MediaControlsGtk(Document* document)
+class MediaControlsGtkEventListener : public EventListener {
+public:
+    static PassRefPtr<MediaControlsGtkEventListener> create(MediaControlsGtk* mediaControls) { return adoptRef(new MediaControlsGtkEventListener(mediaControls)); }
+    static const MediaControlsGtkEventListener* cast(const EventListener* listener)
+    {
+        return listener->type() == GObjectEventListenerType
+            ? static_cast<const MediaControlsGtkEventListener*>(listener)
+            : 0;
+    }
+
+    virtual bool operator==(const EventListener& other);
+
+private:
+    MediaControlsGtkEventListener(MediaControlsGtk* mediaControls)
+        : EventListener(GObjectEventListenerType)
+        , m_mediaControls(mediaControls)
+    {
+    }
+
+    virtual void handleEvent(ScriptExecutionContext*, Event*);
+
+    MediaControlsGtk* m_mediaControls;
+};
+
+MediaControlsGtk::MediaControlsGtk(Document& document)
     : MediaControls(document)
     , m_durationDisplay(0)
     , m_enclosure(0)
+    , m_closedCaptionsTrackList(0)
+    , m_closedCaptionsContainer(0)
+    , m_eventListener(0)
 {
 }
 
-PassRefPtr<MediaControls> MediaControls::create(Document* document)
+PassRefPtr<MediaControls> MediaControls::create(Document& document)
 {
     return MediaControlsGtk::createControls(document);
 }
 
-PassRefPtr<MediaControlsGtk> MediaControlsGtk::createControls(Document* document)
+PassRefPtr<MediaControlsGtk> MediaControlsGtk::createControls(Document& document)
 {
-    if (!document->page())
+    if (!document.page())
         return 0;
 
     RefPtr<MediaControlsGtk> controls = adoptRef(new MediaControlsGtk(document));
@@ -58,7 +85,7 @@ PassRefPtr<MediaControlsGtk> MediaControlsGtk::createControls(Document* document
     return 0;
 }
 
-bool MediaControlsGtk::initializeControls(Document* document)
+bool MediaControlsGtk::initializeControls(Document& document)
 {
     // Create an enclosing element for the panel so we can visually offset the controls correctly.
     RefPtr<MediaControlPanelEnclosureElement> enclosure = MediaControlPanelEnclosureElement::create(document);
@@ -67,69 +94,82 @@ bool MediaControlsGtk::initializeControls(Document* document)
 
     RefPtr<MediaControlPlayButtonElement> playButton = MediaControlPlayButtonElement::create(document);
     m_playButton = playButton.get();
-    panel->appendChild(playButton.release(), exceptionCode, true);
+    panel->appendChild(playButton.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlTimelineElement> timeline = MediaControlTimelineElement::create(document, this);
     m_timeline = timeline.get();
-    panel->appendChild(timeline.release(), exceptionCode, true);
+    panel->appendChild(timeline.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlCurrentTimeDisplayElement> currentTimeDisplay = MediaControlCurrentTimeDisplayElement::create(document);
     m_currentTimeDisplay = currentTimeDisplay.get();
     m_currentTimeDisplay->hide();
-    panel->appendChild(currentTimeDisplay.release(), exceptionCode, true);
+    panel->appendChild(currentTimeDisplay.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlTimeRemainingDisplayElement> durationDisplay = MediaControlTimeRemainingDisplayElement::create(document);
     m_durationDisplay = durationDisplay.get();
-    panel->appendChild(durationDisplay.release(), exceptionCode, true);
+    panel->appendChild(durationDisplay.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
-    if (document->page()->theme()->supportsClosedCaptioning()) {
+    if (document.page()->theme().supportsClosedCaptioning()) {
+        RefPtr<MediaControlClosedCaptionsContainerElement> closedCaptionsContainer = MediaControlClosedCaptionsContainerElement::create(document);
+
+        RefPtr<MediaControlClosedCaptionsTrackListElement> closedCaptionsTrackList = MediaControlClosedCaptionsTrackListElement::create(document, this);
+        m_closedCaptionsTrackList = closedCaptionsTrackList.get();
+        closedCaptionsContainer->appendChild(closedCaptionsTrackList.release(), exceptionCode);
+        if (exceptionCode)
+            return false;
+
         RefPtr<MediaControlToggleClosedCaptionsButtonElement> toggleClosedCaptionsButton = MediaControlToggleClosedCaptionsButtonElement::create(document, this);
         m_toggleClosedCaptionsButton = toggleClosedCaptionsButton.get();
-        panel->appendChild(toggleClosedCaptionsButton.release(), exceptionCode, true);
+        panel->appendChild(toggleClosedCaptionsButton.release(), exceptionCode);
+        if (exceptionCode)
+            return false;
+
+        m_closedCaptionsContainer = closedCaptionsContainer.get();
+        appendChild(closedCaptionsContainer.release(), exceptionCode);
         if (exceptionCode)
             return false;
     }
 
     RefPtr<MediaControlFullscreenButtonElement> fullscreenButton = MediaControlFullscreenButtonElement::create(document);
     m_fullScreenButton = fullscreenButton.get();
-    panel->appendChild(fullscreenButton.release(), exceptionCode, true);
+    panel->appendChild(fullscreenButton.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlPanelMuteButtonElement> panelMuteButton = MediaControlPanelMuteButtonElement::create(document, this);
     m_panelMuteButton = panelMuteButton.get();
-    panel->appendChild(panelMuteButton.release(), exceptionCode, true);
+    panel->appendChild(panelMuteButton.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlVolumeSliderContainerElement> sliderContainer = MediaControlVolumeSliderContainerElement::create(document);
     m_volumeSliderContainer = sliderContainer.get();
-    panel->appendChild(sliderContainer.release(), exceptionCode, true);
+    panel->appendChild(sliderContainer.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     RefPtr<MediaControlPanelVolumeSliderElement> slider = MediaControlPanelVolumeSliderElement::create(document);
     m_volumeSlider = slider.get();
     m_volumeSlider->setClearMutedOnUserInteraction(true);
-    m_volumeSliderContainer->appendChild(slider.release(), exceptionCode, true);
+    m_volumeSliderContainer->appendChild(slider.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     m_panel = panel.get();
-    enclosure->appendChild(panel.release(), exceptionCode, true);
+    enclosure->appendChild(panel.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
     m_enclosure = enclosure.get();
-    appendChild(enclosure.release(), exceptionCode, true);
+    appendChild(enclosure.release(), exceptionCode);
     if (exceptionCode)
         return false;
 
@@ -147,17 +187,28 @@ void MediaControlsGtk::setMediaController(MediaControllerInterface* controller)
         m_durationDisplay->setMediaController(controller);
     if (m_enclosure)
         m_enclosure->setMediaController(controller);
+    if (m_closedCaptionsContainer)
+        m_closedCaptionsContainer->setMediaController(controller);
+    if (m_closedCaptionsTrackList)
+        m_closedCaptionsTrackList->setMediaController(controller);
 }
 
 void MediaControlsGtk::reset()
 {
-    Page* page = document()->page();
+    Page* page = document().page();
     if (!page)
         return;
 
-    float duration = m_mediaController->duration();
-    m_durationDisplay->setInnerText(page->theme()->formatMediaControlsTime(duration), ASSERT_NO_EXCEPTION);
+    double duration = m_mediaController->duration();
+    m_durationDisplay->setInnerText(page->theme().formatMediaControlsTime(duration), ASSERT_NO_EXCEPTION);
     m_durationDisplay->setCurrentValue(duration);
+
+    if (m_toggleClosedCaptionsButton) {
+        if (m_mediaController->hasClosedCaptions())
+            m_toggleClosedCaptionsButton->show();
+        else
+            m_toggleClosedCaptionsButton->hide();
+    }
 
     MediaControls::reset();
 }
@@ -172,10 +223,10 @@ void MediaControlsGtk::playbackStarted()
 
 void MediaControlsGtk::updateCurrentTimeDisplay()
 {
-    float now = m_mediaController->currentTime();
-    float duration = m_mediaController->duration();
+    double now = m_mediaController->currentTime();
+    double duration = m_mediaController->duration();
 
-    Page* page = document()->page();
+    Page* page = document().page();
     if (!page)
         return;
 
@@ -187,7 +238,7 @@ void MediaControlsGtk::updateCurrentTimeDisplay()
 
     // Allow the theme to format the time.
     ExceptionCode exceptionCode;
-    m_currentTimeDisplay->setInnerText(page->theme()->formatMediaControlsCurrentTime(now, duration), exceptionCode);
+    m_currentTimeDisplay->setInnerText(page->theme().formatMediaControlsCurrentTime(now, duration), exceptionCode);
     m_currentTimeDisplay->setCurrentValue(now);
 }
 
@@ -199,6 +250,17 @@ void MediaControlsGtk::changedMute()
         m_volumeSlider->setVolume(0);
     else
         m_volumeSlider->setVolume(m_mediaController->volume());
+}
+
+
+void MediaControlsGtk::makeTransparent()
+{
+    MediaControls::makeTransparent();
+
+    if (m_volumeSliderContainer)
+        m_volumeSliderContainer->hide();
+
+    hideClosedCaptionTrackList();
 }
 
 void MediaControlsGtk::showVolumeSlider()
@@ -223,12 +285,94 @@ void MediaControlsGtk::createTextTrackDisplay()
         m_textDisplayContainer->setMediaController(m_mediaController);
 
     // Insert it before the first controller element so it always displays behind the controls.
-    insertBefore(textDisplayContainer, m_enclosure, ASSERT_NO_EXCEPTION, true);
-    textDisplayContainer->createSubtrees(document());
-    textDisplayContainer.release();
+    insertBefore(textDisplayContainer.release(), m_enclosure, ASSERT_NO_EXCEPTION);
 }
 #endif
 
+void MediaControlsGtk::toggleClosedCaptionTrackList()
+{
+    if (!m_mediaController->hasClosedCaptions())
+        return;
+
+    if (!m_closedCaptionsContainer || !m_closedCaptionsTrackList)
+        return;
+
+    if (m_closedCaptionsContainer->isShowing()) {
+        hideClosedCaptionTrackList();
+        return;
+    }
+
+    m_closedCaptionsTrackList->updateDisplay();
+    showClosedCaptionTrackList();
 }
 
+void MediaControlsGtk::showClosedCaptionTrackList()
+{
+    m_volumeSliderContainer->hide();
+
+    if (!m_closedCaptionsContainer || m_closedCaptionsContainer->isShowing())
+        return;
+
+    m_closedCaptionsContainer->show();
+    m_panel->setInlineStyleProperty(CSSPropertyPointerEvents, CSSValueNone);
+
+    RefPtr<EventListener> listener = eventListener();
+
+    // Check for clicks outside the media-control
+    document().addEventListener(eventNames().clickEvent, listener, true);
+    // Check for clicks inside the media-control box
+    addEventListener(eventNames().clickEvent, listener, true);
+}
+
+void MediaControlsGtk::hideClosedCaptionTrackList()
+{
+    if (!m_closedCaptionsContainer || !m_closedCaptionsContainer->isShowing())
+        return;
+
+    m_closedCaptionsContainer->hide();
+    m_panel->removeInlineStyleProperty(CSSPropertyPointerEvents);
+
+    EventListener* listener = eventListener().get();
+
+    document().removeEventListener(eventNames().clickEvent, listener, true);
+    removeEventListener(eventNames().clickEvent, listener, true);
+}
+
+void MediaControlsGtk::handleClickEvent(Event *event)
+{
+    Node* currentTarget = event->currentTarget()->toNode();
+    Node* target = event->target()->toNode();
+
+    if ((currentTarget == &document() && !shadowHost()->contains(target))
+        || (currentTarget == this && !m_closedCaptionsContainer->contains(target))) {
+        hideClosedCaptionTrackList();
+        event->stopImmediatePropagation();
+        event->setDefaultHandled();
+    }
+}
+
+PassRefPtr<MediaControlsGtkEventListener> MediaControlsGtk::eventListener()
+{
+    if (!m_eventListener)
+        m_eventListener = MediaControlsGtkEventListener::create(this);
+
+    return m_eventListener;
+}
+
+void MediaControlsGtkEventListener::handleEvent(ScriptExecutionContext*, Event* event)
+{
+    if (event->type() == eventNames().clickEvent)
+        m_mediaControls->handleClickEvent(event);
+
+    return;
+}
+
+bool MediaControlsGtkEventListener::operator==(const EventListener& listener)
+{
+    if (const MediaControlsGtkEventListener* mediaControlsGtkEventListener = MediaControlsGtkEventListener::cast(&listener))
+        return m_mediaControls == mediaControlsGtkEventListener->m_mediaControls;
+    return false;
+}
+
+}
 #endif

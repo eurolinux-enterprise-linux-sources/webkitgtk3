@@ -39,7 +39,7 @@ typedef void* NPIdentifier;
 namespace WebCore {
     class HTTPHeaderMap;
     class IntRect;
-    class KURL;
+    class URL;
     class ProtectionSpace;
 }
 
@@ -106,6 +106,9 @@ public:
 
     // Returns the mach port of the compositing render server.
     virtual mach_port_t compositingRenderServerPort() = 0;
+
+    // Open the preference pane for this plug-in (as stated in the plug-in's Info.plist).
+    virtual void openPluginPreferencePane() = 0;
 #endif
 
     // Returns the contents scale factor.
@@ -145,6 +148,7 @@ public:
     // Create a plugin container for windowed plugins
     virtual uint64_t createPluginContainer() = 0;
     virtual void windowedPluginGeometryDidChange(const WebCore::IntRect& frameRect, const WebCore::IntRect& clipRect, uint64_t windowID) = 0;
+    virtual void windowedPluginVisibilityDidChange(bool isVisible, uint64_t windowID) = 0;
 #endif
 
     // Called when the a plug-in instance is successfully initialized, either synchronously or asynchronously.

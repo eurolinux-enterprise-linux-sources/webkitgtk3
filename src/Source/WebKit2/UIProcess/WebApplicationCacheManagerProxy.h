@@ -28,14 +28,13 @@
 
 #include "APIObject.h"
 #include "GenericCallback.h"
-#include "ImmutableArray.h"
 #include "MessageReceiver.h"
 #include "WebContextSupplement.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 
-namespace CoreIPC {
+namespace IPC {
     class Connection;
 }
 
@@ -46,10 +45,8 @@ struct SecurityOriginData;
 
 typedef GenericCallback<WKArrayRef> ArrayCallback;
 
-class WebApplicationCacheManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebApplicationCacheManagerProxy : public API::ObjectImpl<API::Object::Type::ApplicationCacheManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeApplicationCacheManager;
-
     static const char* supplementName();
 
     static PassRefPtr<WebApplicationCacheManagerProxy> create(WebContext*);
@@ -59,27 +56,25 @@ public:
     void deleteEntriesForOrigin(WebSecurityOrigin*);
     void deleteAllEntries();
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebApplicationCacheManagerProxy(WebContext*);
 
-    virtual Type type() const { return APIType; }
-
     void didGetApplicationCacheOrigins(const Vector<SecurityOriginData>&, uint64_t callbackID);
 
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual bool shouldTerminate(WebProcessProxy*) const OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual bool shouldTerminate(WebProcessProxy*) const override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
-    HashMap<uint64_t, RefPtr<ArrayCallback> > m_arrayCallbacks;
+    HashMap<uint64_t, RefPtr<ArrayCallback>> m_arrayCallbacks;
 };
 
 } // namespace WebKit

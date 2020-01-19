@@ -34,6 +34,7 @@
 #include "TextureMapperLayer.h"
 #include <WebCore/GLContext.h>
 #include <WebCore/GraphicsLayerClient.h>
+#include <wtf/HashMap.h>
 #include <wtf/OwnPtr.h>
 
 namespace WebKit {
@@ -58,19 +59,20 @@ protected:
     virtual void setRootCompositingLayer(WebCore::GraphicsLayer*);
     virtual void scheduleLayerFlush();
     virtual void setLayerFlushSchedulingEnabled(bool layerFlushingEnabled);
+    virtual void pageBackgroundTransparencyChanged() override;
 
 private:
     // LayerTreeHost.
     virtual const LayerTreeContext& layerTreeContext();
     virtual void setShouldNotifyAfterNextScheduledLayerFlush(bool);
 
-    virtual void setNonCompositedContentsNeedDisplay() OVERRIDE;
-    virtual void setNonCompositedContentsNeedDisplayInRect(const WebCore::IntRect&) OVERRIDE;
+    virtual void setNonCompositedContentsNeedDisplay() override;
+    virtual void setNonCompositedContentsNeedDisplayInRect(const WebCore::IntRect&) override;
     virtual void scrollNonCompositedContents(const WebCore::IntRect& scrollRect);
 
-    virtual void didInstallPageOverlay();
-    virtual void didUninstallPageOverlay();
-    virtual void setPageOverlayNeedsDisplay(const WebCore::IntRect&);
+    virtual void didInstallPageOverlay(PageOverlay*) override;
+    virtual void didUninstallPageOverlay(PageOverlay*) override;
+    virtual void setPageOverlayNeedsDisplay(PageOverlay*, const WebCore::IntRect&) override;
 
     virtual bool flushPendingLayerChanges();
 
@@ -80,8 +82,8 @@ private:
     virtual void paintContents(const WebCore::GraphicsLayer*, WebCore::GraphicsContext&, WebCore::GraphicsLayerPaintingPhase, const WebCore::IntRect& clipRect);
     virtual void didCommitChangesForLayer(const WebCore::GraphicsLayer*) const { }
 
-    void createPageOverlayLayer();
-    void destroyPageOverlayLayer();
+    void createPageOverlayLayer(PageOverlay*);
+    void destroyPageOverlayLayer(PageOverlay*);
 
     enum CompositePurpose { ForResize, NotForResize };
     void compositeLayersToContext(CompositePurpose = NotForResize);
@@ -97,11 +99,13 @@ private:
     LayerTreeContext m_layerTreeContext;
     bool m_isValid;
     bool m_notifyAfterScheduledLayerFlush;
-    OwnPtr<WebCore::GraphicsLayer> m_rootLayer;
-    OwnPtr<WebCore::GraphicsLayer> m_nonCompositedContentLayer;
-    OwnPtr<WebCore::GraphicsLayer> m_pageOverlayLayer;
+    std::unique_ptr<WebCore::GraphicsLayer> m_rootLayer;
+    std::unique_ptr<WebCore::GraphicsLayer> m_nonCompositedContentLayer;
+    typedef HashMap<PageOverlay*, std::unique_ptr<WebCore::GraphicsLayer>> PageOverlayLayerMap;
+    PageOverlayLayerMap m_pageOverlayLayers;
     OwnPtr<WebCore::TextureMapper> m_textureMapper;
     OwnPtr<WebCore::GLContext> m_context;
+    double m_lastFlushTime;
     bool m_layerFlushSchedulingEnabled;
     unsigned m_layerFlushTimerCallbackId;
 };

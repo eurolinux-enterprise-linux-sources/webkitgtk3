@@ -35,17 +35,17 @@ class NameInstance : public JSDestructibleObject {
 public:
     typedef JSDestructibleObject Base;
 
-    static const ClassInfo s_info;
+    DECLARE_INFO;
 
-    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
+    static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, globalObject, prototype, TypeInfo(NameInstanceType, StructureFlags), &s_info);
+        return Structure::create(vm, globalObject, prototype, TypeInfo(NameInstanceType, StructureFlags), info());
     }
 
-    static NameInstance* create(JSGlobalData& globalData, Structure* structure, JSString* nameString)
+    static NameInstance* create(VM& vm, Structure* structure, JSString* nameString)
     {
-        NameInstance* name = new (NotNull, allocateCell<NameInstance>(globalData.heap)) NameInstance(globalData, structure, nameString);
-        name->finishCreation(globalData);
+        NameInstance* name = new (NotNull, allocateCell<NameInstance>(vm.heap)) NameInstance(vm, structure, nameString);
+        name->finishCreation(vm);
         return name;
     }
 
@@ -55,12 +55,12 @@ public:
 protected:
     static void destroy(JSCell*);
 
-    NameInstance(JSGlobalData&, Structure*, JSString*);
+    NameInstance(VM&, Structure*, JSString*);
 
-    void finishCreation(JSGlobalData& globalData)
+    void finishCreation(VM& vm)
     {
-        Base::finishCreation(globalData);
-        ASSERT(inherits(&s_info));
+        Base::finishCreation(vm);
+        ASSERT(inherits(info()));
     }
 
     PrivateName m_privateName;

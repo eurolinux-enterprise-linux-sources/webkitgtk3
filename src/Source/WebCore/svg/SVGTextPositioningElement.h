@@ -33,11 +33,11 @@ public:
     static SVGTextPositioningElement* elementFromRenderer(RenderObject*);
 
 protected:
-    SVGTextPositioningElement(const QualifiedName&, Document*);
+    SVGTextPositioningElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextPositioningElement)
         DECLARE_ANIMATED_LENGTH_LIST(X, x)

@@ -42,13 +42,11 @@ namespace WebCore {
 
 class FileStreamClient;
 class FileStream;
-class FileThread;
-class KURL;
-class ScriptExecutionContext;
+class URL;
 
 class AsyncFileStream : public RefCounted<AsyncFileStream> {
 public:
-    static PassRefPtr<AsyncFileStream> create(ScriptExecutionContext*, FileStreamClient*);
+    static PassRefPtr<AsyncFileStream> create(FileStreamClient*);
     ~AsyncFileStream();
 
     void getSize(const String& path, double expectedModificationTime);
@@ -56,7 +54,7 @@ public:
     void openForWrite(const String& path);
     void close();
     void read(char* buffer, int length);
-    void write(const KURL& blobURL, long long position, int length);
+    void write(const URL& blobURL, long long position, int length);
     void truncate(long long position);
 
     // Stops the proxy and schedules it to be destructed. All the pending tasks will be aborted and the file stream will be closed.
@@ -67,9 +65,7 @@ public:
     void setClient(FileStreamClient* client) { m_client = client; }
 
 private:
-    AsyncFileStream(ScriptExecutionContext*, FileStreamClient*);
-
-    FileThread* fileThread();
+    AsyncFileStream(FileStreamClient*);
 
     // Called on File thread.
     void startOnFileThread();
@@ -79,10 +75,9 @@ private:
     void openForWriteOnFileThread(const String& path);
     void closeOnFileThread();
     void readOnFileThread(char* buffer, int length);
-    void writeOnFileThread(const KURL& blobURL, long long position, int length);
+    void writeOnFileThread(const URL& blobURL, long long position, int length);
     void truncateOnFileThread(long long position);
 
-    RefPtr<ScriptExecutionContext> m_context;
     RefPtr<FileStream> m_stream;
 
     FileStreamClient* m_client;

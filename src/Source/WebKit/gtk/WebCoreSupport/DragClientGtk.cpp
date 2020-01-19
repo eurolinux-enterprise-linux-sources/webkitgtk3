@@ -19,17 +19,20 @@
 #include "config.h"
 #include "DragClientGtk.h"
 
-#include "ClipboardGtk.h"
+#if ENABLE(DRAG_SUPPORT)
+
+#include "Clipboard.h"
 #include "ClipboardUtilitiesGtk.h"
 #include "DataObjectGtk.h"
 #include "Document.h"
 #include "DragController.h"
 #include "Element.h"
 #include "Frame.h"
-#include "GOwnPtrGtk.h"
 #include "GRefPtrGtk.h"
+#include "GUniquePtrGtk.h"
 #include "GtkVersioning.h"
 #include "NotImplemented.h"
+#include "Pasteboard.h"
 #include "PasteboardHelper.h"
 #include "RenderObject.h"
 #include "webkitwebframeprivate.h"
@@ -52,16 +55,16 @@ DragClient::~DragClient()
 {
 }
 
-void DragClient::willPerformDragDestinationAction(DragDestinationAction, DragData*)
+void DragClient::willPerformDragDestinationAction(DragDestinationAction, DragData&)
 {
 }
 
-void DragClient::willPerformDragSourceAction(DragSourceAction, const IntPoint& startPos, Clipboard*)
+void DragClient::willPerformDragSourceAction(DragSourceAction, const IntPoint& startPos, Clipboard&)
 {
     m_startPos = startPos;
 }
 
-DragDestinationAction DragClient::actionMaskForDrag(DragData*)
+DragDestinationAction DragClient::actionMaskForDrag(DragData&)
 {
     notImplemented();
     return DragDestinationActionAny;
@@ -73,16 +76,14 @@ DragSourceAction DragClient::dragSourceActionMaskForPoint(const IntPoint&)
     return DragSourceActionAny;
 }
 
-void DragClient::startDrag(DragImageRef image, const IntPoint& dragImageOrigin, const IntPoint& eventPos, Clipboard* clipboard, Frame* frame, bool linkDrag)
+void DragClient::startDrag(DragImageRef image, const IntPoint& dragImageOrigin, const IntPoint& eventPos, Clipboard& clipboard, Frame& frame, bool linkDrag)
 {
-    ClipboardGtk* clipboardGtk = reinterpret_cast<ClipboardGtk*>(clipboard);
-
-    WebKitWebView* webView = webkit_web_frame_get_web_view(kit(frame));
-    RefPtr<DataObjectGtk> dataObject = clipboardGtk->dataObject();
+    WebKitWebView* webView = webkit_web_frame_get_web_view(kit(&frame));
+    RefPtr<DataObjectGtk> dataObject = clipboard.pasteboard().dataObject();
     GRefPtr<GtkTargetList> targetList = adoptGRef(PasteboardHelper::defaultPasteboardHelper()->targetListForDataObject(dataObject.get()));
-    GOwnPtr<GdkEvent> currentEvent(gtk_get_current_event());
+    GUniquePtr<GdkEvent> currentEvent(gtk_get_current_event());
 
-    GdkDragContext* context = gtk_drag_begin(GTK_WIDGET(m_webView), targetList.get(), dragOperationToGdkDragActions(clipboard->sourceOperation()), 1, currentEvent.get());
+    GdkDragContext* context = gtk_drag_begin(GTK_WIDGET(m_webView), targetList.get(), dragOperationToGdkDragActions(clipboard.sourceOperation()), 1, currentEvent.get());
     webView->priv->dragAndDropHelper.startedDrag(context, dataObject.get());
 
     // A drag starting should prevent a double-click from happening. This might
@@ -101,3 +102,5 @@ void DragClient::dragControllerDestroyed()
     delete this;
 }
 }
+
+#endif // ENABLE(DRAG_SUPPORT)

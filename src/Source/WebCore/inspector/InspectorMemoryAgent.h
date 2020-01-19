@@ -33,50 +33,31 @@
 
 #if ENABLE(INSPECTOR)
 
-#include "InspectorBaseAgent.h"
-#include "InspectorFrontend.h"
+#include "InspectorWebAgentBase.h"
+#include "InspectorWebBackendDispatchers.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class InspectorClient;
 class InspectorDOMStorageAgent;
-class InspectorState;
 class InstrumentingAgents;
-class Page;
 
 typedef String ErrorString;
 
-class InspectorMemoryAgent : public InspectorBaseAgent<InspectorMemoryAgent>, public InspectorBackendDispatcher::MemoryCommandHandler {
+class InspectorMemoryAgent : public InspectorAgentBase, public Inspector::InspectorMemoryBackendDispatcherHandler {
     WTF_MAKE_NONCOPYABLE(InspectorMemoryAgent);
 public:
-    typedef Vector<OwnPtr<InspectorBaseAgentInterface> > InspectorAgents;
-
-    static PassOwnPtr<InspectorMemoryAgent> create(InstrumentingAgents* instrumentingAgents, InspectorClient* client, InspectorCompositeState* state, Page* page)
-    {
-        return adoptPtr(new InspectorMemoryAgent(instrumentingAgents, client, state, page));
-    }
+    explicit InspectorMemoryAgent(InstrumentingAgents*);
     virtual ~InspectorMemoryAgent();
 
-    virtual void getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners);
-    virtual void getProcessMemoryDistribution(ErrorString*, const bool* reportGraph, RefPtr<TypeBuilder::Memory::MemoryBlock>& out_processMemory, RefPtr<InspectorObject>& graphMetaInformation);
+    virtual void didCreateFrontendAndBackend(Inspector::InspectorFrontendChannel*, Inspector::InspectorBackendDispatcher*) override;
+    virtual void willDestroyFrontendAndBackend(Inspector::InspectorDisconnectReason) override;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
-    void getProcessMemoryDistributionMap(HashMap<String, size_t>* memoryInfo);
-
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
+    virtual void getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners) override;
 
 private:
-    InspectorMemoryAgent(InstrumentingAgents*, InspectorClient*, InspectorCompositeState*, Page*);
-
-    PassRefPtr<InspectorObject> getProcessMemoryDistributionImpl(bool reportGraph, HashMap<String, size_t>* memoryInfo);
-
-    InspectorClient* m_inspectorClient;
-    Page* m_page;
-    InspectorFrontend::Memory* m_frontend;
+    RefPtr<Inspector::InspectorMemoryBackendDispatcher> m_backendDispatcher;
 };
 
 } // namespace WebCore

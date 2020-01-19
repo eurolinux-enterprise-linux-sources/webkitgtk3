@@ -78,18 +78,19 @@ static void didReceiveMessageFromInjectedBundle(WKContextRef, WKStringRef messag
       finished = true;
 }
 
-TEST(WebKit2, DOMWindowExtensionNoCache)
+TEST(WebKit2, DISABLED_DOMWindowExtensionNoCache)
 {
     WKRetainPtr<WKPageGroupRef> pageGroup(AdoptWK, WKPageGroupCreateWithIdentifier(WKStringCreateWithUTF8CString("DOMWindowExtensionNoCachePageGroup")));
 
     WKRetainPtr<WKContextRef> context(AdoptWK, Util::createContextForInjectedBundleTest("DOMWindowExtensionNoCache", pageGroup.get()));
 
-    WKContextInjectedBundleClient injectedBundleClient;
+    WKContextInjectedBundleClientV1 injectedBundleClient;
     memset(&injectedBundleClient, 0, sizeof(injectedBundleClient));
-    injectedBundleClient.version = kWKContextInjectedBundleClientCurrentVersion;
-    injectedBundleClient.clientInfo = 0;
+
+    injectedBundleClient.base.version = 1;
     injectedBundleClient.didReceiveMessageFromInjectedBundle = didReceiveMessageFromInjectedBundle;
-    WKContextSetInjectedBundleClient(context.get(), &injectedBundleClient);
+
+    WKContextSetInjectedBundleClient(context.get(), &injectedBundleClient.base);
 
     // Disable the page cache.
     WKContextSetCacheModel(context.get(), kWKCacheModelDocumentViewer);

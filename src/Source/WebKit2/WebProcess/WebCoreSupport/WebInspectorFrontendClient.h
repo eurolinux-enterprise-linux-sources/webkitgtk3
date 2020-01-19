@@ -39,19 +39,23 @@ public:
     WebInspectorFrontendClient(WebPage* page, WebPage* inspectorPage);
 
 private:
-    virtual void frontendLoaded() OVERRIDE;
+    virtual String localizedStringsURL() override;
 
-    virtual String localizedStringsURL() OVERRIDE;
-    virtual String hiddenPanels() OVERRIDE;
+    virtual void bringToFront() override;
+    virtual void closeWindow() override;
 
-    virtual void bringToFront() OVERRIDE;
-    virtual void closeWindow() OVERRIDE;
+    virtual bool canSave() override;
+    virtual void save(const String&, const String&, bool base64Encoded, bool forceSaveAs) override;
+    virtual void append(const String&, const String&) override;
 
-    virtual void attachWindow() OVERRIDE;
-    virtual void detachWindow() OVERRIDE;
-    virtual void setAttachedWindowHeight(unsigned) OVERRIDE;
+    virtual void attachWindow(DockSide) override;
+    virtual void detachWindow() override;
 
-    virtual void inspectedURLChanged(const String&) OVERRIDE;
+    virtual void setAttachedWindowHeight(unsigned) override;
+    virtual void setAttachedWindowWidth(unsigned) override;
+    virtual void setToolbarHeight(unsigned) override;
+
+    virtual void inspectedURLChanged(const String&) override;
 
     WebPage* m_page;
 };

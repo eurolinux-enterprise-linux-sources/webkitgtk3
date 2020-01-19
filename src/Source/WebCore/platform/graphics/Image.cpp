@@ -34,11 +34,9 @@
 #include "IntRect.h"
 #include "Length.h"
 #include "MIMETypeRegistry.h"
-#include "PlatformMemoryInstrumentation.h"
 #include "SharedBuffer.h"
 #include <math.h>
 #include <wtf/MainThread.h>
-#include <wtf/MemoryObjectInfo.h>
 #include <wtf/StdLibExtras.h>
 
 #if USE(CG)
@@ -59,8 +57,8 @@ Image::~Image()
 Image* Image::nullImage()
 {
     ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(RefPtr<Image>, nullImage, (BitmapImage::create()));;
-    return nullImage.get();
+    static Image* nullImage = BitmapImage::create().leakRef();
+    return nullImage;
 }
 
 bool Image::supportsType(const String& type)
@@ -92,9 +90,9 @@ void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, 
     ctxt->setCompositeOperation(previousOperator);
 }
 
-void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode, RespectImageOrientationEnum)
+void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode, ImageOrientationDescription description)
 {
-    draw(ctx, dstRect, srcRect, styleColorSpace, op, blendMode);
+    draw(ctx, dstRect, srcRect, styleColorSpace, op, blendMode, description);
 }
 
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode)
@@ -104,10 +102,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         return;
     }
 
-    // See <https://webkit.org/b/59043>.
-#if !PLATFORM(WX)
     ASSERT(!isBitmapImage() || notSolidColor());
-#endif
 
     FloatSize intrinsicTileSize = size();
     if (hasRelativeWidth())
@@ -119,40 +114,120 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
                     scaledTileSize.height() / intrinsicTileSize.height());
 
     FloatRect oneTileRect;
-    oneTileRect.setX(destRect.x() + fmodf(fmodf(-srcPoint.x(), scaledTileSize.width()) - scaledTileSize.width(), scaledTileSize.width()));
-    oneTileRect.setY(destRect.y() + fmodf(fmodf(-srcPoint.y(), scaledTileSize.height()) - scaledTileSize.height(), scaledTileSize.height()));
+    FloatSize actualTileSize(scaledTileSize.width() + spaceSize().width(), scaledTileSize.height() + spaceSize().height());
+    oneTileRect.setX(destRect.x() + fmodf(fmodf(-srcPoint.x(), actualTileSize.width()) - actualTileSize.width(), actualTileSize.width()));
+    oneTileRect.setY(destRect.y() + fmodf(fmodf(-srcPoint.y(), actualTileSize.height()) - actualTileSize.height(), actualTileSize.height()));
     oneTileRect.setSize(scaledTileSize);
     
     // Check and see if a single draw of the image can cover the entire area we are supposed to tile.    
-    if (oneTileRect.contains(destRect)) {
+    if (oneTileRect.contains(destRect) && !ctxt->drawLuminanceMask()) {
         FloatRect visibleSrcRect;
         visibleSrcRect.setX((destRect.x() - oneTileRect.x()) / scale.width());
         visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
         visibleSrcRect.setWidth(destRect.width() / scale.width());
         visibleSrcRect.setHeight(destRect.height() / scale.height());
-        draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, blendMode);
+        draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, blendMode, ImageOrientationDescription());
         return;
     }
 
+#if PLATFORM(IOS)
+    // When using accelerated drawing on iOS, it's faster to stretch an image than to tile it.
+    if (ctxt->isAcceleratedContext()) {
+        if (size().width() == 1 && intersection(oneTileRect, destRect).height() == destRect.height()) {
+            FloatRect visibleSrcRect;
+            visibleSrcRect.setX(0);
+            visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
+            visibleSrcRect.setWidth(1);
+            visibleSrcRect.setHeight(destRect.height() / scale.height());
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, BlendModeNormal, ImageOrientationDescription());
+            return;
+        }
+        if (size().height() == 1 && intersection(oneTileRect, destRect).width() == destRect.width()) {
+            FloatRect visibleSrcRect;
+            visibleSrcRect.setX((destRect.x() - oneTileRect.x()) / scale.width());
+            visibleSrcRect.setY(0);
+            visibleSrcRect.setWidth(destRect.width() / scale.width());
+            visibleSrcRect.setHeight(1);
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, BlendModeNormal, ImageOrientationDescription());
+            return;
+        }
+    }
+#endif
+
+#if PLATFORM(IOS)
+    // CGPattern uses lots of memory got caching when the tile size is large (<rdar://problem/4691859>,
+    // <rdar://problem/6239505>). Memory consumption depends on the transformed tile size which can get
+    // larger than the original tile if user zooms in enough.
+    const float maxPatternTilePixels = 512 * 512;
+    FloatRect transformedTileSize = ctxt->getCTM().mapRect(FloatRect(FloatPoint(), scaledTileSize));
+    float transformedTileSizePixels = transformedTileSize.width() * transformedTileSize.height();
+    if (transformedTileSizePixels > maxPatternTilePixels) {
+        float fromY = (destRect.y() - oneTileRect.y()) / scale.height();
+        float toY = oneTileRect.y();
+        while (toY < CGRectGetMaxY(destRect)) {
+            float fromX = (destRect.x() - oneTileRect.x()) / scale.width();
+            float toX = oneTileRect.x();
+            while (toX < CGRectGetMaxX(destRect)) {
+                CGRect toRect = CGRectIntersection(destRect, CGRectMake(toX, toY, oneTileRect.width(), oneTileRect.height()));
+                CGRect fromRect = CGRectMake(fromX, fromY, toRect.size.width / scale.width(), toRect.size.height / scale.height());
+                draw(ctxt, toRect, fromRect, styleColorSpace, op, BlendModeNormal, ImageOrientationDescription());
+                toX += oneTileRect.width();
+                fromX = 0;
+            }
+            toY += oneTileRect.height();
+            fromY = 0;
+        }
+        return;
+    }
+#endif    
+
     AffineTransform patternTransform = AffineTransform().scaleNonUniform(scale.width(), scale.height());
-    FloatRect tileRect(FloatPoint(), intrinsicTileSize);    
+    FloatRect tileRect(FloatPoint(), intrinsicTileSize);
     drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), styleColorSpace, op, destRect, blendMode);
-    
+
+#if PLATFORM(IOS)
+    startAnimation(false);
+#else
     startAnimation();
+#endif
 }
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect,
-    const FloatPoint& patternPhase, const AffineTransform &patternTransform, ColorSpace styleColorSpace, CompositeOperator op)
+    const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator op)
 {    
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, dstRect, solidColor(), styleColorSpace, op);
         return;
     }
     
+    // FIXME: We do not support 'round' or 'space' yet. For now just map them to 'repeat'.
+    if (hRule == RoundTile || hRule == SpaceTile)
+        hRule = RepeatTile;
+    if (vRule == RoundTile || vRule == SpaceTile)
+        vRule = RepeatTile;
+
+    AffineTransform patternTransform = AffineTransform().scaleNonUniform(tileScaleFactor.width(), tileScaleFactor.height());
+
+    // We want to construct the phase such that the pattern is centered (when stretch is not
+    // set for a particular rule).
+    float hPhase = tileScaleFactor.width() * srcRect.x();
+    float vPhase = tileScaleFactor.height() * srcRect.y();
+    float scaledTileWidth = tileScaleFactor.width() * srcRect.width();
+    float scaledTileHeight = tileScaleFactor.height() * srcRect.height();
+    if (hRule == Image::RepeatTile)
+        hPhase -= (dstRect.width() - scaledTileWidth) / 2;
+    if (vRule == Image::RepeatTile)
+        vPhase -= (dstRect.height() - scaledTileHeight) / 2; 
+    FloatPoint patternPhase(dstRect.x() - hPhase, dstRect.y() - vPhase);
+    
     drawPattern(ctxt, srcRect, patternTransform, patternPhase, styleColorSpace, op, dstRect);
 
+#if PLATFORM(IOS)
+    startAnimation(false);
+#else
     startAnimation();
+#endif
 }
 
 #if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
@@ -177,14 +252,6 @@ void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsic
     intrinsicRatio = size();
     intrinsicWidth = Length(intrinsicRatio.width(), Fixed);
     intrinsicHeight = Length(intrinsicRatio.height(), Fixed);
-}
-
-void Image::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    memoryObjectInfo->setClassName("Image");
-    info.addMember(m_encodedImageData, "encodedImageData");
-    info.addWeakPointer(m_imageObserver);
 }
 
 }

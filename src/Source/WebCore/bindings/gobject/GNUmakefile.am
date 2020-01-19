@@ -1,8 +1,10 @@
 webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMAttr.cpp \
 	DerivedSources/webkitdom/WebKitDOMAttrPrivate.h \
-	DerivedSources/webkitdom/WebKitDOMBarInfo.cpp \
-	DerivedSources/webkitdom/WebKitDOMBarInfoPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMBarProp.cpp \
+	DerivedSources/webkitdom/WebKitDOMBarPropPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMBatteryManager.cpp \
+	DerivedSources/webkitdom/WebKitDOMBatteryManagerPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMBlob.cpp \
 	DerivedSources/webkitdom/WebKitDOMBlobPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMCDATASection.cpp \
@@ -175,8 +177,6 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMHTMLParamElementPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLPreElement.cpp \
 	DerivedSources/webkitdom/WebKitDOMHTMLPreElementPrivate.h \
-	DerivedSources/webkitdom/WebKitDOMHTMLPropertiesCollection.cpp \
-	DerivedSources/webkitdom/WebKitDOMHTMLPropertiesCollectionPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLQuoteElement.cpp \
 	DerivedSources/webkitdom/WebKitDOMHTMLQuoteElementPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLScriptElement.cpp \
@@ -203,20 +203,20 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMHTMLTitleElementPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLUListElement.cpp \
 	DerivedSources/webkitdom/WebKitDOMHTMLUListElementPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMKeyboardEvent.cpp \
+	DerivedSources/webkitdom/WebKitDOMKeyboardEventPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMLocation.cpp \
 	DerivedSources/webkitdom/WebKitDOMLocationPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMMediaController.cpp \
+	DerivedSources/webkitdom/WebKitDOMMediaControllerPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMMediaError.cpp \
 	DerivedSources/webkitdom/WebKitDOMMediaErrorPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMMediaList.cpp \
 	DerivedSources/webkitdom/WebKitDOMMediaListPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMMediaQueryList.cpp \
 	DerivedSources/webkitdom/WebKitDOMMediaQueryListPrivate.h \
-	DerivedSources/webkitdom/WebKitDOMMemoryInfo.cpp \
-	DerivedSources/webkitdom/WebKitDOMMemoryInfoPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMMessagePort.cpp \
 	DerivedSources/webkitdom/WebKitDOMMessagePortPrivate.h \
-	DerivedSources/webkitdom/WebKitDOMMicroDataItemValue.cpp \
-	DerivedSources/webkitdom/WebKitDOMMicroDataItemValuePrivate.h \
 	DerivedSources/webkitdom/WebKitDOMMouseEvent.cpp \
 	DerivedSources/webkitdom/WebKitDOMMouseEventPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMNamedNodeMap.cpp \
@@ -242,8 +242,6 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMPerformanceTimingPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMProcessingInstruction.cpp \
 	DerivedSources/webkitdom/WebKitDOMProcessingInstructionPrivate.h \
-	DerivedSources/webkitdom/WebKitDOMPropertyNodeList.cpp \
-	DerivedSources/webkitdom/WebKitDOMPropertyNodeListPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMRange.cpp \
 	DerivedSources/webkitdom/WebKitDOMRangePrivate.h \
 	DerivedSources/webkitdom/WebKitDOMScreen.cpp \
@@ -254,6 +252,8 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMStorageInfo.cpp \
 	DerivedSources/webkitdom/WebKitDOMStorageInfoPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMStoragePrivate.h \
+	DerivedSources/webkitdom/WebKitDOMStorageQuota.cpp \
+	DerivedSources/webkitdom/WebKitDOMStorageQuotaPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMStyleMedia.cpp \
 	DerivedSources/webkitdom/WebKitDOMStyleMediaPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMStyleSheet.cpp \
@@ -262,6 +262,8 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMStyleSheetPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMText.cpp \
 	DerivedSources/webkitdom/WebKitDOMTextPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMTouch.cpp \
+	DerivedSources/webkitdom/WebKitDOMTouchPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMTimeRanges.cpp \
 	DerivedSources/webkitdom/WebKitDOMTimeRangesPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMTreeWalker.cpp \
@@ -273,6 +275,8 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMWebKitPoint.cpp \
 	DerivedSources/webkitdom/WebKitDOMWebKitPointPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMWebKitNamedFlow.cpp \
+	DerivedSources/webkitdom/WebKitDOMWheelEvent.cpp \
+	DerivedSources/webkitdom/WebKitDOMWheelEventPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMXPathExpression.cpp \
 	DerivedSources/webkitdom/WebKitDOMXPathExpressionPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMXPathNSResolver.cpp \
@@ -281,11 +285,13 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMXPathResultPrivate.h
 
 webkitgtk_gdom_built_h_api += \
+	DerivedSources/webkitdom/WebKitDOMBatteryManager.h \
 	DerivedSources/webkitdom/WebKitDOMCSSRule.h \
 	DerivedSources/webkitdom/WebKitDOMCSSRuleList.h \
 	DerivedSources/webkitdom/WebKitDOMCSSStyleDeclaration.h \
 	DerivedSources/webkitdom/WebKitDOMCSSStyleSheet.h \
 	DerivedSources/webkitdom/WebKitDOMCSSValue.h \
+	DerivedSources/webkitdom/WebKitDOMMediaController.h \
 	DerivedSources/webkitdom/WebKitDOMMediaList.h \
 	DerivedSources/webkitdom/WebKitDOMMediaQueryList.h \
 	DerivedSources/webkitdom/WebKitDOMStyleMedia.h \
@@ -308,6 +314,7 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMElement.h \
 	DerivedSources/webkitdom/WebKitDOMEntityReference.h \
 	DerivedSources/webkitdom/WebKitDOMEvent.h \
+	DerivedSources/webkitdom/WebKitDOMKeyboardEvent.h \
 	DerivedSources/webkitdom/WebKitDOMMessagePort.h \
 	DerivedSources/webkitdom/WebKitDOMMouseEvent.h \
 	DerivedSources/webkitdom/WebKitDOMNamedNodeMap.h \
@@ -318,6 +325,7 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMProcessingInstruction.h \
 	DerivedSources/webkitdom/WebKitDOMRange.h \
 	DerivedSources/webkitdom/WebKitDOMText.h \
+	DerivedSources/webkitdom/WebKitDOMTouch.h \
 	DerivedSources/webkitdom/WebKitDOMTreeWalker.h \
 	DerivedSources/webkitdom/WebKitDOMUIEvent.h \
 	DerivedSources/webkitdom/WebKitDOMBlob.h \
@@ -374,7 +382,6 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMHTMLParagraphElement.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLParamElement.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLPreElement.h \
-	DerivedSources/webkitdom/WebKitDOMHTMLPropertiesCollection.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLQuoteElement.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLScriptElement.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLSelectElement.h \
@@ -392,20 +399,18 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMTimeRanges.h \
 	DerivedSources/webkitdom/WebKitDOMValidityState.h \
 	DerivedSources/webkitdom/WebKitDOMDOMApplicationCache.h \
-	DerivedSources/webkitdom/WebKitDOMBarInfo.h \
+	DerivedSources/webkitdom/WebKitDOMBarProp.h \
 	DerivedSources/webkitdom/WebKitDOMConsole.h \
 	DerivedSources/webkitdom/WebKitDOMCustom.h \
+	DerivedSources/webkitdom/WebKitDOMDeprecated.h \
 	DerivedSources/webkitdom/WebKitDOMDOMWindowCSS.h \
 	DerivedSources/webkitdom/WebKitDOMDOMWindow.h \
 	DerivedSources/webkitdom/WebKitDOMDOMSelection.h \
 	DerivedSources/webkitdom/WebKitDOMEventTarget.h \
 	DerivedSources/webkitdom/WebKitDOMHistory.h \
 	DerivedSources/webkitdom/WebKitDOMLocation.h \
-	DerivedSources/webkitdom/WebKitDOMMemoryInfo.h \
-	DerivedSources/webkitdom/WebKitDOMMicroDataItemValue.h \
 	DerivedSources/webkitdom/WebKitDOMObject.h \
 	DerivedSources/webkitdom/WebKitDOMNavigator.h \
-	DerivedSources/webkitdom/WebKitDOMPropertyNodeList.h \
 	DerivedSources/webkitdom/WebKitDOMScreen.h \
 	DerivedSources/webkitdom/WebKitDOMShadowRoot.h \
 	DerivedSources/webkitdom/WebKitDOMWebKitPoint.h \
@@ -417,6 +422,7 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMDatabase.h \
 	DerivedSources/webkitdom/WebKitDOMStorage.h \
 	DerivedSources/webkitdom/WebKitDOMStorageInfo.h \
+	DerivedSources/webkitdom/WebKitDOMStorageQuota.h \
 	DerivedSources/webkitdom/WebKitDOMXPathExpression.h \
 	DerivedSources/webkitdom/WebKitDOMXPathNSResolver.h \
 	DerivedSources/webkitdom/WebKitDOMXPathResult.h \
@@ -425,23 +431,31 @@ webkitgtk_gdom_built_h_api += \
 	DerivedSources/webkitdom/WebKitDOMPerformanceEntryList.h \
 	DerivedSources/webkitdom/WebKitDOMPerformanceNavigation.h \
 	DerivedSources/webkitdom/WebKitDOMPerformanceTiming.h \
+	DerivedSources/webkitdom/WebKitDOMWheelEvent.h \
 	DerivedSources/webkitdom/webkitdom.h \
 	DerivedSources/webkitdom/webkitdomdefines.h
 
 if ENABLE_VIDEO
 webkitgtk_gdom_built_h_api += \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMHTMLAudioElement.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMHTMLVideoElement.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMTextTrack.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMTextTrackList.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMTextTrackCue.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMTextTrackCueList.h \
-	$(top_builddir)/DerivedSources/webkitdom/WebKitDOMTrackEvent.h
+	DerivedSources/webkitdom/WebKitDOMAudioTrack.h \
+	DerivedSources/webkitdom/WebKitDOMAudioTrackList.h \
+	DerivedSources/webkitdom/WebKitDOMHTMLAudioElement.h \
+	DerivedSources/webkitdom/WebKitDOMHTMLVideoElement.h \
+	DerivedSources/webkitdom/WebKitDOMTextTrack.h \
+	DerivedSources/webkitdom/WebKitDOMTextTrackList.h \
+	DerivedSources/webkitdom/WebKitDOMTextTrackCue.h \
+	DerivedSources/webkitdom/WebKitDOMTextTrackCueList.h \
+	DerivedSources/webkitdom/WebKitDOMTrackEvent.h \
+	DerivedSources/webkitdom/WebKitDOMVideoPlaybackQuality.h \
+	DerivedSources/webkitdom/WebKitDOMVideoTrack.h \
+	DerivedSources/webkitdom/WebKitDOMVideoTrackList.h
 webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMHTMLAudioElement.cpp \
 	DerivedSources/webkitdom/WebKitDOMHTMLAudioElementPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMHTMLVideoElement.cpp \
 	DerivedSources/webkitdom/WebKitDOMHTMLVideoElementPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMAudioTrack.cpp \
+	DerivedSources/webkitdom/WebKitDOMAudioTrackList.cpp \
 	DerivedSources/webkitdom/WebKitDOMTextTrack.cpp \
 	DerivedSources/webkitdom/WebKitDOMTextTrackPrivate.h \
 	DerivedSources/webkitdom/WebKitDOMTextTrackList.cpp \
@@ -450,6 +464,9 @@ webkitgtk_gdom_built_sources += \
 	DerivedSources/webkitdom/WebKitDOMTextTrackCuePrivate.h \
 	DerivedSources/webkitdom/WebKitDOMTextTrackCueList.cpp \
 	DerivedSources/webkitdom/WebKitDOMTextTrackCueListPrivate.h \
+	DerivedSources/webkitdom/WebKitDOMVideoPlaybackQuality.cpp \
+	DerivedSources/webkitdom/WebKitDOMVideoTrack.cpp \
+	DerivedSources/webkitdom/WebKitDOMVideoTrackList.cpp \
 	DerivedSources/webkitdom/WebKitDOMTrackEvent.cpp \
 	DerivedSources/webkitdom/WebKitDOMTrackEventPrivate.h
 endif
@@ -459,12 +476,39 @@ BUILT_SOURCES += \
 	$(webkitgtk_gdom_built_sources)
 
 gdom_class_list := $(subst WebKitDOM,, $(filter-out %Private, $(basename $(notdir $(webkitgtk_gdom_built_sources)))))
-gdom_class_list += Custom EventTarget Object
+gdom_class_list += Custom EventTarget Object Deprecated
 DerivedSources/webkitdom/webkitdom.h: $(WebCore)/bindings/scripts/gobject-generate-headers.pl $(WebCore)/bindings/gobject/GNUmakefile.am
 	$(AM_V_GEN)echo $(gdom_class_list) | $(PERL) $< gdom > $@
 
 DerivedSources/webkitdom/webkitdomdefines.h: $(WebCore)/bindings/scripts/gobject-generate-headers.pl $(WebCore)/bindings/gobject/GNUmakefile.am
 	$(AM_V_GEN)echo $(gdom_class_list) | $(PERL) $< defines > $@
+
+gdom_symbol_files += $(patsubst %.h,%.symbols, $(filter DerivedSources/webkitdom/WebKitDOM%.h, $(webkitgtk_gdom_built_h_api)))
+
+$(top_builddir)/DerivedSources/webkitdom/WebKitDOMObject.symbols: $(WebCore)/bindings/gobject/WebKitDOMObject.symbols
+	$(AM_V_GEN)cp -f $< $@
+
+$(top_builddir)/DerivedSources/webkitdom/WebKitDOMEventTarget.symbols: $(WebCore)/bindings/gobject/WebKitDOMEventTarget.symbols
+	$(AM_V_GEN)cp -f $< $@
+
+$(top_builddir)/DerivedSources/webkitdom/WebKitDOMCustom.symbols: $(WebCore)/bindings/gobject/WebKitDOMCustom.symbols
+	$(AM_V_GEN)cp -f $< $@
+
+$(top_builddir)/DerivedSources/webkitdom/WebKitDOMDeprecated.symbols: $(WebCore)/bindings/gobject/WebKitDOMDeprecated.symbols
+	$(AM_V_GEN)cp -f $< $@
+
+DerivedSources/webkitdom/WebKitDOM%.symbols: DerivedSources/webkitdom/WebKitDOM%.h
+	@true
+
+EXTRA_DIST += \
+	$(WebCore)/bindings/gobject/WebKitDOMCustom.symbols \
+	$(WebCore)/bindings/gobject/WebKitDOMDeprecated.symbols \
+	$(WebCore)/bindings/gobject/WebKitDOMEventTarget.symbols \
+	$(WebCore)/bindings/gobject/WebKitDOMObject.symbols \
+	$(WebCore)/bindings/gobject/webkitdom.symbols
+
+CLEAN_FILES = \
+	$(gdom_symbol_files)
 
 # Because WebCore/bindings/gobject/WebKitDOMObject.h is static source but is also a distributed header
 # required by other distributed headers (both static and auto-generated), need to move this to the
@@ -483,22 +527,25 @@ $(top_builddir)/DerivedSources/webkitdom/WebKitDOMEventTargetPrivate.h: $(WebCor
 $(top_builddir)/DerivedSources/webkitdom/WebKitDOMCustom.h: $(WebCore)/bindings/gobject/WebKitDOMCustom.h
 	$(AM_V_GEN)cp -f $< $@
 
+$(top_builddir)/DerivedSources/webkitdom/WebKitDOMDeprecated.h: $(WebCore)/bindings/gobject/WebKitDOMDeprecated.h
+	$(AM_V_GEN)cp -f $< $@
+
 # Filter out SVG and IndexedDB for now
 gdom_feature_defines := $(filter-out ENABLE_INDEXED_DATABASE=1, $(filter-out ENABLE_SVG%, $(feature_defines))) ENABLE_INDEXED_DATABASE=0
 DerivedSources/webkitdom/WebKitDOM%.cpp DerivedSources/webkitdom/WebKitDOM%.h DerivedSources/webkitdom/WebKitDOM%Private.h: %.idl $(SCRIPTS_FOR_GENERATE_BINDINGS) $(WebCore)/bindings/scripts/CodeGeneratorGObject.pm $(WebCore)/bindings/gobject/GNUmakefile.am $(supplemental_dependency_file)
-	$(AM_V_GEN)$(PERL) -I$(WebCore)/bindings/scripts $(WebCore)/bindings/scripts/generate-bindings.pl --include $(WebCore)/dom --include $(WebCore)/html --include $(WebCore)/css --include $(WebCore)/page --include $(WebCore)/xml --include $(WebCore)/svg --outputDir "$(GENSOURCES_WEBKITDOM)" --defines "LANGUAGE_GOBJECT=1 $(gdom_feature_defines)" --generator GObject --supplementalDependencyFile $(supplemental_dependency_file) $<
+	$(AM_V_GEN)$(PERL) -I$(WebCore)/bindings/scripts $(WebCore)/bindings/scripts/generate-bindings.pl --include $(WebCore)/Modules --include $(WebCore)/dom --include $(WebCore)/html --include $(WebCore)/css --include $(WebCore)/page --include $(WebCore)/fileapi --include $(WebCore)/xml --include $(WebCore)/svg --outputDir "$(GENSOURCES_WEBKITDOM)" --defines "LANGUAGE_GOBJECT=1 $(gdom_feature_defines)" --generator GObject --supplementalDependencyFile $(supplemental_dependency_file) $<
 
 libwebkitdomincludedir = $(libwebkitgtkincludedir)/webkitdom
 nodist_libwebkitdominclude_HEADERS = \
 	$(webkitgtk_gdom_built_h_api)
 
 noinst_LTLIBRARIES += \
-	libWebCoreDOM.la
+	libGObjectDOMBindings.la
 
-nodist_libWebCoreDOM_la_SOURCES = \
+nodist_libGObjectDOMBindings_la_SOURCES = \
 	$(webkitgtk_gdom_built_sources)
 
-libWebCoreDOM_la_SOURCES = \
+libGObjectDOMBindings_la_SOURCES = \
 	Source/WebCore/bindings/gobject/ConvertToUTF8String.cpp \
 	Source/WebCore/bindings/gobject/ConvertToUTF8String.h \
 	Source/WebCore/bindings/gobject/DOMObjectCache.cpp \
@@ -507,6 +554,8 @@ libWebCoreDOM_la_SOURCES = \
 	Source/WebCore/bindings/gobject/GObjectEventListener.h \
 	Source/WebCore/bindings/gobject/WebKitDOMCustom.cpp \
 	Source/WebCore/bindings/gobject/WebKitDOMCustom.h \
+	Source/WebCore/bindings/gobject/WebKitDOMDeprecated.cpp \
+	Source/WebCore/bindings/gobject/WebKitDOMDeprecated.h \
 	Source/WebCore/bindings/gobject/WebKitDOMEventTarget.cpp \
 	Source/WebCore/bindings/gobject/WebKitDOMEventTarget.h \
 	Source/WebCore/bindings/gobject/WebKitDOMEventTargetPrivate.h \
@@ -517,21 +566,26 @@ libWebCoreDOM_la_SOURCES = \
 	Source/WebCore/bindings/gobject/WebKitDOMPrivate.cpp \
 	Source/WebCore/bindings/gobject/WebKitDOMPrivate.h
 
-libWebCoreDOM_la_CXXFLAGS = \
+libGObjectDOMBindings_la_CXXFLAGS = \
 	-fvisibility-inlines-hidden \
 	$(global_cxxflags)
 
-libWebCoreDOM_la_CFLAGS = \
+libGObjectDOMBindings_la_CFLAGS = \
 	-fvisibility=hidden \
 	$(global_cflags)
 
-libWebCoreDOM_la_CPPFLAGS = \
-	-DBUILDING_WebCore \
-	-DBUILDING_WEBKIT \
+webkitgtk_gdom_include_dirs = \
 	-I$(WebCore)/bindings \
 	-I$(WebCore)/bindings/gobject \
-	-I$(GENSOURCES_WEBKITDOM) \
+	-I$(GENSOURCES_WEBKITDOM)
+
+libGObjectDOMBindings_la_CPPFLAGS = \
+	-DBUILDING_WebCore \
+	-DBUILDING_WEBKIT \
+	$(webkitgtk_gdom_include_dirs) \
 	$(global_cppflags) \
+	$(platform_cppflags) \
+	$(platformgtk_cppflags) \
 	$(webcore_cppflags) \
 	$(webcoregtk_cppflags) \
 	$(javascriptcore_cppflags) \
@@ -539,3 +593,13 @@ libWebCoreDOM_la_CPPFLAGS = \
 	$(FREETYPE_CFLAGS) \
 	$(GLIB_CFLAGS) \
 	$(LIBSOUP_CFLAGS)
+
+gtkdoc-webkitdom.cfg: $(WebCore)/bindings/gobject/GNUmakefile.am $(srcdir)/Tools/gtk/GNUmakefile.am
+	$(AM_V_GEN)echo "[webkitdomgtk]" > $@ && \
+	echo "pkgconfig_file=$(webkitdom_pkgconfig_file)" >> $@ && \
+	echo "namespace=webkit_dom" >> $@ && \
+	echo "doc_dir=DerivedSources/webkitdom/docs" >> $@ && \
+	echo -e "cflags=-I$(srcdir)/Source $(webkitgtk_gdom_include_dirs)" >> $@ && \
+	echo "source_dirs=$(top_builddir)/DerivedSources/webkitdom $(srcdir)/Source/WebCore/bindings/gobject" >> $@ && \
+	echo "headers=$(webkitgtk_gdom_built_h_api) DerivedSources/webkitdom/WebKitDOMDeprecated.h" >> $@
+BUILT_SOURCES += gtkdoc-webkitdom.cfg

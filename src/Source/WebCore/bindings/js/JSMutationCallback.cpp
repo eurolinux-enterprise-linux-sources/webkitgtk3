@@ -27,9 +27,13 @@
 #include "config.h"
 #include "JSMutationCallback.h"
 
+#include "JSDOMGlobalObject.h"
+#include "JSMainThreadExecState.h"
+#include "JSMainThreadExecStateInstrumentation.h"
 #include "JSMutationObserver.h"
 #include "JSMutationRecord.h"
 #include "ScriptExecutionContext.h"
+#include <heap/WeakInlines.h>
 #include <runtime/JSLock.h>
 
 using namespace JSC;
@@ -38,8 +42,8 @@ namespace WebCore {
 
 JSMutationCallback::JSMutationCallback(JSObject* callback, JSDOMGlobalObject* globalObject)
     : ActiveDOMCallback(globalObject->scriptExecutionContext())
-    , m_callback(PassWeak<JSObject>(callback))
-    , m_isolatedWorld(globalObject->world())
+    , m_callback(callback)
+    , m_isolatedWorld(&globalObject->world())
 {
 }
 
@@ -47,39 +51,48 @@ JSMutationCallback::~JSMutationCallback()
 {
 }
 
-bool JSMutationCallback::handleEvent(MutationRecordArray* mutations, MutationObserver* observer)
+void JSMutationCallback::call(const Vector<RefPtr<MutationRecord>>& mutations, MutationObserver* observer)
 {
     if (!canInvokeCallback())
-        return true;
+        return;
 
-    RefPtr<JSMutationCallback> protect(this);
+    Ref<JSMutationCallback> protect(*this);
 
-    JSLockHolder lock(m_isolatedWorld->globalData());
+    JSLockHolder lock(m_isolatedWorld->vm());
 
     if (!m_callback)
-        return false;
+        return;
+
+    JSValue callback = m_callback.get();
+    CallData callData;
+    CallType callType = getCallData(callback, callData);
+    if (callType == CallTypeNone) {
+        ASSERT_NOT_REACHED();
+        return;
+    }
 
     ScriptExecutionContext* context = scriptExecutionContext();
     if (!context)
-        return false;
+        return;
+    ASSERT(context->isDocument());
 
-    JSDOMGlobalObject* globalObject = toJSDOMGlobalObject(context, m_isolatedWorld.get());
+    JSDOMGlobalObject* globalObject = toJSDOMGlobalObject(context, *m_isolatedWorld);
     ExecState* exec = globalObject->globalExec();
-
-    MarkedArgumentBuffer mutationList;
-    for (size_t i = 0; i < mutations->size(); ++i)
-        mutationList.append(toJS(exec, globalObject, mutations->at(i).get()));
 
     JSValue jsObserver = toJS(exec, globalObject, observer);
 
     MarkedArgumentBuffer args;
-    args.append(constructArray(exec, 0, globalObject, mutationList));
+    args.append(jsArray(exec, globalObject, mutations));
     args.append(jsObserver);
 
-    bool raisedException = false;
-    // FIXME: Extract invokeCallback() method.
-    JSCallbackData(m_callback.get(), globalObject).invokeCallback(jsObserver, args, &raisedException);
-    return !raisedException;
+    InspectorInstrumentationCookie cookie = JSMainThreadExecState::instrumentFunctionCall(context, callType, callData);
+
+    JSMainThreadExecState::call(exec, callback, callType, callData, jsObserver, args);
+
+    InspectorInstrumentation::didCallFunction(cookie);
+
+    if (exec->hadException())
+        reportCurrentException(exec);
 }
 
 } // namespace WebCore

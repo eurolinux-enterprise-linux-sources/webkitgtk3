@@ -36,14 +36,14 @@
 #include "Document.h"
 #include "Logging.h"
 #include "ResourceBuffer.h"
-#include "ResourceHandle.h"
 #include "ScriptCallStack.h"
 #include "SecurityOrigin.h"
+#include "TextTrackCue.h"
 #include "WebVTTParser.h"
 
 namespace WebCore {
     
-TextTrackLoader::TextTrackLoader(TextTrackLoaderClient* client, ScriptExecutionContext* context)
+TextTrackLoader::TextTrackLoader(TextTrackLoaderClient& client, ScriptExecutionContext* context)
     : m_client(client)
     , m_scriptExecutionContext(context)
     , m_cueLoadTimer(this, &TextTrackLoader::cueLoadTimerFired)
@@ -55,8 +55,8 @@ TextTrackLoader::TextTrackLoader(TextTrackLoaderClient* client, ScriptExecutionC
 
 TextTrackLoader::~TextTrackLoader()
 {
-    if (m_cachedCueData)
-        m_cachedCueData->removeClient(this);
+    if (m_resource)
+        m_resource->removeClient(this);
 }
 
 void TextTrackLoader::cueLoadTimerFired(Timer<TextTrackLoader>* timer)
@@ -65,24 +65,24 @@ void TextTrackLoader::cueLoadTimerFired(Timer<TextTrackLoader>* timer)
     
     if (m_newCuesAvailable) {
         m_newCuesAvailable = false;
-        m_client->newCuesAvailable(this); 
+        m_client.newCuesAvailable(this);
     }
     
     if (m_state >= Finished)
-        m_client->cueLoadingCompleted(this, m_state == Failed);
+        m_client.cueLoadingCompleted(this, m_state == Failed);
 }
 
 void TextTrackLoader::cancelLoad()
 {
-    if (m_cachedCueData) {
-        m_cachedCueData->removeClient(this);
-        m_cachedCueData = 0;
+    if (m_resource) {
+        m_resource->removeClient(this);
+        m_resource = nullptr;
     }
 }
 
 void TextTrackLoader::processNewCueData(CachedResource* resource)
 {
-    ASSERT(m_cachedCueData == resource);
+    ASSERT(m_resource == resource);
     
     if (m_state == Failed || !resource->resourceBuffer())
         return;
@@ -106,7 +106,7 @@ void TextTrackLoader::processNewCueData(CachedResource* resource)
 // FIXME: This is a very unusual pattern, no other CachedResourceClient does this. Refactor to use notifyFinished() instead.
 void TextTrackLoader::deprecatedDidReceiveCachedResource(CachedResource* resource)
 {
-    ASSERT(m_cachedCueData == resource);
+    ASSERT(m_resource == resource);
     
     if (!resource->resourceBuffer())
         return;
@@ -117,16 +117,16 @@ void TextTrackLoader::deprecatedDidReceiveCachedResource(CachedResource* resourc
 void TextTrackLoader::corsPolicyPreventedLoad()
 {
     DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Cross-origin text track load denied by Cross-Origin Resource Sharing policy.")));
-    Document* document = static_cast<Document*>(m_scriptExecutionContext);
-    document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, consoleMessage);
+    Document* document = toDocument(m_scriptExecutionContext);
+    document->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, consoleMessage);
     m_state = Failed;
 }
 
 void TextTrackLoader::notifyFinished(CachedResource* resource)
 {
-    ASSERT(m_cachedCueData == resource);
+    ASSERT(m_resource == resource);
 
-    Document* document = static_cast<Document*>(m_scriptExecutionContext);
+    Document* document = toDocument(m_scriptExecutionContext);
     if (!m_crossOriginMode.isNull()
         && !document->securityOrigin()->canRequest(resource->response().url())
         && !resource->passesAccessControlCheck(document->securityOrigin())) {
@@ -136,6 +136,8 @@ void TextTrackLoader::notifyFinished(CachedResource* resource)
 
     if (m_state != Failed) {
         processNewCueData(resource);
+        if (m_cueParser)
+            m_cueParser->fileFinished();
         if (m_state != Failed)
             m_state = resource->errorOccurred() ? Failed : Finished;
     }
@@ -146,15 +148,12 @@ void TextTrackLoader::notifyFinished(CachedResource* resource)
     cancelLoad();
 }
 
-bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
+bool TextTrackLoader::load(const URL& url, const String& crossOriginMode)
 {
     cancelLoad();
 
-    if (!m_client->shouldLoadCues(this))
-        return false;
-
     ASSERT(m_scriptExecutionContext->isDocument());
-    Document* document = static_cast<Document*>(m_scriptExecutionContext);
+    Document* document = toDocument(m_scriptExecutionContext);
     CachedResourceRequest cueRequest(ResourceRequest(document->completeURL(url)));
 
     if (!crossOriginMode.isNull()) {
@@ -170,11 +169,11 @@ bool TextTrackLoader::load(const KURL& url, const String& crossOriginMode)
     }
 
     CachedResourceLoader* cachedResourceLoader = document->cachedResourceLoader();
-    m_cachedCueData = cachedResourceLoader->requestTextTrack(cueRequest);
-    if (m_cachedCueData)
-        m_cachedCueData->addClient(this);
-    
-    m_client->cueLoadingStarted(this);
+    m_resource = cachedResourceLoader->requestTextTrack(cueRequest);
+    if (!m_resource)
+        return false;
+
+    m_resource->addClient(this);
     
     return true;
 }
@@ -188,6 +187,13 @@ void TextTrackLoader::newCuesParsed()
     m_cueLoadTimer.startOneShot(0);
 }
 
+#if ENABLE(WEBVTT_REGIONS)
+void TextTrackLoader::newRegionsParsed()
+{
+    m_client.newRegionsAvailable(this);
+}
+#endif
+
 void TextTrackLoader::fileFailedToParse()
 {
     LOG(Media, "TextTrackLoader::fileFailedToParse");
@@ -200,13 +206,30 @@ void TextTrackLoader::fileFailedToParse()
     cancelLoad();
 }
 
-void TextTrackLoader::getNewCues(Vector<RefPtr<TextTrackCue> >& outputCues)
+void TextTrackLoader::getNewCues(Vector<RefPtr<TextTrackCue>>& outputCues)
+{
+    ASSERT(m_cueParser);
+    if (m_cueParser) {
+        Vector<RefPtr<WebVTTCueData>> newCues;
+        m_cueParser->getNewCues(newCues);
+        for (size_t i = 0; i < newCues.size(); ++i) {
+            RefPtr<WebVTTCueData> data = newCues[i];
+            RefPtr<TextTrackCue> cue = TextTrackCue::create(*m_scriptExecutionContext, data->startTime(), data->endTime(), data->content());
+            cue->setId(data->id());
+            cue->setCueSettings(data->settings());
+            outputCues.append(cue);
+        }
+    }
+}
+
+#if ENABLE(WEBVTT_REGIONS)
+void TextTrackLoader::getNewRegions(Vector<RefPtr<TextTrackRegion>>& outputRegions)
 {
     ASSERT(m_cueParser);
     if (m_cueParser)
-        m_cueParser->getNewCues(outputCues);
+        m_cueParser->getNewRegions(outputRegions);
 }
-
+#endif
 }
 
 #endif

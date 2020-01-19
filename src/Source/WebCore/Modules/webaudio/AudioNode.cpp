@@ -33,10 +33,8 @@
 #include "AudioNodeOutput.h"
 #include "AudioParam.h"
 #include "ExceptionCode.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/Atomics.h>
 #include <wtf/MainThread.h>
-#include <wtf/MemoryInstrumentationVector.h>
 
 #if DEBUG_AUDIONODE_REFERENCES
 #include <stdio.h>
@@ -55,6 +53,9 @@ AudioNode::AudioNode(AudioContext* context, float sampleRate)
     , m_connectionRefCount(0)
     , m_isMarkedForDeletion(false)
     , m_isDisabled(false)
+    , m_channelCount(2)
+    , m_channelCountMode(Max)
+    , m_channelInterpretation(AudioBus::Speakers)
 {
 #if DEBUG_AUDIONODE_REFERENCES
     if (!s_isNodeCountInitialized) {
@@ -68,7 +69,7 @@ AudioNode::~AudioNode()
 {
 #if DEBUG_AUDIONODE_REFERENCES
     --s_nodeCount[nodeType()];
-    fprintf(stderr, "%p: %d: AudioNode::~AudioNode() %d %d\n", this, nodeType(), m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %d: AudioNode::~AudioNode() %d %d\n", this, nodeType(), m_normalRefCount.load(), m_connectionRefCount);
 #endif
 }
 
@@ -97,34 +98,34 @@ void AudioNode::lazyInitialize()
         initialize();
 }
 
-void AudioNode::addInput(PassOwnPtr<AudioNodeInput> input)
+void AudioNode::addInput(std::unique_ptr<AudioNodeInput> input)
 {
-    m_inputs.append(input);
+    m_inputs.append(std::move(input));
 }
 
-void AudioNode::addOutput(PassOwnPtr<AudioNodeOutput> output)
+void AudioNode::addOutput(std::unique_ptr<AudioNodeOutput> output)
 {
-    m_outputs.append(output);
+    m_outputs.append(std::move(output));
 }
 
 AudioNodeInput* AudioNode::input(unsigned i)
 {
     if (i < m_inputs.size())
         return m_inputs[i].get();
-    return 0;
+    return nullptr;
 }
 
 AudioNodeOutput* AudioNode::output(unsigned i)
 {
     if (i < m_outputs.size())
         return m_outputs[i].get();
-    return 0;
+    return nullptr;
 }
 
 void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned inputIndex, ExceptionCode& ec)
 {
     ASSERT(isMainThread()); 
-    AudioContext::AutoLocker locker(context());
+    AudioContext::AutoLocker locker(*context());
 
     if (!destination) {
         ec = SYNTAX_ERR;
@@ -158,7 +159,7 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
 void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionCode& ec)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AudioContext::AutoLocker locker(*context());
 
     if (!param) {
         ec = SYNTAX_ERR;
@@ -182,7 +183,7 @@ void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionCode& 
 void AudioNode::disconnect(unsigned outputIndex, ExceptionCode& ec)
 {
     ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(context());
+    AudioContext::AutoLocker locker(*context());
 
     // Sanity check input and output indices.
     if (outputIndex >= numberOfOutputs()) {
@@ -194,10 +195,105 @@ void AudioNode::disconnect(unsigned outputIndex, ExceptionCode& ec)
     output->disconnectAll();
 }
 
+unsigned long AudioNode::channelCount()
+{
+    return m_channelCount;
+}
+
+void AudioNode::setChannelCount(unsigned long channelCount, ExceptionCode& ec)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(*context());
+
+    if (channelCount > 0 && channelCount <= AudioContext::maxNumberOfChannels()) {
+        if (m_channelCount != channelCount) {
+            m_channelCount = channelCount;
+            if (m_channelCountMode != Max)
+                updateChannelsForInputs();
+        }
+    } else
+        ec = INVALID_STATE_ERR;
+}
+
+String AudioNode::channelCountMode()
+{
+    switch (m_channelCountMode) {
+    case Max:
+        return "max";
+    case ClampedMax:
+        return "clamped-max";
+    case Explicit:
+        return "explicit";
+    }
+    ASSERT_NOT_REACHED();
+    return "";
+}
+
+void AudioNode::setChannelCountMode(const String& mode, ExceptionCode& ec)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(*context());
+
+    ChannelCountMode oldMode = m_channelCountMode;
+
+    if (mode == "max")
+        m_channelCountMode = Max;
+    else if (mode == "clamped-max")
+        m_channelCountMode = ClampedMax;
+    else if (mode == "explicit")
+        m_channelCountMode = Explicit;
+    else
+        ec = INVALID_STATE_ERR;
+
+    if (m_channelCountMode != oldMode)
+        updateChannelsForInputs();
+}
+
+String AudioNode::channelInterpretation()
+{
+    switch (m_channelInterpretation) {
+    case AudioBus::Speakers:
+        return "speakers";
+    case AudioBus::Discrete:
+        return "discrete";
+    }
+    ASSERT_NOT_REACHED();
+    return "";
+}
+
+void AudioNode::setChannelInterpretation(const String& interpretation, ExceptionCode& ec)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(*context());
+
+    if (interpretation == "speakers")
+        m_channelInterpretation = AudioBus::Speakers;
+    else if (interpretation == "discrete")
+        m_channelInterpretation = AudioBus::Discrete;
+    else
+        ec = INVALID_STATE_ERR;
+}
+
+void AudioNode::updateChannelsForInputs()
+{
+    for (unsigned i = 0; i < m_inputs.size(); ++i)
+        input(i)->changedOutputs();
+}
+
+EventTargetInterface AudioNode::eventTargetInterface() const
+{
+    return AudioNodeEventTargetInterfaceType;
+}
+
+ScriptExecutionContext* AudioNode::scriptExecutionContext() const
+{
+    return const_cast<AudioNode*>(this)->context()->scriptExecutionContext();
+}
+
 void AudioNode::processIfNecessary(size_t framesToProcess)
 {
     ASSERT(context()->isAudioThread());
-    
+
     if (!isInitialized())
         return;
 
@@ -228,11 +324,14 @@ void AudioNode::checkNumberOfChannelsForInput(AudioNodeInput* input)
 {
     ASSERT(context()->isAudioThread() && context()->isGraphOwner());
 
-    ASSERT(m_inputs.contains(input));
-    if (!m_inputs.contains(input))
-        return;
+    for (const std::unique_ptr<AudioNodeInput>& savedInput : m_inputs) {
+        if (input == savedInput.get()) {
+            input->updateInternalBus();
+            return;
+        }
+    }
 
-    input->updateInternalBus();
+    ASSERT_NOT_REACHED();
 }
 
 bool AudioNode::propagatesSilence() const
@@ -274,7 +373,7 @@ void AudioNode::enableOutputsIfNecessary()
 {
     if (m_isDisabled && m_connectionRefCount > 0) {
         ASSERT(isMainThread());
-        AudioContext::AutoLocker locker(context());
+        AudioContext::AutoLocker locker(*context());
 
         m_isDisabled = false;
         for (unsigned i = 0; i < m_outputs.size(); ++i)
@@ -312,10 +411,10 @@ void AudioNode::ref(RefType refType)
 {
     switch (refType) {
     case RefTypeNormal:
-        atomicIncrement(&m_normalRefCount);
+        ++m_normalRefCount;
         break;
     case RefTypeConnection:
-        atomicIncrement(&m_connectionRefCount);
+        ++m_connectionRefCount;
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -374,11 +473,11 @@ void AudioNode::finishDeref(RefType refType)
     switch (refType) {
     case RefTypeNormal:
         ASSERT(m_normalRefCount > 0);
-        atomicDecrement(&m_normalRefCount);
+        --m_normalRefCount;
         break;
     case RefTypeConnection:
         ASSERT(m_connectionRefCount > 0);
-        atomicDecrement(&m_connectionRefCount);
+        --m_connectionRefCount;
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -402,14 +501,6 @@ void AudioNode::finishDeref(RefType refType)
         } else if (refType == RefTypeConnection)
             disableOutputsIfNecessary();
     }
-}
-
-void AudioNode::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::Audio);
-    info.addMember(m_context, "context");
-    info.addMember(m_inputs, "inputs");
-    info.addMember(m_outputs, "outputs");
 }
 
 #if DEBUG_AUDIONODE_REFERENCES

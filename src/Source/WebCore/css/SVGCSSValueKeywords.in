@@ -4,7 +4,7 @@
 // CSS_PROP_*_COLOR
 //
 aliceblue
-alpha
+// alpha
 antiquewhite
 // aqua
 aquamarine
@@ -89,7 +89,7 @@ lightyellow
 // lime
 limegreen
 linen
-luminance
+// luminance
 magenta
 // maroon
 mediumaquamarine
@@ -241,7 +241,6 @@ central
 text-before-edge
 text-after-edge
 ideographic
-alphabetic
 hanging
 mathematical
 
@@ -264,6 +263,11 @@ reset-size
 // start
 // middle
 // end
+
+// CSS_PROP_BUFFERED_RENDERING
+// auto
+// static
+dynamic
 
 // CSS_PROP_VECTOR_EFFECT
 // none

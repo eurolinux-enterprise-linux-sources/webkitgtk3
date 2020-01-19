@@ -26,6 +26,7 @@
 #ifndef WebGrammarDetail_h
 #define WebGrammarDetail_h
 
+#include "APIArray.h"
 #include "APIObject.h"
 #include <WebCore/TextCheckerClient.h>
 #include <wtf/Forward.h>
@@ -33,26 +34,21 @@
 
 namespace WebKit {
 
-class ImmutableArray;
-
-class WebGrammarDetail : public APIObject {
+class WebGrammarDetail : public API::ObjectImpl<API::Object::Type::GrammarDetail> {
 public:
-    static const Type APIType = TypeGrammarDetail;
-    static PassRefPtr<WebGrammarDetail> create(int location, int length, ImmutableArray* guesses, const String& userDescription);
+    static PassRefPtr<WebGrammarDetail> create(int location, int length, API::Array* guesses, const String& userDescription);
     static PassRefPtr<WebGrammarDetail> create(const WebCore::GrammarDetail&);
 
     int location() const { return m_grammarDetail.location; }
     int length() const { return m_grammarDetail.length; }
-    PassRefPtr<ImmutableArray> guesses() const;
+    PassRefPtr<API::Array> guesses() const;
     const String& userDescription() const { return m_grammarDetail.userDescription; }
 
     const WebCore::GrammarDetail& grammarDetail() { return m_grammarDetail; }
 
 private:
-    WebGrammarDetail(int location, int length, ImmutableArray* guesses, const String& userDescription);
+    WebGrammarDetail(int location, int length, API::Array* guesses, const String& userDescription);
     explicit WebGrammarDetail(const WebCore::GrammarDetail&);
-
-    virtual Type type() const { return APIType; }
 
     WebCore::GrammarDetail m_grammarDetail;
 };

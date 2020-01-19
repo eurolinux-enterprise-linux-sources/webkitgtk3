@@ -1,16 +1,31 @@
 # Use C99 as the language standard for C code.
-CFLAGS="$CFLAGS -std=c99"
-# Do not warn about C++11 incompatibilities.
-CXXFLAGS="$CXXFLAGS -Wno-c++11-compat"
+CFLAGS="$CFLAGS -pthread -std=c99"
+# Use the C++11 standard. Do not warn about C++11 incompatibilities.
+CXXFLAGS="$CXXFLAGS -pthread -std=c++11 -Wno-c++11-compat"
 
-# Clang requires suppression of unused arguments warning.
-if test "$CC" = "clang"; then
+# Clang requires suppression of unused arguments warnings.
+if test "$c_compiler" = "clang"; then
     CFLAGS="$CFLAGS -Qunused-arguments"
 fi
-# -Wno-c++11-extensions, currently only usable with Clang, suppresses warnings of C++11 extensions in use.
-# libstdc++ is at the moment the only option as the C++ standard library when compiling with Clang.
-if test "$CXX" = "clang++"; then
-    CXXFLAGS="$CXXFLAGS -Wno-c++11-extensions -stdlib=libstdc++ -Qunused-arguments"
+
+# Suppress unused arguments warnings for C++ files as well.
+if test "$cxx_compiler" = "clang++"; then
+    CXXFLAGS="$CXXFLAGS -Qunused-arguments"
+
+    # Default to libc++ as the standard library on Darwin, if it isn't already enforced through CXXFLAGS.
+    if test "$os_darwin" = "yes"; then
+        AS_CASE([$CXXFLAGS], [*-stdlib=*], [], [CXXFLAGS="$CXXFLAGS -stdlib=libc++"])
+    fi
+
+    # If Clang will be using libstdc++ as the standard library, version >= 4.8.1 should be in use.
+    AC_LANG_PUSH([C++])
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([
+#if defined(__GLIBCXX__) && __GLIBCXX__ >= 20130531
+#include <type_traits>
+bool libstdcxxTest = std::is_trivially_destructible<bool>::value;
+#endif
+])], [], [AC_MSG_ERROR([libstdc++ >= 4.8.1 is required as the standard library used with the Clang compiler.])])
+    AC_LANG_POP([C++])
 fi
 
 if test "$host_cpu" = "sh4"; then
@@ -31,7 +46,29 @@ fi
 if test "$enable_optimizations" = "yes"; then
     CXXFLAGS="$CXXFLAGS -O2"
     CFLAGS="$CFLAGS -O2"
+
+    if test "$c_compiler" = "gcc"; then
+        CFLAGS="$CFLAGS -D_FORTIFY_SOURCE=2"
+    fi
+    if test "$cxx_compiler" = "g++"; then
+        CXXFLAGS="$CXXFLAGS -D_FORTIFY_SOURCE=2"
+    fi
 else
     CXXFLAGS="$CXXFLAGS -O0"
     CFLAGS="$CFLAGS -O0"
+fi
+
+# Some architectures need to add libatomic explicitly
+AC_LANG_PUSH([C++])
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+#include <atomic>
+int main() {
+   std::atomic<int64_t> i(0);
+   i++;
+   return 0;
+}
+]])], has_atomic=yes, has_atomic=no)
+AC_LANG_POP([C++])
+if test "$has_atomic" = "no"; then
+   LIBS="$LIBS -latomic"
 fi

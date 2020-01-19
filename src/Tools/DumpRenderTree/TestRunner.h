@@ -30,7 +30,6 @@
 #define TestRunner_h
 
 #include <JavaScriptCore/JSObjectRef.h>
-#include <JavaScriptCore/JSRetainPtr.h>
 #include <map>
 #include <set>
 #include <string>
@@ -41,6 +40,13 @@
 class TestRunner : public RefCounted<TestRunner> {
 public:
     static PassRefPtr<TestRunner> create(const std::string& testPathOrURL, const std::string& expectedPixelHash);
+
+    static const unsigned viewWidth;
+    static const unsigned viewHeight;
+
+    static const unsigned w3cSVGViewWidth;
+    static const unsigned w3cSVGViewHeight;
+
     ~TestRunner();
 
     void makeWindowObject(JSContextRef, JSObjectRef windowObject, JSValueRef* exception);
@@ -66,7 +72,6 @@ public:
     long long applicationCacheDiskUsageForOrigin(JSStringRef name);
     bool isCommandEnabled(JSStringRef name);
     void keepWebHistory();
-    JSValueRef computedStyleIncludingVisitedInfo(JSContextRef, JSValueRef);
     void notifyDone();
     int numberOfPendingGeolocationPermissionRequests();
     void overridePreference(JSStringRef key, JSStringRef value);
@@ -84,9 +89,7 @@ public:
     void setAllowUniversalAccessFromFileURLs(bool);
     void setAllowFileAccessFromFileURLs(bool);
     void setAppCacheMaximumSize(unsigned long long quota);
-    void setApplicationCacheOriginQuota(unsigned long long);
     void setAuthorAndUserStylesEnabled(bool);
-    void setAutofilled(JSContextRef, JSValueRef nodeObject, bool autofilled);
     void setCacheModel(int);
     void setCustomPolicyDelegate(bool setDelegate, bool permissive);
     void setDatabaseQuota(unsigned long long quota);
@@ -105,8 +108,6 @@ public:
     void setPluginsEnabled(bool);
     void setPopupBlockingEnabled(bool);
     void setPrivateBrowsingEnabled(bool);
-    void setSelectTrailingWhitespaceEnabled(bool);
-    void setSmartInsertDeleteEnabled(bool);
     void setTabKeyCyclesThroughElements(bool);
     void setUseDashboardCompatibilityMode(bool flag);
     void setUserStyleSheetEnabled(bool flag);
@@ -117,15 +118,20 @@ public:
     void setSpatialNavigationEnabled(bool);
     void setScrollbarPolicy(JSStringRef orientation, JSStringRef policy);
     void startSpeechInput(JSContextRef inputElement);
+#if PLATFORM(IOS)
+    void setTelephoneNumberParsingEnabled(bool enable);
+    void setPagePaused(bool paused);
+#endif
+
     void setPageVisibility(const char*);
     void resetPageVisibility();
 
     void waitForPolicyDelegate();
     size_t webHistoryItemCount();
     int windowCount();
-    
-#if PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(WIN)
-    JSRetainPtr<JSStringRef> platformName() const;
+
+#if ENABLE(IOS_TEXT_AUTOSIZING)
+    void setTextAutosizingEnabled(bool);
 #endif
 
     // Legacy here refers to the old TestRunner API for handling web notifications, not the legacy web notification API.
@@ -136,8 +142,6 @@ public:
     void denyWebNotificationPermission(JSStringRef origin);
     void removeAllWebNotificationPermissions();
     void simulateWebNotificationClick(JSValueRef notification);
-
-    bool elementDoesAutoCompleteForElementWithId(JSStringRef id);
 
     bool dumpAsAudio() const { return m_dumpAsAudio; }
     void setDumpAsAudio(bool dumpAsAudio) { m_dumpAsAudio = dumpAsAudio; }
@@ -272,6 +276,12 @@ public:
     bool globalFlag() const { return m_globalFlag; }
     void setGlobalFlag(bool globalFlag) { m_globalFlag = globalFlag; }
     
+    double databaseDefaultQuota() const { return m_databaseDefaultQuota; }
+    void setDatabaseDefaultQuota(double quota) { m_databaseDefaultQuota = quota; }
+
+    double databaseMaxQuota() const { return m_databaseMaxQuota; }
+    void setDatabaseMaxQuota(double quota) { m_databaseMaxQuota = quota; }
+
     bool deferMainResourceDataLoad() const { return m_deferMainResourceDataLoad; }
     void setDeferMainResourceDataLoad(bool flag) { m_deferMainResourceDataLoad = flag; }
 
@@ -281,8 +291,8 @@ public:
     const std::string& testPathOrURL() const { return m_testPathOrURL; }
     const std::string& expectedPixelHash() const { return m_expectedPixelHash; }
 
-    const std::string& encodedAudioData() const { return m_encodedAudioData; }
-    void setEncodedAudioData(const std::string& encodedAudioData) { m_encodedAudioData = encodedAudioData; }
+    const std::vector<char>& audioResult() const { return m_audioResult; }
+    void setAudioResult(const std::vector<char>& audioData) { m_audioResult = audioData; }
 
     void addOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef destinationProtocol, JSStringRef destinationHost, bool allowDestinationSubdomains);
     void removeOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef destinationProtocol, JSStringRef destinationHost, bool allowDestinationSubdomains);
@@ -295,7 +305,6 @@ public:
     bool geolocationPermission() const { return m_geolocationPermission; }
 
     void setDeveloperExtrasEnabled(bool);
-    void setAsynchronousSpellCheckingEnabled(bool);
     void showWebInspector();
     void closeWebInspector();
     void evaluateInWebInspector(long callId, JSStringRef script);
@@ -327,8 +336,6 @@ public:
     // Simulate a request an embedding application could make, populating per-session credential storage.
     void authenticateSession(JSStringRef url, JSStringRef username, JSStringRef password);
 
-    JSRetainPtr<JSStringRef> markerTextForListItem(JSContextRef, JSValueRef nodeObject) const;
-
     JSValueRef originsWithLocalStorage(JSContextRef);
     void deleteAllLocalStorage();
     void deleteLocalStorageForOrigin(JSStringRef originIdentifier);
@@ -338,9 +345,6 @@ public:
 
     void setShouldPaintBrokenImage(bool);
     bool shouldPaintBrokenImage() const { return m_shouldPaintBrokenImage; }
-
-    static const unsigned maxViewWidth;
-    static const unsigned maxViewHeight;
 
     void setTextDirection(JSStringRef);
     const std::string& titleTextDirection() const { return m_titleTextDirection; }
@@ -412,6 +416,9 @@ private:
     bool m_customFullScreenBehavior;
     bool m_hasPendingWebNotificationClick;
 
+    double m_databaseDefaultQuota;
+    double m_databaseMaxQuota;
+
     std::string m_authenticationUsername;
     std::string m_authenticationPassword; 
     std::string m_testPathOrURL;
@@ -419,9 +426,8 @@ private:
     std::string m_titleTextDirection;
 
     std::set<std::string> m_willSendRequestClearHeaders;
-    
-    // base64 encoded WAV audio data is stored here.
-    std::string m_encodedAudioData;
+
+    std::vector<char> m_audioResult;
 
     std::map<std::string, std::string> m_URLsToRedirect;
     

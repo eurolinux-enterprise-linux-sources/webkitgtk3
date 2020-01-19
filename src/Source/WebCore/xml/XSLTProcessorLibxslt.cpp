@@ -27,18 +27,16 @@
 #include "XSLTProcessor.h"
 
 #include "CachedResourceLoader.h"
-#include "Console.h"
-#include "DOMWindow.h"
 #include "Document.h"
 #include "Frame.h"
+#include "Page.h"
+#include "PageConsole.h"
 #include "ResourceError.h"
-#include "ResourceHandle.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
 #include "SecurityOrigin.h"
 #include "TransformSource.h"
 #include "XMLDocumentParser.h"
-#include "XSLStyleSheet.h"
 #include "XSLTExtensions.h"
 #include "XSLTUnicodeSort.h"
 #include "markup.h"
@@ -48,7 +46,6 @@
 #include <libxslt/xsltutils.h>
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
-#include <wtf/text/CString.h>
 #include <wtf/text/StringBuffer.h>
 #include <wtf/unicode/UTF8.h>
 
@@ -82,14 +79,14 @@ void XSLTProcessor::genericErrorFunc(void*, const char*, ...)
 
 void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
 {
-    Console* console = static_cast<Console*>(userData);
+    PageConsole* console = static_cast<PageConsole*>(userData);
     if (!console)
         return;
 
     MessageLevel level;
     switch (error->level) {
     case XML_ERR_NONE:
-        level = TipMessageLevel;
+        level = DebugMessageLevel;
         break;
     case XML_ERR_WARNING:
         level = WarningMessageLevel;
@@ -101,7 +98,8 @@ void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
         break;
     }
 
-    console->addMessage(XMLMessageSource, level, error->message, error->file, error->line);
+    // xmlError->int2 is the column number of the error or 0 if N/A.
+    console->addMessage(XMLMessageSource, level, error->message, error->file, error->line, error->int2);
 }
 
 // FIXME: There seems to be no way to control the ctxt pointer for loading here, thus we have globals.
@@ -120,7 +118,7 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
     case XSLT_LOAD_DOCUMENT: {
         xsltTransformContextPtr context = (xsltTransformContextPtr)ctxt;
         xmlChar* base = xmlNodeGetBase(context->document->doc, context->node);
-        KURL url(KURL(ParsedURLString, reinterpret_cast<const char*>(base)), reinterpret_cast<const char*>(uri));
+        URL url(URL(ParsedURLString, reinterpret_cast<const char*>(base)), reinterpret_cast<const char*>(uri));
         xmlFree(base);
         ResourceError error;
         ResourceResponse response;
@@ -129,7 +127,7 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
 
         bool requestAllowed = globalCachedResourceLoader->frame() && globalCachedResourceLoader->document()->securityOrigin()->canRequest(url);
         if (requestAllowed) {
-            globalCachedResourceLoader->frame()->loader()->loadResourceSynchronously(url, AllowStoredCredentials, error, response, data);
+            globalCachedResourceLoader->frame()->loader().loadResourceSynchronously(url, AllowStoredCredentials, DoNotAskClientForCrossOriginCredentials, error, response, data);
             requestAllowed = globalCachedResourceLoader->document()->securityOrigin()->canRequest(response.url());
         }
         if (!requestAllowed) {
@@ -137,9 +135,10 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
             globalCachedResourceLoader->printAccessDeniedMessage(url);
         }
 
-        Console* console = 0;
-        if (globalProcessor->xslStylesheet()->ownerDocument()->frame())
-            console = globalProcessor->xslStylesheet()->ownerDocument()->domWindow()->console();
+        PageConsole* console = 0;
+        Frame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
+        if (frame && frame->page())
+            console = &frame->page()->console();
         xmlSetStructuredErrorFunc(console, XSLTProcessor::parseErrorFunc);
         xmlSetGenericErrorFunc(console, XSLTProcessor::genericErrorFunc);
 
@@ -250,12 +249,12 @@ static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStyl
 {
     if (!cachedStylesheet && stylesheetRootNode) {
         cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
-            stylesheetRootNode->document()->url().string(),
-            stylesheetRootNode->document()->url()); // FIXME: Should we use baseURL here?
+            stylesheetRootNode->document().url().string(),
+            stylesheetRootNode->document().url()); // FIXME: Should we use baseURL here?
 
         // According to Mozilla documentation, the node must be a Document node, an xsl:stylesheet or xsl:transform element.
         // But we just use text content regardless of node type.
-        cachedStylesheet->parseString(createMarkup(stylesheetRootNode));
+        cachedStylesheet->parseString(createMarkup(*stylesheetRootNode));
     }
 
     if (!cachedStylesheet || !cachedStylesheet->document())
@@ -264,10 +263,10 @@ static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStyl
     return cachedStylesheet->compileStyleSheet();
 }
 
-static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
+static inline xmlDocPtr xmlDocPtrFromNode(Node& sourceNode, bool& shouldDelete)
 {
-    RefPtr<Document> ownerDocument = sourceNode->document();
-    bool sourceIsDocument = (sourceNode == ownerDocument.get());
+    Ref<Document> ownerDocument(sourceNode.document());
+    bool sourceIsDocument = (&sourceNode == &ownerDocument.get());
 
     xmlDocPtr sourceDoc = 0;
     if (sourceIsDocument && ownerDocument->transformSource())
@@ -299,9 +298,9 @@ static inline String resultMIMEType(xmlDocPtr resultDoc, xsltStylesheetPtr sheet
     return "application/xml";
 }
 
-bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String& resultString, String& resultEncoding)
+bool XSLTProcessor::transformToString(Node& sourceNode, String& mimeType, String& resultString, String& resultEncoding)
 {
-    RefPtr<Document> ownerDocument = sourceNode->document();
+    Ref<Document> ownerDocument(sourceNode.document());
 
     setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->cachedResourceLoader());
     xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());

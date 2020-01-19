@@ -49,7 +49,7 @@ public:
     void observedSubtreeNodeWillDetach(Node*);
     void clearTransientRegistrations();
     bool hasTransientRegistrations() const { return m_transientRegistrationNodes && !m_transientRegistrationNodes->isEmpty(); }
-    void unregister();
+    static void unregisterAndDelete(MutationObserverRegistration*);
 
     bool shouldReceiveMutationFrom(Node*, MutationObserver::MutationType, const QualifiedName* attributeName) const;
     bool isSubtree() const { return m_options & MutationObserver::Subtree; }
@@ -66,7 +66,7 @@ private:
     RefPtr<MutationObserver> m_observer;
     Node* m_registrationNode;
     RefPtr<Node> m_registrationNodeKeepAlive;
-    typedef HashSet<RefPtr<Node> > NodeHashSet;
+    typedef HashSet<RefPtr<Node>> NodeHashSet;
     OwnPtr<NodeHashSet> m_transientRegistrationNodes;
 
     MutationObserverOptions m_options;

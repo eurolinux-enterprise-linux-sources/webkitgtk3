@@ -32,21 +32,25 @@
 #include "MathMLElement.h"
 
 #include "MathMLNames.h"
-#include "RenderObject.h"
 #include "RenderTableCell.h"
 
 namespace WebCore {
     
 using namespace MathMLNames;
     
-MathMLElement::MathMLElement(const QualifiedName& tagName, Document* document)
-    : StyledElement(tagName, document, CreateStyledElement)
+MathMLElement::MathMLElement(const QualifiedName& tagName, Document& document)
+    : StyledElement(tagName, document, CreateMathMLElement)
 {
 }
     
-PassRefPtr<MathMLElement> MathMLElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<MathMLElement> MathMLElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new MathMLElement(tagName, document));
+}
+
+bool MathMLElement::isPresentationMathML() const
+{
+    return hasTagName(MathMLNames::mtrTag) || hasTagName(MathMLNames::mtdTag) || hasTagName(MathMLNames::maligngroupTag) || hasTagName(MathMLNames::malignmarkTag) || hasTagName(MathMLNames::mencloseTag) || hasTagName(MathMLNames::mglyphTag) || hasTagName(MathMLNames::mlabeledtrTag) || hasTagName(MathMLNames::mlongdivTag) || hasTagName(MathMLNames::mpaddedTag) || hasTagName(MathMLNames::msTag) || hasTagName(MathMLNames::mscarriesTag) || hasTagName(MathMLNames::mscarryTag) || hasTagName(MathMLNames::msgroupTag) || hasTagName(MathMLNames::mslineTag) || hasTagName(MathMLNames::msrowTag) || hasTagName(MathMLNames::mstackTag);
 }
 
 int MathMLElement::colSpan() const
@@ -79,38 +83,63 @@ void MathMLElement::parseAttribute(const QualifiedName& name, const AtomicString
 
 bool MathMLElement::isPresentationAttribute(const QualifiedName& name) const
 {
-    if (name == mathbackgroundAttr || name == mathsizeAttr || name == mathcolorAttr || name == fontsizeAttr || name == backgroundAttr || name == colorAttr || name == fontstyleAttr || name == fontweightAttr || name == fontfamilyAttr)
+    if (name == backgroundAttr || name == colorAttr || name == dirAttr || name == fontfamilyAttr || name == fontsizeAttr || name == fontstyleAttr || name == fontweightAttr || name == mathbackgroundAttr || name == mathcolorAttr || name == mathsizeAttr)
         return true;
     return StyledElement::isPresentationAttribute(name);
 }
 
-void MathMLElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void MathMLElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == mathbackgroundAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundColor, attribute.value());
-    else if (attribute.name() == mathsizeAttr) {
+    if (name == mathbackgroundAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundColor, value);
+    else if (name == mathsizeAttr) {
         // The following three values of mathsize are handled in WebCore/css/mathml.css
-        if (attribute.value() != "normal" && attribute.value() != "small" && attribute.value() != "big")
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, attribute.value());
-    } else if (attribute.name() == mathcolorAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyColor, attribute.value());
+        if (value != "normal" && value != "small" && value != "big")
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, value);
+    } else if (name == mathcolorAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyColor, value);
     // FIXME: deprecated attributes that should loose in a conflict with a non deprecated attribute
-    else if (attribute.name() == fontsizeAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, attribute.value());
-    else if (attribute.name() == backgroundAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundColor, attribute.value());
-    else if (attribute.name() == colorAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyColor, attribute.value());
-    else if (attribute.name() == fontstyleAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontStyle, attribute.value());
-    else if (attribute.name() == fontweightAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontWeight, attribute.value());
-    else if (attribute.name() == fontfamilyAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontFamily, attribute.value());
-    else {
-        ASSERT(!isPresentationAttribute(attribute.name()));
-        StyledElement::collectStyleForPresentationAttribute(attribute, style);
+    else if (name == fontsizeAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, value);
+    else if (name == backgroundAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundColor, value);
+    else if (name == colorAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyColor, value);
+    else if (name == fontstyleAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontStyle, value);
+    else if (name == fontweightAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontWeight, value);
+    else if (name == fontfamilyAttr)
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyFontFamily, value);
+    else if (name == dirAttr) {
+        if (hasTagName(mathTag) || hasTagName(mrowTag) || hasTagName(mstyleTag) || isMathMLToken())
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyDirection, value);
+    }  else {
+        ASSERT(!isPresentationAttribute(name));
+        StyledElement::collectStyleForPresentationAttribute(name, value
+        , style);
     }
+}
+
+bool MathMLElement::childShouldCreateRenderer(const Node& child) const
+{
+    if (hasTagName(annotationTag))
+        return child.isTextNode();
+    if (hasTagName(annotation_xmlTag))
+        return StyledElement::childShouldCreateRenderer(child);
+
+    // Only create renderers for MathML elements or text. MathML prohibits non-MathML markup inside a <math> element.
+    return child.isTextNode() || child.isMathMLElement();
+}
+
+void MathMLElement::attributeChanged(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue, AttributeModificationReason reason)
+{
+    if (isSemanticAnnotation() && (name == MathMLNames::srcAttr || name == MathMLNames::encodingAttr)) {
+        Element* parent = parentElement();
+        if (parent && parent->isMathMLElement() && parent->hasTagName(semanticsTag))
+            toMathMLElement(parent)->updateSelectedChild();
+    }
+    StyledElement::attributeChanged(name, oldValue, newValue, reason);
 }
 
 }

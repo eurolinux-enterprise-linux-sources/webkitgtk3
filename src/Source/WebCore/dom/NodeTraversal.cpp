@@ -25,10 +25,60 @@
 #include "config.h"
 #include "NodeTraversal.h"
 
-#include "ContainerNode.h"
+#include "PseudoElement.h"
 
 namespace WebCore {
+
 namespace NodeTraversal {
+
+Node* previousIncludingPseudo(const Node* current, const Node* stayWithin)
+{
+    Node* previous;
+    if (current == stayWithin)
+        return 0;
+    if ((previous = current->pseudoAwarePreviousSibling())) {
+        while (previous->pseudoAwareLastChild())
+            previous = previous->pseudoAwareLastChild();
+        return previous;
+    }
+    return current->isPseudoElement() ? toPseudoElement(current)->hostElement() : current->parentNode();
+}
+
+Node* nextIncludingPseudo(const Node* current, const Node* stayWithin)
+{
+    Node* next;
+    if ((next = current->pseudoAwareFirstChild()))
+        return next;
+    if (current == stayWithin)
+        return 0;
+    if ((next = current->pseudoAwareNextSibling()))
+        return next;
+    current = current->isPseudoElement() ? toPseudoElement(current)->hostElement() : current->parentNode();
+    for (; current; current = current->parentNode()) {
+        if (current == stayWithin)
+            return 0;
+        if ((next = current->pseudoAwareNextSibling()))
+            return next;
+    }
+    return 0;
+}
+
+Node* nextIncludingPseudoSkippingChildren(const Node* current, const Node* stayWithin)
+{
+    Node* next;
+    if (current == stayWithin)
+        return 0;
+    if ((next = current->pseudoAwareNextSibling()))
+        return next;
+    current = current->isPseudoElement() ? toPseudoElement(current)->hostElement() : current->parentNode();
+    for (; current; current = current->parentNode()) {
+        if (current == stayWithin)
+            return 0;
+        if ((next = current->pseudoAwareNextSibling()))
+            return next;
+    }
+    return 0;
+}
 
 Node* nextAncestorSibling(const Node* current)
 {
@@ -53,17 +103,21 @@ Node* nextAncestorSibling(const Node* current, const Node* stayWithin)
     return 0;
 }
 
-Node* previous(const Node* current, const Node* stayWithin)
+Node* last(const ContainerNode* current)
 {
-    if (current == stayWithin)
-        return 0;
-    if (current->previousSibling()) {
-        Node* previous = current->previousSibling();
-        while (previous->lastChild())
-            previous = previous->lastChild();
-        return previous;
-    }
-    return current->parentNode();
+    Node* node = current->lastChild();
+    if (!node)
+        return nullptr;
+    while (node->lastChild())
+        node = node->lastChild();
+    return node;
+}
+
+Node* deepLastChild(Node* node)
+{
+    while (node->lastChild())
+        node = node->lastChild();
+    return node;
 }
 
 Node* previousSkippingChildren(const Node* current, const Node* stayWithin)

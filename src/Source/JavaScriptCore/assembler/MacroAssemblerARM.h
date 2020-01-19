@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc.
+ * Copyright (C) 2008, 2013 Apple Inc.
  * Copyright (C) 2009, 2010 University of Szeged
  * All rights reserved.
  *
@@ -58,6 +58,7 @@ public:
     enum ResultCondition {
         Overflow = ARMAssembler::VS,
         Signed = ARMAssembler::MI,
+        PositiveOrZero = ARMAssembler::PL,
         Zero = ARMAssembler::EQ,
         NonZero = ARMAssembler::NE
     };
@@ -80,6 +81,7 @@ public:
     };
 
     static const RegisterID stackPointerRegister = ARMRegisters::sp;
+    static const RegisterID framePointerRegister = ARMRegisters::fp;
     static const RegisterID linkRegister = ARMRegisters::lr;
 
     static const Scale ScalePtr = TimesFour;
@@ -150,6 +152,12 @@ public:
             m_assembler.bics(dest, src, w & ~ARMAssembler::Op2InvertedImmediate);
         else
             m_assembler.bitAnds(dest, src, w);
+    }
+
+    void and32(Address src, RegisterID dest)
+    {
+        load32(src, ARMRegisters::S1);
+        and32(ARMRegisters::S1, dest);
     }
 
     void lshift32(RegisterID shiftAmount, RegisterID dest)
@@ -356,6 +364,12 @@ public:
         m_assembler.baseIndexTransfer32(ARMAssembler::LoadUint8, dest, address.base, address.index, static_cast<int>(address.scale), address.offset);
     }
 
+    void load8(const void* address, RegisterID dest)
+    {
+        move(TrustedImmPtr(address), ARMRegisters::S0);
+        m_assembler.dataTransfer32(ARMAssembler::LoadUint8, dest, ARMRegisters::S0, 0);
+    }
+
     void load8Signed(BaseIndex address, RegisterID dest)
     {
         m_assembler.baseIndexTransfer16(ARMAssembler::LoadInt8, dest, address.base, address.index, static_cast<int>(address.scale), address.offset);
@@ -445,10 +459,16 @@ public:
         m_assembler.baseIndexTransfer32(ARMAssembler::StoreUint8, src, address.base, address.index, static_cast<int>(address.scale), address.offset);
     }
 
-    void store8(TrustedImm32 imm, void* address)
+    void store8(RegisterID src, const void* address)
+    {
+        move(TrustedImmPtr(address), ARMRegisters::S0);
+        m_assembler.dtrUp(ARMAssembler::StoreUint8, src, ARMRegisters::S0, 0);
+    }
+
+    void store8(TrustedImm32 imm, const void* address)
     {
         move(TrustedImm32(reinterpret_cast<ARMWord>(address)), ARMRegisters::S0);
-        m_assembler.moveImm(imm.m_value, ARMRegisters::S1);
+        move(imm, ARMRegisters::S1);
         m_assembler.dtrUp(ARMAssembler::StoreUint8, ARMRegisters::S1, ARMRegisters::S0, 0);
     }
 
@@ -479,13 +499,13 @@ public:
         m_assembler.baseIndexTransfer32(ARMAssembler::StoreUint32, ARMRegisters::S1, address.base, address.index, static_cast<int>(address.scale), address.offset);
     }
 
-    void store32(RegisterID src, void* address)
+    void store32(RegisterID src, const void* address)
     {
         m_assembler.ldrUniqueImmediate(ARMRegisters::S0, reinterpret_cast<ARMWord>(address));
         m_assembler.dtrUp(ARMAssembler::StoreUint32, src, ARMRegisters::S0, 0);
     }
 
-    void store32(TrustedImm32 imm, void* address)
+    void store32(TrustedImm32 imm, const void* address)
     {
         m_assembler.ldrUniqueImmediate(ARMRegisters::S0, reinterpret_cast<ARMWord>(address));
         m_assembler.moveImm(imm.m_value, ARMRegisters::S1);
@@ -532,9 +552,9 @@ public:
 
     void swap(RegisterID reg1, RegisterID reg2)
     {
-        m_assembler.mov(ARMRegisters::S0, reg1);
-        m_assembler.mov(reg1, reg2);
-        m_assembler.mov(reg2, ARMRegisters::S0);
+        xor32(reg1, reg2);
+        xor32(reg2, reg1);
+        xor32(reg1, reg2);
     }
 
     void signExtend32ToPtr(RegisterID src, RegisterID dest)
@@ -559,6 +579,13 @@ public:
     {
         ASSERT(!(right.m_value & 0xFFFFFF00));
         load8(left, ARMRegisters::S1);
+        return branch32(cond, ARMRegisters::S1, right);
+    }
+
+    Jump branch8(RelationalCondition cond, AbsoluteAddress left, TrustedImm32 right)
+    {
+        move(TrustedImmPtr(left.m_ptr), ARMRegisters::S1);
+        load8(Address(ARMRegisters::S1), ARMRegisters::S1);
         return branch32(cond, ARMRegisters::S1, right);
     }
 
@@ -605,6 +632,12 @@ public:
     }
 
     Jump branchTest8(ResultCondition cond, Address address, TrustedImm32 mask = TrustedImm32(-1))
+    {
+        load8(address, ARMRegisters::S1);
+        return branchTest32(cond, ARMRegisters::S1, mask);
+    }
+
+    Jump branchTest8(ResultCondition cond, BaseIndex address, TrustedImm32 mask = TrustedImm32(-1))
     {
         load8(address, ARMRegisters::S1);
         return branchTest32(cond, ARMRegisters::S1, mask);
@@ -673,47 +706,56 @@ public:
         m_assembler.vmov(dest1, dest2, src);
     }
 
-    void moveIntsToDouble(RegisterID src1, RegisterID src2, FPRegisterID dest, FPRegisterID scratch)
+    void moveIntsToDouble(RegisterID src1, RegisterID src2, FPRegisterID dest, FPRegisterID)
     {
-        UNUSED_PARAM(scratch);
         m_assembler.vmov(dest, src1, src2);
     }
 
     Jump branchAdd32(ResultCondition cond, RegisterID src, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero)
+            || (cond == NonZero) || (cond == PositiveOrZero));
         add32(src, dest);
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
     Jump branchAdd32(ResultCondition cond, RegisterID op1, RegisterID op2, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero)
+            || (cond == NonZero) || (cond == PositiveOrZero));
         add32(op1, op2, dest);
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
     Jump branchAdd32(ResultCondition cond, TrustedImm32 imm, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero)
+            || (cond == NonZero) || (cond == PositiveOrZero));
         add32(imm, dest);
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
     Jump branchAdd32(ResultCondition cond, RegisterID src, TrustedImm32 imm, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero)
+            || (cond == NonZero) || (cond == PositiveOrZero));
         add32(src, imm, dest);
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
     Jump branchAdd32(ResultCondition cond, TrustedImm32 imm, AbsoluteAddress dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero)
+            || (cond == NonZero) || (cond == PositiveOrZero));
         add32(imm, dest);
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
+    Jump branchAdd32(ResultCondition cond, Address src, RegisterID dest)
+    {
+        load32(src, ARMRegisters::S0);
+        return branchAdd32(cond, dest, ARMRegisters::S0, dest);
+    }
     void mull32(RegisterID op1, RegisterID op2, RegisterID dest)
     {
         if (op2 == dest) {
@@ -803,6 +845,11 @@ public:
         return Jump(m_assembler.jmp(ARMCondition(cond)));
     }
 
+    PatchableJump patchableJump()
+    {
+        return PatchableJump(m_assembler.jmp(ARMAssembler::AL, 1));
+    }
+
     PatchableJump patchableBranch32(RelationalCondition cond, RegisterID reg, TrustedImm32 imm)
     {
         internalCompare32(reg, imm);
@@ -886,11 +933,9 @@ public:
 
     void add32(TrustedImm32 imm, AbsoluteAddress address)
     {
-        m_assembler.ldrUniqueImmediate(ARMRegisters::S1, reinterpret_cast<ARMWord>(address.m_ptr));
-        m_assembler.dtrUp(ARMAssembler::LoadUint32, ARMRegisters::S1, ARMRegisters::S1, 0);
+        load32(address.m_ptr, ARMRegisters::S1);
         add32(imm, ARMRegisters::S1);
-        m_assembler.ldrUniqueImmediate(ARMRegisters::S0, reinterpret_cast<ARMWord>(address.m_ptr));
-        m_assembler.dtrUp(ARMAssembler::StoreUint32, ARMRegisters::S1, ARMRegisters::S0, 0);
+        store32(ARMRegisters::S1, address.m_ptr);
     }
 
     void add64(TrustedImm32 imm, AbsoluteAddress address)
@@ -920,11 +965,9 @@ public:
 
     void sub32(TrustedImm32 imm, AbsoluteAddress address)
     {
-        m_assembler.ldrUniqueImmediate(ARMRegisters::S1, reinterpret_cast<ARMWord>(address.m_ptr));
-        m_assembler.dtrUp(ARMAssembler::LoadUint32, ARMRegisters::S1, ARMRegisters::S1, 0);
+        load32(address.m_ptr, ARMRegisters::S1);
         sub32(imm, ARMRegisters::S1);
-        m_assembler.ldrUniqueImmediate(ARMRegisters::S0, reinterpret_cast<ARMWord>(address.m_ptr));
-        m_assembler.dtrUp(ARMAssembler::StoreUint32, ARMRegisters::S1, ARMRegisters::S0, 0);
+        store32(ARMRegisters::S1, address.m_ptr);
     }
 
     void load32(const void* address, RegisterID dest)
@@ -1242,7 +1285,7 @@ public:
     // If the result is not representable as a 32 bit value, branch.
     // May also branch for some values that are representable in 32 bits
     // (specifically, in this case, 0).
-    void branchConvertDoubleToInt32(FPRegisterID src, RegisterID dest, JumpList& failureCases, FPRegisterID fpTemp)
+    void branchConvertDoubleToInt32(FPRegisterID src, RegisterID dest, JumpList& failureCases, FPRegisterID, bool negZeroCheck = true)
     {
         m_assembler.vcvt_s32_f64(ARMRegisters::SD0 << 1, src);
         m_assembler.vmov_arm32(dest, ARMRegisters::SD0 << 1);
@@ -1252,7 +1295,8 @@ public:
         failureCases.append(branchDouble(DoubleNotEqualOrUnordered, src, ARMRegisters::SD0));
 
         // If the result is zero, it might have been -0.0, and 0.0 equals to -0.0
-        failureCases.append(branchTest32(Zero, dest));
+        if (negZeroCheck)
+            failureCases.append(branchTest32(Zero, dest));
     }
 
     Jump branchDoubleNonZero(FPRegisterID reg, FPRegisterID scratch)
@@ -1279,6 +1323,11 @@ public:
     void nop()
     {
         m_assembler.nop();
+    }
+
+    void memoryFence()
+    {
+        m_assembler.dmbSY();
     }
 
     static FunctionPtr readCallTarget(CodeLocationCall call)
@@ -1315,10 +1364,36 @@ public:
         ARMAssembler::revertBranchPtrWithPatch(instructionStart.dataLocation(), reg, reinterpret_cast<uintptr_t>(initialValue) & 0xffff);
     }
 
-    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel instructionStart, Address, void* initialValue)
+    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel, Address, void*)
     {
         UNREACHABLE_FOR_PLATFORM();
     }
+
+#if USE(MASM_PROBE)
+    struct CPUState {
+        #define DECLARE_REGISTER(_type, _regName) \
+            _type _regName;
+        FOR_EACH_CPU_REGISTER(DECLARE_REGISTER)
+        #undef DECLARE_REGISTER
+    };
+
+    struct ProbeContext;
+    typedef void (*ProbeFunction)(struct ProbeContext*);
+
+    struct ProbeContext {
+        ProbeFunction probeFunction;
+        void* arg1;
+        void* arg2;
+        CPUState cpu;
+
+        void dump(const char* indentation = 0);
+    private:
+        void dumpCPURegisters(const char* indentation);
+    };
+
+    // For details about probe(), see comment in MacroAssemblerX86_64.h.
+    void probe(ProbeFunction, void* arg1 = 0, void* arg2 = 0);
+#endif // USE(MASM_PROBE)
 
 protected:
     ARMAssembler::Condition ARMCondition(RelationalCondition cond)
@@ -1374,6 +1449,23 @@ private:
     {
         ARMAssembler::relinkCall(call.dataLocation(), destination.executableAddress());
     }
+
+#if USE(MASM_PROBE)
+    inline TrustedImm32 trustedImm32FromPtr(void* ptr)
+    {
+        return TrustedImm32(TrustedImmPtr(ptr));
+    }
+
+    inline TrustedImm32 trustedImm32FromPtr(ProbeFunction function)
+    {
+        return TrustedImm32(TrustedImmPtr(reinterpret_cast<void*>(function)));
+    }
+
+    inline TrustedImm32 trustedImm32FromPtr(void (*function)())
+    {
+        return TrustedImm32(TrustedImmPtr(reinterpret_cast<void*>(function)));
+    }
+#endif
 
     static const bool s_isVFPPresent;
 };

@@ -30,6 +30,7 @@
 #include "CachedResourceHandle.h"
 #include <wtf/text/TextPosition.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
@@ -93,7 +94,7 @@ public:
     CachedScript* cachedScript() const;
     void setCachedScript(CachedScript*);
 
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(CachedResource*) override;
 
 private:
     bool m_watchingForLoad;

@@ -54,7 +54,10 @@ public:
         const AtomicString m_namespace;
         mutable AtomicString m_localNameUpper;
 
-        void reportMemoryUsage(MemoryObjectInfo*) const;
+#if ENABLE(CSS_SELECTOR_JIT)
+        static ptrdiff_t localNameMemoryOffset() { return OBJECT_OFFSETOF(QualifiedNameImpl, m_localName); }
+        static ptrdiff_t namespaceMemoryOffset() { return OBJECT_OFFSETOF(QualifiedNameImpl, m_namespace); }
+#endif // ENABLE(CSS_SELECTOR_JIT)
 
     private:
         QualifiedNameImpl(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI)
@@ -68,7 +71,7 @@ public:
     };
 
     QualifiedName(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI);
-    QualifiedName(WTF::HashTableDeletedValueType) : m_impl(hashTableDeletedValue()) { }
+    explicit QualifiedName(WTF::HashTableDeletedValueType) : m_impl(hashTableDeletedValue()) { }
     bool isHashTableDeletedValue() const { return m_impl == hashTableDeletedValue(); }
     ~QualifiedName();
 #ifdef QNAME_DEFAULT_CONSTRUCTOR
@@ -83,6 +86,8 @@ public:
 
     bool matches(const QualifiedName& other) const { return m_impl == other.m_impl || (localName() == other.localName() && namespaceURI() == other.namespaceURI()); }
 
+    bool matchesIgnoringCaseForLocalName(const QualifiedName& other, bool shouldIgnoreCase) const { return m_impl == other.m_impl || (equalPossiblyIgnoringCase(localName(), other.localName(), shouldIgnoreCase) && namespaceURI() == other.namespaceURI()); }
+
     bool hasPrefix() const { return m_impl->m_prefix != nullAtom; }
     void setPrefix(const AtomicString& prefix) { *this = QualifiedName(prefix, localName(), namespaceURI()); }
 
@@ -96,11 +101,12 @@ public:
     String toString() const;
 
     QualifiedNameImpl* impl() const { return m_impl; }
+#if ENABLE(CSS_SELECTOR_JIT)
+    static ptrdiff_t implMemoryOffset() { return OBJECT_OFFSETOF(QualifiedName, m_impl); }
+#endif // ENABLE(CSS_SELECTOR_JIT)
     
     // Init routine for globals
     static void init();
-    
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     void ref() const { m_impl->ref(); }
@@ -144,8 +150,8 @@ struct QualifiedNameHash {
     static const bool safeToCompareToEmptyOrDeleted = false;
 };
 
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength);
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength, const AtomicString& nameNamespace);
+void createQualifiedName(void* targetAddress, StringImpl* name);
+void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace);
 
 }
 

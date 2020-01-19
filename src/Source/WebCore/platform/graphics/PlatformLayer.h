@@ -31,30 +31,18 @@
 #if PLATFORM(MAC)
 OBJC_CLASS CALayer;
 typedef CALayer PlatformLayer;
-#elif PLATFORM(WIN)
+#elif PLATFORM(WIN) && USE(CA)
 typedef struct _CACFLayer PlatformLayer;
-#elif PLATFORM(QT)
+#elif PLATFORM(WIN) && USE(TEXTURE_MAPPER)
 namespace WebCore {
 class TextureMapperPlatformLayer;
 typedef TextureMapperPlatformLayer PlatformLayer;
 };
-#elif PLATFORM(CHROMIUM)
-namespace WebKit {
-class WebLayer;
-}
-namespace WebCore {
-typedef WebKit::WebLayer PlatformLayer;
-}
 #elif PLATFORM(GTK)
-#if USE(TEXTURE_MAPPER_CAIRO) || USE(TEXTURE_MAPPER_GL)
+#if USE(TEXTURE_MAPPER_GL)
 namespace WebCore {
 class TextureMapperPlatformLayer;
 typedef TextureMapperPlatformLayer PlatformLayer;
-};
-#elif USE(CLUTTER)
-typedef struct _ClutterActor ClutterActor;
-namespace WebCore {
-typedef ClutterActor PlatformLayer;
 };
 #endif
 #elif PLATFORM(EFL)
@@ -63,7 +51,7 @@ namespace WebCore {
 class TextureMapperPlatformLayer;
 typedef TextureMapperPlatformLayer PlatformLayer;
 };
-#endif
+#endif // USE(TEXTURE_MAPPER)
 #else
 typedef void* PlatformLayer;
 #endif

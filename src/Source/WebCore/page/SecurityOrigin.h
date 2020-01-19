@@ -34,8 +34,7 @@
 
 namespace WebCore {
 
-class Document;
-class KURL;
+class URL;
 
 class SecurityOrigin : public ThreadSafeRefCounted<SecurityOrigin> {
 public:
@@ -51,7 +50,7 @@ public:
         BlockAllStorage
     };
 
-    static PassRefPtr<SecurityOrigin> create(const KURL&);
+    static PassRefPtr<SecurityOrigin> create(const URL&);
     static PassRefPtr<SecurityOrigin> createUnique();
 
     static PassRefPtr<SecurityOrigin> createFromDatabaseIdentifier(const String&);
@@ -68,8 +67,8 @@ public:
     // Generally, we add URL schemes to this list when WebKit support them. For
     // example, we don't include the "jar" scheme, even though Firefox
     // understands that "jar" uses an inner URL for it's security origin.
-    static bool shouldUseInnerURL(const KURL&);
-    static KURL extractInnerURL(const KURL&);
+    static bool shouldUseInnerURL(const URL&);
+    static URL extractInnerURL(const URL&);
 
     // Create a deep copy of this SecurityOrigin. This method is useful
     // when marshalling a SecurityOrigin to another thread.
@@ -89,7 +88,7 @@ public:
     // Returns true if a given URL is secure, based either directly on its
     // own protocol, or, when relevant, on the protocol of its "inner URL"
     // Protocols like blob: and filesystem: fall into this latter category.
-    static bool isSecure(const KURL&);
+    static bool isSecure(const URL&);
 
     // Returns true if this SecurityOrigin can script objects in the given
     // SecurityOrigin. For example, call this function before allowing
@@ -100,12 +99,12 @@ public:
     // Returns true if this SecurityOrigin can read content retrieved from
     // the given URL. For example, call this function before issuing
     // XMLHttpRequests.
-    bool canRequest(const KURL&) const;
+    bool canRequest(const URL&) const;
 
     // Returns true if drawing an image from this URL taints a canvas from
     // this security origin. For example, call this function before
     // drawing an image onto an HTML canvas element with the drawImage API.
-    bool taintsCanvas(const KURL&) const;
+    bool taintsCanvas(const URL&) const;
 
     // Returns true if this SecurityOrigin can receive drag content from the
     // initiator. For example, call this function before allowing content to be
@@ -115,7 +114,7 @@ public:
     // Returns true if |document| can display content from the given URL (e.g.,
     // in an iframe or as an image). For example, web sites generally cannot
     // display content from the user's files system.
-    bool canDisplay(const KURL&) const;
+    bool canDisplay(const URL&) const;
 
     // Returns true if this SecurityOrigin can load local resources, such
     // as images, iframes, and style sheets, and can link to local URLs.
@@ -142,19 +141,20 @@ public:
 
     void setStorageBlockingPolicy(StorageBlockingPolicy policy) { m_storageBlockingPolicy = policy; }
 
+#if ENABLE(CACHE_PARTITIONING)
+    String cachePartition() const;
+#endif
+
     bool canAccessDatabase(const SecurityOrigin* topOrigin = 0) const { return canAccessStorage(topOrigin); };
+    bool canAccessSessionStorage(const SecurityOrigin* topOrigin) const { return canAccessStorage(topOrigin, AlwaysAllowFromThirdParty); }
     bool canAccessLocalStorage(const SecurityOrigin* topOrigin) const { return canAccessStorage(topOrigin); };
     bool canAccessSharedWorkers(const SecurityOrigin* topOrigin) const { return canAccessStorage(topOrigin); }
     bool canAccessPluginStorage(const SecurityOrigin* topOrigin) const { return canAccessStorage(topOrigin); }
+    bool canAccessApplicationCache(const SecurityOrigin* topOrigin) const { return canAccessStorage(topOrigin); }
     bool canAccessCookies() const { return !isUnique(); }
     bool canAccessPasswordManager() const { return !isUnique(); }
     bool canAccessFileSystem() const { return !isUnique(); }
     Policy canShowNotifications() const;
-
-    // Technically, we should always allow access to sessionStorage, but we
-    // currently don't handle creating a sessionStorage area for unique
-    // origins.
-    bool canAccessSessionStorage() const { return !isUnique(); }
 
     // The local SecurityOrigin is the most privileged SecurityOrigin.
     // The local SecurityOrigin can script any document, navigate to local
@@ -205,19 +205,22 @@ public:
     // (and whether it was set) but considering the host. It is used for postMessage.
     bool isSameSchemeHostPort(const SecurityOrigin*) const;
 
+    static String urlWithUniqueSecurityOrigin();
+
 private:
     SecurityOrigin();
-    explicit SecurityOrigin(const KURL&);
+    explicit SecurityOrigin(const URL&);
     explicit SecurityOrigin(const SecurityOrigin*);
 
     // FIXME: Rename this function to something more semantic.
     bool passesFileCheck(const SecurityOrigin*) const;
     bool isThirdParty(const SecurityOrigin*) const;
-    bool canAccessStorage(const SecurityOrigin*) const;
+    
+    enum ShouldAllowFromThirdParty { AlwaysAllowFromThirdParty, MaybeAllowFromThirdParty };
+    bool canAccessStorage(const SecurityOrigin*, ShouldAllowFromThirdParty = MaybeAllowFromThirdParty) const;
 
     String m_protocol;
     String m_host;
-    mutable String m_encodedHost;
     String m_domain;
     String m_filePath;
     unsigned short m_port;

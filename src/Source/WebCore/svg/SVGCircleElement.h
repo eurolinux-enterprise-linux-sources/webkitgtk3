@@ -25,32 +25,28 @@
 #include "SVGAnimatedBoolean.h"
 #include "SVGAnimatedLength.h"
 #include "SVGExternalResourcesRequired.h"
-#include "SVGLangSpace.h"
-#include "SVGStyledTransformableElement.h"
-#include "SVGTests.h"
+#include "SVGGraphicsElement.h"
 
 namespace WebCore {
 
-class SVGCircleElement : public SVGStyledTransformableElement,
-                         public SVGTests,
-                         public SVGLangSpace,
-                         public SVGExternalResourcesRequired {
+class SVGCircleElement final : public SVGGraphicsElement,
+                               public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGCircleElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGCircleElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGCircleElement(const QualifiedName&, Document*);
+    SVGCircleElement(const QualifiedName&, Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const { return true; }
+    virtual bool isValid() const override { return SVGTests::isValid(); }
+    virtual bool supportsFocus() const override { return true; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const override;
 
-    RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGCircleElement)
         DECLARE_ANIMATED_LENGTH(Cx, cx)
@@ -58,12 +54,9 @@ private:
         DECLARE_ANIMATED_LENGTH(R, r)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
+
+NODE_TYPE_CASTS(SVGCircleElement)
 
 } // namespace WebCore
 

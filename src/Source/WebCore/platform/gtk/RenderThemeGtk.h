@@ -79,14 +79,15 @@ public:
     virtual void platformColorsDidChange();
 
     // System fonts and colors.
-    virtual void systemFont(int propId, FontDescription&) const;
-    virtual Color systemColor(int cssValueId) const;
+    virtual void systemFont(CSSValueID, FontDescription&) const;
+    virtual Color systemColor(CSSValueID) const;
 
-    virtual bool popsMenuBySpaceOrReturn() const OVERRIDE { return true; }
+    virtual bool popsMenuBySpaceOrReturn() const override { return true; }
 
 #if ENABLE(VIDEO)
     virtual String extraMediaControlsStyleSheet();
     virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
+    virtual bool supportsClosedCaptioning() const override { return true; }
 
 #if ENABLE(FULLSCREEN_API)
     virtual String extraFullScreenStyleSheet();
@@ -107,8 +108,6 @@ public:
     GtkWidget* gtkVScrollbar() const;
     GtkWidget* gtkHScrollbar() const;
     static void getIndicatorMetrics(ControlPart, int& indicatorSize, int& indicatorSpacing);
-#else
-    GtkStyleContext* gtkScrollbarStyle();
 #endif
 
 protected:
@@ -136,10 +135,10 @@ protected:
     virtual void adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintMenuListButtonDecorations(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldResultsDecorationPartStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldResultsDecorationPart(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintSearchField(RenderObject*, const PaintInfo&, const IntRect&);
@@ -159,8 +158,6 @@ protected:
     virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
 
 #if ENABLE(VIDEO)
-    void initMediaColors();
-    void initMediaButtons();
     virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const;
     virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&);
@@ -169,7 +166,6 @@ protected:
     virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderContainer(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
     virtual bool paintMediaCurrentTime(RenderObject*, const PaintInfo&, const IntRect&);
@@ -188,7 +184,7 @@ protected:
     virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&);
 
 private:
-    virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const OVERRIDE;
+    virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const override;
 
     void platformInit();
     static void setTextInputBorders(RenderStyle*);
@@ -201,12 +197,6 @@ private:
 #if ENABLE(PROGRESS_ELEMENT)
     static IntRect calculateProgressRect(RenderObject*, const IntRect&);
 #endif
-
-    mutable Color m_panelColor;
-    mutable Color m_sliderColor;
-    mutable Color m_sliderThumbColor;
-    const int m_mediaIconSize;
-    const int m_mediaSliderHeight;
 
 #ifdef GTK_API_VERSION_2
     void setupWidgetAndAddToContainer(GtkWidget*, GtkWidget*) const;

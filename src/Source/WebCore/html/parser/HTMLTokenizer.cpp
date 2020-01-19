@@ -29,15 +29,11 @@
 #include "HTMLTokenizer.h"
 
 #include "HTMLEntityParser.h"
-#include "HTMLToken.h"
 #include "HTMLTreeBuilder.h"
-#include "HTMLNames.h"
 #include "MarkupTokenizerInlines.h"
 #include "NotImplemented.h"
 #include <wtf/ASCIICType.h>
 #include <wtf/CurrentTime.h>
-#include <wtf/UnusedParam.h>
-#include <wtf/text/AtomicString.h>
 #include <wtf/text/CString.h>
 #include <wtf/unicode/Unicode.h>
 
@@ -123,41 +119,6 @@ void HTMLTokenizer::reset()
     m_shouldAllowCDATA = false;
     m_additionalAllowedCharacter = '\0';
 }
-
-#if ENABLE(THREADED_HTML_PARSER)
-
-bool HTMLTokenizer::canCreateCheckpoint() const
-{
-    if (!m_appropriateEndTagName.isEmpty())
-        return false;
-    if (!m_temporaryBuffer.isEmpty())
-        return false;
-    if (!m_bufferedEndTagName.isEmpty())
-        return false;
-    return true;
-}
-
-void HTMLTokenizer::createCheckpoint(Checkpoint& result) const
-{
-    ASSERT(canCreateCheckpoint());
-    result.options = m_options;
-    result.state = m_state;
-    result.additionalAllowedCharacter = m_additionalAllowedCharacter;
-    result.skipNextNewLine = m_inputStreamPreprocessor.skipNextNewLine();
-    result.shouldAllowCDATA = m_shouldAllowCDATA;
-}
-
-void HTMLTokenizer::restoreFromCheckpoint(const Checkpoint& checkpoint)
-{
-    m_token = 0;
-    m_options = checkpoint.options;
-    m_state = checkpoint.state;
-    m_additionalAllowedCharacter = checkpoint.additionalAllowedCharacter;
-    m_inputStreamPreprocessor.reset(checkpoint.skipNextNewLine);
-    m_shouldAllowCDATA = checkpoint.shouldAllowCDATA;
-}
-
-#endif
 
 inline bool HTMLTokenizer::processEntity(SegmentedString& source)
 {

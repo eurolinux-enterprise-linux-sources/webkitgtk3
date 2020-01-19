@@ -23,20 +23,24 @@
 #define FEGaussianBlur_h
 
 #if ENABLE(FILTERS)
-#include "FilterEffect.h"
+#include "FEConvolveMatrix.h"
 #include "Filter.h"
+#include "FilterEffect.h"
 
 namespace WebCore {
 
 class FEGaussianBlur : public FilterEffect {
 public:
-    static PassRefPtr<FEGaussianBlur> create(Filter*, float, float);
+    static PassRefPtr<FEGaussianBlur> create(Filter*, float, float, EdgeModeType);
 
     float stdDeviationX() const;
     void setStdDeviationX(float);
 
     float stdDeviationY() const;
     void setStdDeviationY(float);
+
+    EdgeModeType edgeMode() const;
+    void setEdgeMode(EdgeModeType);
 
     static float calculateStdDeviation(float);
 
@@ -67,19 +71,16 @@ private:
 
     static void platformApplyWorker(PlatformApplyParameters*);
 
-    FEGaussianBlur(Filter*, float, float);
+    FEGaussianBlur(Filter*, float, float, EdgeModeType);
 
     static inline void kernelPosition(int boxBlur, unsigned& std, int& dLeft, int& dRight);
     inline void platformApply(Uint8ClampedArray* srcPixelArray, Uint8ClampedArray* tmpPixelArray, unsigned kernelSizeX, unsigned kernelSizeY, IntSize& paintSize);
 
     inline void platformApplyGeneric(Uint8ClampedArray* srcPixelArray, Uint8ClampedArray* tmpPixelArray, unsigned kernelSizeX, unsigned kernelSizeY, IntSize& paintSize);
-#if USE(SKIA)
-    virtual bool platformApplySkia();
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*);
-#endif
 
     float m_stdX;
     float m_stdY;
+    EdgeModeType m_edgeMode;
 };
 
 inline void FEGaussianBlur::kernelPosition(int boxBlur, unsigned& std, int& dLeft, int& dRight)

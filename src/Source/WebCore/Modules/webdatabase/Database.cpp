@@ -41,6 +41,7 @@
 #include "DatabaseThread.h"
 #include "DatabaseTracker.h"
 #include "Document.h"
+#include "JSDOMWindow.h"
 #include "Logging.h"
 #include "NotImplemented.h"
 #include "Page.h"
@@ -59,8 +60,8 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/CString.h>
 
-#if USE(JSC)
-#include "JSDOMWindow.h"
+#if PLATFORM(IOS)
+#include "SQLiteDatabaseTracker.h"
 #endif
 
 namespace WebCore {
@@ -154,8 +155,8 @@ void Database::markAsDeletedAndClose()
         return;
     }
 
-    OwnPtr<DatabaseCloseTask> task = DatabaseCloseTask::create(this, &synchronizer);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
+    auto task = DatabaseCloseTask::create(this, &synchronizer);
+    databaseContext()->databaseThread()->scheduleImmediateTask(std::move(task));
     synchronizer.waitForTaskCompletion();
 }
 
@@ -167,11 +168,6 @@ void Database::closeImmediately()
         logErrorMessage("forcibly closing database");
         databaseThread->scheduleImmediateTask(DatabaseCloseTask::create(this, 0));
     }
-}
-
-unsigned long long Database::maximumSize() const
-{
-    return DatabaseManager::manager().getMaxSizeForDatabase(this);
 }
 
 void Database::changeVersion(const String& oldVersion, const String& newVersion,
@@ -275,8 +271,8 @@ Vector<String> Database::tableNames()
     if (!databaseContext()->databaseThread() || databaseContext()->databaseThread()->terminationRequested(&synchronizer))
         return result;
 
-    OwnPtr<DatabaseTableNamesTask> task = DatabaseTableNamesTask::create(this, &synchronizer, result);
-    databaseContext()->databaseThread()->scheduleImmediateTask(task.release());
+    auto task = DatabaseTableNamesTask::create(this, &synchronizer, result);
+    databaseContext()->databaseThread()->scheduleImmediateTask(std::move(task));
     synchronizer.waitForTaskCompletion();
 
     return result;
@@ -290,19 +286,6 @@ SecurityOrigin* Database::securityOrigin() const
         return m_databaseThreadSecurityOrigin.get();
     return 0;
 }
-
-#if PLATFORM(CHROMIUM)
-void Database::reportStartTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    backend()->reportStartTransactionResult(errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void Database::reportCommitTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    backend()->reportCommitTransactionResult(errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-#endif
 
 } // namespace WebCore
 

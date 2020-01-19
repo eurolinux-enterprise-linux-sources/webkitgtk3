@@ -34,18 +34,18 @@
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/GtkVersioning.h>
 #include <WebCore/PlatformContextCairo.h>
-#include <wtf/gobject/GOwnPtr.h>
+#include <wtf/gobject/GUniquePtr.h>
 
 using namespace WebCore;
 using namespace WebKit;
 
-namespace CoreIPC {
+namespace IPC {
 
 static void encodeImage(ArgumentEncoder& encoder, const GdkPixbuf* pixbuf)
 {
     IntSize imageSize(gdk_pixbuf_get_width(pixbuf), gdk_pixbuf_get_height(pixbuf));
     RefPtr<ShareableBitmap> bitmap = ShareableBitmap::createShareable(imageSize, ShareableBitmap::SupportsAlpha);
-    OwnPtr<GraphicsContext> graphicsContext = bitmap->createGraphicsContext();
+    auto graphicsContext = bitmap->createGraphicsContext();
 
     cairo_t* cr = graphicsContext->platformContext()->cr();
     gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
@@ -71,14 +71,11 @@ static bool decodeImage(ArgumentDecoder& decoder, GRefPtr<GdkPixbuf>& pixbuf)
     if (!image)
         return false;
 
-    NativeImageCairo* nativeImage = image->nativeImageForCurrentFrame();
-    if (!nativeImage)
+    RefPtr<cairo_surface_t> surface = image->nativeImageForCurrentFrame();
+    if (!surface)
         return false;
 
-    cairo_surface_t* surface = nativeImage->surface();
-    pixbuf = adoptGRef(gdk_pixbuf_get_from_surface(surface, 0, 0,
-                                                   cairo_image_surface_get_width(surface),
-                                                   cairo_image_surface_get_height(surface)));
+    pixbuf = adoptGRef(gdk_pixbuf_get_from_surface(surface.get(), 0, 0, cairo_image_surface_get_width(surface.get()), cairo_image_surface_get_height(surface.get())));
     if (!pixbuf)
         return false;
 
@@ -111,6 +108,11 @@ static void encodeDataObject(ArgumentEncoder& encoder, const DataObjectGtk* data
     encoder << hasImage;
     if (hasImage)
         encodeImage(encoder, dataObject->image());
+
+    bool hasUnknownTypeData = dataObject->hasUnknownTypeData();
+    encoder << hasUnknownTypeData;
+    if (hasUnknownTypeData)
+        encoder << dataObject->unknownTypes();
 }
 
 static bool decodeDataObject(ArgumentDecoder& decoder, RefPtr<DataObjectGtk>& dataObject)
@@ -144,7 +146,7 @@ static bool decodeDataObject(ArgumentDecoder& decoder, RefPtr<DataObjectGtk>& da
         String url;
         if (!decoder.decode(url))
             return false;
-        data->setURL(KURL(KURL(), url), String());
+        data->setURL(URL(URL(), url), String());
     }
 
     bool hasURIList;
@@ -167,11 +169,25 @@ static bool decodeDataObject(ArgumentDecoder& decoder, RefPtr<DataObjectGtk>& da
         data->setImage(image.get());
     }
 
+    bool hasUnknownTypeData;
+    if (!decoder.decode(hasUnknownTypeData))
+        return false;
+    if (hasUnknownTypeData) {
+        HashMap<String, String> unknownTypes;
+        if (!decoder.decode(unknownTypes))
+            return false;
+
+        auto end = unknownTypes.end();
+        for (auto it = unknownTypes.begin(); it != end; ++it)
+            data->setUnknownTypeData(it->key, it->value);
+    }
+
     dataObject = data;
 
     return true;
 }
 
+#if ENABLE(DRAG_SUPPORT)
 void ArgumentCoder<DragData>::encode(ArgumentEncoder& encoder, const DragData& dragData)
 {
     encoder << dragData.clientPosition();
@@ -218,15 +234,16 @@ bool ArgumentCoder<DragData>::decode(ArgumentDecoder& decoder, DragData& dragDat
 
     return true;
 }
+#endif // ENABLE(DRAG_SUPPORT)
 
 static void encodeGKeyFile(ArgumentEncoder& encoder, GKeyFile* keyFile)
 {
     gsize dataSize;
-    GOwnPtr<char> data(g_key_file_to_data(keyFile, &dataSize, 0));
+    GUniquePtr<char> data(g_key_file_to_data(keyFile, &dataSize, 0));
     encoder << DataReference(reinterpret_cast<uint8_t*>(data.get()), dataSize);
 }
 
-static bool decodeGKeyFile(ArgumentDecoder& decoder, GOwnPtr<GKeyFile>& keyFile)
+static bool decodeGKeyFile(ArgumentDecoder& decoder, GUniquePtr<GKeyFile>& keyFile)
 {
     DataReference dataReference;
     if (!decoder.decode(dataReference))
@@ -235,9 +252,9 @@ static bool decodeGKeyFile(ArgumentDecoder& decoder, GOwnPtr<GKeyFile>& keyFile)
     if (!dataReference.size())
         return true;
 
-    keyFile.set(g_key_file_new());
+    keyFile.reset(g_key_file_new());
     if (!g_key_file_load_from_data(keyFile.get(), reinterpret_cast<const gchar*>(dataReference.data()), dataReference.size(), G_KEY_FILE_NONE, 0)) {
-        keyFile.clear();
+        keyFile.reset();
         return false;
     }
 
@@ -246,14 +263,14 @@ static bool decodeGKeyFile(ArgumentDecoder& decoder, GOwnPtr<GKeyFile>& keyFile)
 
 void encode(ArgumentEncoder& encoder, GtkPrintSettings* printSettings)
 {
-    GOwnPtr<GKeyFile> keyFile(g_key_file_new());
+    GUniquePtr<GKeyFile> keyFile(g_key_file_new());
     gtk_print_settings_to_key_file(printSettings, keyFile.get(), "Print Settings");
     encodeGKeyFile(encoder, keyFile.get());
 }
 
 bool decode(ArgumentDecoder& decoder, GRefPtr<GtkPrintSettings>& printSettings)
 {
-    GOwnPtr<GKeyFile> keyFile;
+    GUniquePtr<GKeyFile> keyFile;
     if (!decodeGKeyFile(decoder, keyFile))
         return false;
 
@@ -269,14 +286,14 @@ bool decode(ArgumentDecoder& decoder, GRefPtr<GtkPrintSettings>& printSettings)
 
 void encode(ArgumentEncoder& encoder, GtkPageSetup* pageSetup)
 {
-    GOwnPtr<GKeyFile> keyFile(g_key_file_new());
+    GUniquePtr<GKeyFile> keyFile(g_key_file_new());
     gtk_page_setup_to_key_file(pageSetup, keyFile.get(), "Page Setup");
     encodeGKeyFile(encoder, keyFile.get());
 }
 
 bool decode(ArgumentDecoder& decoder, GRefPtr<GtkPageSetup>& pageSetup)
 {
-    GOwnPtr<GKeyFile> keyFile;
+    GUniquePtr<GKeyFile> keyFile;
     if (!decodeGKeyFile(decoder, keyFile))
         return false;
 

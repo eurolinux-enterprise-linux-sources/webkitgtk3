@@ -74,15 +74,10 @@ enum MediaControlElementType {
     MediaClosedCaptionsTrackList,
 };
 
-HTMLMediaElement* toParentMediaElement(Node*);
-inline HTMLMediaElement* toParentMediaElement(RenderObject* renderer) { return toParentMediaElement(renderer->node()); }
+HTMLMediaElement* parentMediaElement(Node*);
+inline HTMLMediaElement* parentMediaElement(RenderObject& renderer) { return parentMediaElement(renderer.node()); }
 
 MediaControlElementType mediaControlElementType(Node*);
-
-#if ENABLE(VIDEO_TRACK)
-const AtomicString& trackIndexAttributeName();
-int trackListIndexForElement(Element*);
-#endif
 
 // ----------------------------
 
@@ -115,16 +110,16 @@ private:
 
 class MediaControlDivElement : public HTMLDivElement, public MediaControlElement {
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
-    explicit MediaControlDivElement(Document*, MediaControlElementType);
+    virtual bool isMediaControlElement() const override { return MediaControlElement::isMediaControlElement(); }
+    explicit MediaControlDivElement(Document&, MediaControlElementType);
 };
 
 // ----------------------------
 
 class MediaControlInputElement : public HTMLInputElement, public MediaControlElement {
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
-    explicit MediaControlInputElement(Document*, MediaControlElementType);
+    virtual bool isMediaControlElement() const override { return MediaControlElement::isMediaControlElement(); }
+    explicit MediaControlInputElement(Document&, MediaControlElementType);
 
 private:
     virtual void updateDisplayType() { }
@@ -134,16 +129,14 @@ private:
 
 class MediaControlTimeDisplayElement : public MediaControlDivElement {
 public:
-    void setCurrentValue(float);
-    float currentValue() const { return m_currentValue; }
+    void setCurrentValue(double);
+    double currentValue() const { return m_currentValue; }
 
 protected:
-    explicit MediaControlTimeDisplayElement(Document*, MediaControlElementType);
+    explicit MediaControlTimeDisplayElement(Document&, MediaControlElementType);
 
 private:
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
-
-    float m_currentValue;
+    double m_currentValue;
 };
 
 // ----------------------------
@@ -152,36 +145,36 @@ class MediaControlMuteButtonElement : public MediaControlInputElement {
 public:
     void changedMute();
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
+    virtual bool willRespondToMouseClickEvents() override { return true; }
 
 protected:
-    explicit MediaControlMuteButtonElement(Document*, MediaControlElementType);
+    explicit MediaControlMuteButtonElement(Document&, MediaControlElementType);
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
 private:
-    virtual void updateDisplayType() OVERRIDE;
+    virtual void updateDisplayType() override;
 };
 
 // ----------------------------
 
 class MediaControlSeekButtonElement : public MediaControlInputElement {
 public:
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
+    virtual bool willRespondToMouseClickEvents() override { return true; }
 
 protected:
-    explicit MediaControlSeekButtonElement(Document*, MediaControlElementType);
+    explicit MediaControlSeekButtonElement(Document&, MediaControlElementType);
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
     virtual bool isForwardButton() const = 0;
 
 private:
-    void setActive(bool /*flag*/ = true, bool /*pause*/ = false);
+    virtual void setActive(bool /*flag*/ = true, bool /*pause*/ = false) override final;
 
     void startTimer();
     void stopTimer();
-    float nextRate() const;
-    void seekTimerFired(Timer<MediaControlSeekButtonElement>*);
+    double nextRate() const;
+    void seekTimerFired(Timer<MediaControlSeekButtonElement>&);
 
     enum ActionType { Nothing, Play, Pause };
     ActionType m_actionOnStop;
@@ -194,15 +187,15 @@ private:
 
 class MediaControlVolumeSliderElement : public MediaControlInputElement {
 public:
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE;
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
-    void setVolume(float);
+    virtual bool willRespondToMouseMoveEvents() override;
+    virtual bool willRespondToMouseClickEvents() override;
+    void setVolume(double);
     void setClearMutedOnUserInteraction(bool);
 
 protected:
-    explicit MediaControlVolumeSliderElement(Document*);
+    explicit MediaControlVolumeSliderElement(Document&);
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
 private:
     bool m_clearMutedOnUserInteraction;

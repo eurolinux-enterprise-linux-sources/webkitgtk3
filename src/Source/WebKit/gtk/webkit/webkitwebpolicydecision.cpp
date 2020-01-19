@@ -46,9 +46,23 @@ struct _WebKitWebPolicyDecisionPrivate {
     gboolean isCancelled;
 };
 
+static void webkit_web_policy_decision_finalize(GObject *object)
+{
+    WebKitWebPolicyDecision *decision = WEBKIT_WEB_POLICY_DECISION (object);
+
+    decision->priv->framePolicyFunction = nullptr;
+
+    G_OBJECT_CLASS (webkit_web_policy_decision_parent_class)->finalize (object);
+}
+
 static void webkit_web_policy_decision_class_init(WebKitWebPolicyDecisionClass* decisionClass)
 {
+    GObjectClass *object_class;
+
     g_type_class_add_private(decisionClass, sizeof(WebKitWebPolicyDecisionPrivate));
+
+    object_class = G_OBJECT_CLASS (decisionClass);
+    object_class->finalize = webkit_web_policy_decision_finalize;
 }
 
 static void webkit_web_policy_decision_init(WebKitWebPolicyDecision* decision)
@@ -71,7 +85,7 @@ WebKitWebPolicyDecision* webkit_web_policy_decision_new(WebKitWebFrame* frame, W
 }
 
 /**
- * webkit_web_policy_decision_use
+ * webkit_web_policy_decision_use:
  * @decision: a #WebKitWebPolicyDecision
  *
  * Will send the USE decision to the policy implementer.
@@ -85,11 +99,11 @@ void webkit_web_policy_decision_use(WebKitWebPolicyDecision* decision)
     WebKitWebPolicyDecisionPrivate* priv = decision->priv;
 
     if (!priv->isCancelled)
-        (core(priv->frame)->loader()->policyChecker()->*(priv->framePolicyFunction))(WebCore::PolicyUse);
+        priv->framePolicyFunction(WebCore::PolicyUse);
 }
 
 /**
- * webkit_web_policy_decision_ignore
+ * webkit_web_policy_decision_ignore:
  * @decision: a #WebKitWebPolicyDecision
  *
  * Will send the IGNORE decision to the policy implementer.
@@ -103,11 +117,11 @@ void webkit_web_policy_decision_ignore(WebKitWebPolicyDecision* decision)
     WebKitWebPolicyDecisionPrivate* priv = decision->priv;
 
     if (!priv->isCancelled)
-        (core(priv->frame)->loader()->policyChecker()->*(priv->framePolicyFunction))(WebCore::PolicyIgnore);
+        priv->framePolicyFunction(WebCore::PolicyIgnore);
 }
 
 /**
- * webkit_web_policy_decision_download
+ * webkit_web_policy_decision_download:
  * @decision: a #WebKitWebPolicyDecision
  *
  * Will send the DOWNLOAD decision to the policy implementer.
@@ -121,7 +135,7 @@ void webkit_web_policy_decision_download(WebKitWebPolicyDecision* decision)
     WebKitWebPolicyDecisionPrivate* priv = decision->priv;
 
     if (!priv->isCancelled)
-        (core(priv->frame)->loader()->policyChecker()->*(priv->framePolicyFunction))(WebCore::PolicyDownload);
+        priv->framePolicyFunction(WebCore::PolicyDownload);
 }
 
 void webkit_web_policy_decision_cancel(WebKitWebPolicyDecision* decision)

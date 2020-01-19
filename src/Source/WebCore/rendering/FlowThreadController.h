@@ -37,6 +37,7 @@
 namespace WebCore {
 
 class RenderFlowThread;
+class RenderLayer;
 class RenderNamedFlowThread;
 
 typedef ListHashSet<RenderNamedFlowThread*> RenderNamedFlowThreadList;
@@ -55,46 +56,55 @@ public:
     {
         m_isRenderNamedFlowThreadOrderDirty = dirty;
         if (dirty)
-            m_view->setNeedsLayout(true);
+            m_view->setNeedsLayout();
     }
 
-    RenderNamedFlowThread* ensureRenderFlowThreadWithName(const AtomicString&);
+    RenderNamedFlowThread& ensureRenderFlowThreadWithName(const AtomicString&);
     const RenderNamedFlowThreadList* renderNamedFlowThreadList() const { return m_renderNamedFlowThreadList.get(); }
     bool hasRenderNamedFlowThreads() const { return m_renderNamedFlowThreadList && !m_renderNamedFlowThreadList->isEmpty(); }
     void layoutRenderNamedFlowThreads();
     void styleDidChange();
 
-    void registerNamedFlowContentNode(Node*, RenderNamedFlowThread*);
-    void unregisterNamedFlowContentNode(Node*);
+    void registerNamedFlowContentElement(Element&, RenderNamedFlowThread&);
+    void unregisterNamedFlowContentElement(Element&);
+    bool isContentElementRegisteredWithAnyNamedFlow(const Element&) const;
 
     bool hasFlowThreadsWithAutoLogicalHeightRegions() const { return m_flowThreadsWithAutoLogicalHeightRegions; }
     void incrementFlowThreadsWithAutoLogicalHeightRegions() { ++m_flowThreadsWithAutoLogicalHeightRegions; }
     void decrementFlowThreadsWithAutoLogicalHeightRegions() { ASSERT(m_flowThreadsWithAutoLogicalHeightRegions > 0); --m_flowThreadsWithAutoLogicalHeightRegions; }
 
-    bool hasRenderNamedFlowThreadsNeedingLayout() const;
+    bool updateFlowThreadsNeedingLayout();
+    bool updateFlowThreadsNeedingTwoStepLayout();
+    void updateFlowThreadsIntoConstrainedPhase();
+    void updateFlowThreadsIntoOverflowPhase();
+    void updateFlowThreadsIntoMeasureContentPhase();
+    void updateFlowThreadsIntoFinalPhase();
+
+    void updateNamedFlowsLayerListsIfNeeded();
+    // Collect the fixed positioned layers that have the named flows as containing block
+    // These layers are painted and hit-tested by RenderView
+    void collectFixedPositionedLayers(Vector<RenderLayer*>& fixedPosLayers) const;
+
+#if USE(ACCELERATED_COMPOSITING)
+    void updateRenderFlowThreadLayersIfNeeded();
+#endif
 
 #ifndef NDEBUG
     bool isAutoLogicalHeightRegionsCountConsistent() const;
 #endif
 
-    void resetRegionsOverrideLogicalContentHeight();
-    void markAutoLogicalHeightRegionsForLayout();
-
-    bool needsTwoPassLayoutForAutoHeightRegions() const { return m_needsTwoPassLayoutForAutoHeightRegions; }
-    void setNeedsTwoPassLayoutForAutoHeightRegions(bool needsTwoPassLayout) { m_needsTwoPassLayoutForAutoHeightRegions = needsTwoPassLayout; }
-
 protected:
-    FlowThreadController(RenderView*);
+    explicit FlowThreadController(RenderView*);
+    void updateFlowThreadsChainIfNecessary();
+    void resetFlowThreadsWithAutoHeightRegions();
 
 private:
     RenderView* m_view;
     RenderFlowThread* m_currentRenderFlowThread;
     bool m_isRenderNamedFlowThreadOrderDirty;
-    bool m_needsTwoPassLayoutForAutoHeightRegions;
     unsigned m_flowThreadsWithAutoLogicalHeightRegions;
     OwnPtr<RenderNamedFlowThreadList> m_renderNamedFlowThreadList;
-    // maps a content node to its render flow thread.
-    HashMap<Node*, RenderNamedFlowThread*> m_mapNamedFlowContentNodes;
+    HashMap<const Element*, RenderNamedFlowThread*> m_mapNamedFlowContentElement;
 };
 
 }

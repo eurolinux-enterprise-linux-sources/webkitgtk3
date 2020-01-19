@@ -29,23 +29,22 @@
 
 #include "ConsoleAPITypes.h"
 #include "ConsoleTypes.h"
-#include "InspectorBaseAgent.h"
-#include "InspectorFrontend.h"
+#include "InspectorWebAgentBase.h"
+#include "InspectorWebBackendDispatchers.h"
+#include "InspectorWebFrontendDispatchers.h"
 #include "ScriptState.h"
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/text/StringHash.h>
 #include <wtf/Vector.h>
+#include <wtf/text/StringHash.h>
 
 namespace WebCore {
 
 class ConsoleMessage;
 class DOMWindow;
-class InspectorFrontend;
-class InspectorState;
-class InjectedScriptManager;
 class InstrumentingAgents;
+class PageInjectedScriptManager;
 class ResourceError;
 class ResourceResponse;
 class ScriptArguments;
@@ -54,24 +53,23 @@ class ScriptProfile;
 
 typedef String ErrorString;
 
-class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent>, public InspectorBackendDispatcher::ConsoleCommandHandler {
+class InspectorConsoleAgent : public InspectorAgentBase, public Inspector::InspectorConsoleBackendDispatcherHandler {
     WTF_MAKE_NONCOPYABLE(InspectorConsoleAgent);
 public:
-    InspectorConsoleAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
+    InspectorConsoleAgent(InstrumentingAgents*, PageInjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void clearMessages(ErrorString*);
-    bool enabled() { return m_enabled; }
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+    virtual void clearMessages(ErrorString*) override;
+    bool enabled() const { return m_enabled; }
     void reset();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void didCreateFrontendAndBackend(Inspector::InspectorFrontendChannel*, Inspector::InspectorBackendDispatcher*) override;
+    virtual void willDestroyFrontendAndBackend(Inspector::InspectorDisconnectReason) override;
 
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, ScriptState* = 0, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, JSC::ExecState*, PassRefPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptID, unsigned lineNumber, unsigned columnNumber, JSC::ExecState* = nullptr, unsigned long requestIdentifier = 0);
 
     // FIXME: Remove once we no longer generate stacks outside of Inspector.
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>, unsigned long requestIdentifier = 0);
@@ -80,36 +78,34 @@ public:
 
     void startTiming(const String& title);
     void stopTiming(const String& title, PassRefPtr<ScriptCallStack>);
-    void count(ScriptState*, PassRefPtr<ScriptArguments>);
+    void count(JSC::ExecState*, PassRefPtr<ScriptArguments>);
 
     void frameWindowDiscarded(DOMWindow*);
 
-    void didFinishXHRLoading(unsigned long requestIdentifier, const String& url, const String& sendURL, unsigned sendLineNumber);
+    void didFinishXHRLoading(unsigned long requestIdentifier, const String& url, const String& sendURL, unsigned sendLineNumber, unsigned sendColumnNumber);
     void didReceiveResponse(unsigned long requestIdentifier, const ResourceResponse&);
     void didFailLoading(unsigned long requestIdentifier, const ResourceError&);
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-    void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
-    void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
-#endif
-    virtual void setMonitoringXHREnabled(ErrorString*, bool enabled);
+    void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, unsigned columnNumber, const String& sourceURL);
+    void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, unsigned columnNumber, const String& sourceURL);
+    virtual void setMonitoringXHREnabled(ErrorString*, bool enabled) override;
     virtual void addInspectedNode(ErrorString*, int nodeId) = 0;
-    virtual void addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId);
+    virtual void addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId) override;
 
     virtual bool isWorkerAgent() = 0;
 
 protected:
     void addConsoleMessage(PassOwnPtr<ConsoleMessage>);
 
-    virtual bool developerExtrasEnabled() = 0;
-
-    InjectedScriptManager* m_injectedScriptManager;
-    InspectorFrontend::Console* m_frontend;
+    PageInjectedScriptManager* m_injectedScriptManager;
+    std::unique_ptr<Inspector::InspectorConsoleFrontendDispatcher> m_frontendDispatcher;
+    RefPtr<Inspector::InspectorConsoleBackendDispatcher> m_backendDispatcher;
     ConsoleMessage* m_previousMessage;
-    Vector<OwnPtr<ConsoleMessage> > m_consoleMessages;
+    Vector<OwnPtr<ConsoleMessage>> m_consoleMessages;
     int m_expiredConsoleMessageCount;
     HashMap<String, unsigned> m_counts;
     HashMap<String, double> m_times;
     bool m_enabled;
+    bool m_monitoringXHREnabled;
 private:
     static int s_enabledAgentCount;
 };

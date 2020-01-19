@@ -54,7 +54,7 @@ class JITStubRoutineSet;
 // list which does not get reclaimed all at once).
 class GCAwareJITStubRoutine : public JITStubRoutine {
 public:
-    GCAwareJITStubRoutine(const MacroAssemblerCodeRef&, JSGlobalData&, bool isClosureCall = false);
+    GCAwareJITStubRoutine(const MacroAssemblerCodeRef&, VM&, bool isClosureCall = false);
     virtual ~GCAwareJITStubRoutine();
     
     void markRequiredObjects(SlotVisitor& visitor)
@@ -67,7 +67,7 @@ public:
     bool isClosureCall() const { return m_isClosureCall; }
     
 protected:
-    virtual void observeZeroRefCount();
+    virtual void observeZeroRefCount() override;
     
     virtual void markRequiredObjectsInternal(SlotVisitor&);
 
@@ -84,11 +84,11 @@ private:
 class MarkingGCAwareJITStubRoutineWithOneObject : public GCAwareJITStubRoutine {
 public:
     MarkingGCAwareJITStubRoutineWithOneObject(
-        const MacroAssemblerCodeRef&, JSGlobalData&, const JSCell* owner, JSCell*);
+        const MacroAssemblerCodeRef&, VM&, const JSCell* owner, JSCell*);
     virtual ~MarkingGCAwareJITStubRoutineWithOneObject();
     
 protected:
-    virtual void markRequiredObjectsInternal(SlotVisitor&);
+    virtual void markRequiredObjectsInternal(SlotVisitor&) override;
 
 private:
     WriteBarrier<JSCell> m_object;
@@ -102,7 +102,7 @@ private:
 // 
 // PassRefPtr<JITStubRoutine> createJITStubRoutine(
 //    const MacroAssemblerCodeRef& code,
-//    JSGlobalData& globalData,
+//    VM& vm,
 //    const JSCell* owner,
 //    bool makesCalls,
 //    ...);
@@ -114,9 +114,9 @@ private:
 // way.
 
 PassRefPtr<JITStubRoutine> createJITStubRoutine(
-    const MacroAssemblerCodeRef&, JSGlobalData&, const JSCell* owner, bool makesCalls);
+    const MacroAssemblerCodeRef&, VM&, const JSCell* owner, bool makesCalls);
 PassRefPtr<JITStubRoutine> createJITStubRoutine(
-    const MacroAssemblerCodeRef&, JSGlobalData&, const JSCell* owner, bool makesCalls,
+    const MacroAssemblerCodeRef&, VM&, const JSCell* owner, bool makesCalls,
     JSCell*);
 
 } // namespace JSC

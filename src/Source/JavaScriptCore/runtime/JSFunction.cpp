@@ -25,13 +25,16 @@
 #include "config.h"
 #include "JSFunction.h"
 
+#include "Arguments.h"
 #include "CodeBlock.h"
 #include "CommonIdentifiers.h"
 #include "CallFrame.h"
+#include "CallFrameInlines.h"
 #include "ExceptionHelpers.h"
 #include "FunctionPrototype.h"
 #include "GetterSetter.h"
 #include "JSArray.h"
+#include "JSBoundFunction.h" 
 #include "JSGlobalObject.h"
 #include "JSNotAnObject.h"
 #include "Interpreter.h"
@@ -40,11 +43,10 @@
 #include "Operations.h"
 #include "Parser.h"
 #include "PropertyNameArray.h"
-
-using namespace WTF;
-using namespace Unicode;
+#include "StackVisitor.h"
 
 namespace JSC {
+
 EncodedJSValue JSC_HOST_CALL callHostFunctionAsConstructor(ExecState* exec)
 {
     return throwVMError(exec, createNotAConstructorError(exec, exec->callee()));
@@ -57,22 +59,22 @@ bool JSFunction::isHostFunctionNonInline() const
     return isHostFunction();
 }
 
-JSFunction* JSFunction::create(ExecState* exec, JSGlobalObject* globalObject, int length, const String& name, NativeFunction nativeFunction, Intrinsic intrinsic, NativeFunction nativeConstructor)
+JSFunction* JSFunction::create(VM& vm, JSGlobalObject* globalObject, int length, const String& name, NativeFunction nativeFunction, Intrinsic intrinsic, NativeFunction nativeConstructor)
 {
     NativeExecutable* executable;
 #if !ENABLE(JIT)
     UNUSED_PARAM(intrinsic);
 #else
-    if (intrinsic != NoIntrinsic && exec->globalData().canUseJIT()) {
+    if (intrinsic != NoIntrinsic && vm.canUseJIT()) {
         ASSERT(nativeConstructor == callHostFunctionAsConstructor);
-        executable = exec->globalData().getHostFunction(nativeFunction, intrinsic);
+        executable = vm.getHostFunction(nativeFunction, intrinsic);
     } else
 #endif
-        executable = exec->globalData().getHostFunction(nativeFunction, nativeConstructor);
+        executable = vm.getHostFunction(nativeFunction, nativeConstructor);
 
-    JSFunction* function = new (NotNull, allocateCell<JSFunction>(*exec->heap())) JSFunction(exec, globalObject, globalObject->functionStructure());
+    JSFunction* function = new (NotNull, allocateCell<JSFunction>(vm.heap)) JSFunction(vm, globalObject, globalObject->functionStructure());
     // Can't do this during initialization because getHostFunction might do a GC allocation.
-    function->finishCreation(exec, executable, length, name);
+    function->finishCreation(vm, executable, length, name);
     return function;
 }
 
@@ -81,10 +83,10 @@ void JSFunction::destroy(JSCell* cell)
     static_cast<JSFunction*>(cell)->JSFunction::~JSFunction();
 }
 
-JSFunction::JSFunction(ExecState* exec, JSGlobalObject* globalObject, Structure* structure)
-    : Base(exec->globalData(), structure)
+JSFunction::JSFunction(VM& vm, JSGlobalObject* globalObject, Structure* structure)
+    : Base(vm, structure)
     , m_executable()
-    , m_scope(exec->globalData(), this, globalObject)
+    , m_scope(vm, this, globalObject)
     // We initialize blind so that changes to the prototype after function creation but before
     // the optimizer kicks in don't disable optimizations. Once the optimizer kicks in, the
     // watchpoint will start watching and any changes will both force deoptimization and disable
@@ -94,37 +96,37 @@ JSFunction::JSFunction(ExecState* exec, JSGlobalObject* globalObject, Structure*
     // was clobbered exactly once, but that seems like overkill. In almost all cases it will be
     // clobbered once, and if it's clobbered more than once, that will probably only occur
     // before we started optimizing, anyway.
-    , m_allocationProfileWatchpoint(InitializedBlind)
+    , m_allocationProfileWatchpoint(ClearWatchpoint)
 {
 }
 
-void JSFunction::finishCreation(ExecState* exec, NativeExecutable* executable, int length, const String& name)
+void JSFunction::finishCreation(VM& vm, NativeExecutable* executable, int length, const String& name)
 {
-    Base::finishCreation(exec->globalData());
-    ASSERT(inherits(&s_info));
-    m_executable.set(exec->globalData(), this, executable);
-    putDirect(exec->globalData(), exec->globalData().propertyNames->name, jsString(exec, name), DontDelete | ReadOnly | DontEnum);
-    putDirect(exec->globalData(), exec->propertyNames().length, jsNumber(length), DontDelete | ReadOnly | DontEnum);
+    Base::finishCreation(vm);
+    ASSERT(inherits(info()));
+    m_executable.set(vm, this, executable);
+    putDirect(vm, vm.propertyNames->name, jsString(&vm, name), DontDelete | ReadOnly | DontEnum);
+    putDirect(vm, vm.propertyNames->length, jsNumber(length), DontDelete | ReadOnly | DontEnum);
 }
 
 ObjectAllocationProfile* JSFunction::createAllocationProfile(ExecState* exec, size_t inlineCapacity)
 {
-    JSGlobalData& globalData = exec->globalData();
-    JSObject* prototype = jsDynamicCast<JSObject*>(get(exec, globalData.propertyNames->prototype));
+    VM& vm = exec->vm();
+    JSObject* prototype = jsDynamicCast<JSObject*>(get(exec, vm.propertyNames->prototype));
     if (!prototype)
         prototype = globalObject()->objectPrototype();
-    m_allocationProfile.initialize(globalObject()->globalData(), this, prototype, inlineCapacity);
+    m_allocationProfile.initialize(globalObject()->vm(), this, prototype, inlineCapacity);
     return &m_allocationProfile;
 }
 
 String JSFunction::name(ExecState* exec)
 {
-    return get(exec, exec->globalData().propertyNames->name).toWTFString(exec);
+    return get(exec, exec->vm().propertyNames->name).toWTFString(exec);
 }
 
 String JSFunction::displayName(ExecState* exec)
 {
-    JSValue displayName = getDirect(exec->globalData(), exec->globalData().propertyNames->displayName);
+    JSValue displayName = getDirect(exec->vm(), exec->vm().propertyNames->displayName);
     
     if (displayName && isJSString(displayName))
         return asString(displayName)->tryGetValue();
@@ -156,7 +158,7 @@ const SourceCode* JSFunction::sourceCode() const
 void JSFunction::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
     JSFunction* thisObject = jsCast<JSFunction*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, info());
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
     ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
     Base::visitChildren(thisObject, visitor);
@@ -178,83 +180,164 @@ CallType JSFunction::getCallData(JSCell* cell, CallData& callData)
     return CallTypeJS;
 }
 
-JSValue JSFunction::argumentsGetter(ExecState* exec, JSValue slotBase, PropertyName)
+class RetrieveArgumentsFunctor {
+public:
+    RetrieveArgumentsFunctor(JSFunction* functionObj)
+        : m_targetCallee(jsDynamicCast<JSObject*>(functionObj))
+        , m_result(jsNull())
+    {
+    }
+
+    JSValue result() const { return m_result; }
+
+    StackVisitor::Status operator()(StackVisitor& visitor)
+    {
+        JSObject* callee = visitor->callee();
+        if (callee != m_targetCallee)
+            return StackVisitor::Continue;
+
+        m_result = JSValue(visitor->createArguments());
+        return StackVisitor::Done;
+    }
+
+private:
+    JSObject* m_targetCallee;
+    JSValue m_result;
+};
+
+static JSValue retrieveArguments(ExecState* exec, JSFunction* functionObj)
 {
-    JSFunction* thisObj = jsCast<JSFunction*>(slotBase);
-    ASSERT(!thisObj->isHostFunction());
-    return exec->interpreter()->retrieveArgumentsFromVMCode(exec, thisObj);
+    RetrieveArgumentsFunctor functor(functionObj);
+    exec->iterate(functor);
+    return functor.result();
 }
 
-JSValue JSFunction::callerGetter(ExecState* exec, JSValue slotBase, PropertyName)
+EncodedJSValue JSFunction::argumentsGetter(ExecState* exec, EncodedJSValue slotBase, EncodedJSValue, PropertyName)
 {
-    JSFunction* thisObj = jsCast<JSFunction*>(slotBase);
+    JSFunction* thisObj = jsCast<JSFunction*>(JSValue::decode(slotBase));
     ASSERT(!thisObj->isHostFunction());
-    JSValue caller = exec->interpreter()->retrieveCallerFromVMCode(exec, thisObj);
+
+    return JSValue::encode(retrieveArguments(exec, thisObj));
+}
+
+class RetrieveCallerFunctionFunctor {
+public:
+    RetrieveCallerFunctionFunctor(JSFunction* functionObj)
+        : m_targetCallee(jsDynamicCast<JSObject*>(functionObj))
+        , m_hasFoundFrame(false)
+        , m_hasSkippedToCallerFrame(false)
+        , m_result(jsNull())
+    {
+    }
+
+    JSValue result() const { return m_result; }
+
+    StackVisitor::Status operator()(StackVisitor& visitor)
+    {
+        JSObject* callee = visitor->callee();
+
+        if (callee && callee->inherits(JSBoundFunction::info()))
+            return StackVisitor::Continue;
+
+        if (!m_hasFoundFrame && (callee != m_targetCallee))
+            return StackVisitor::Continue;
+
+        m_hasFoundFrame = true;
+        if (!m_hasSkippedToCallerFrame) {
+            m_hasSkippedToCallerFrame = true;
+            return StackVisitor::Continue;
+        }
+
+        if (callee)
+            m_result = callee;
+        return StackVisitor::Done;
+    }
+
+private:
+    JSObject* m_targetCallee;
+    bool m_hasFoundFrame;
+    bool m_hasSkippedToCallerFrame;
+    JSValue m_result;
+};
+
+static JSValue retrieveCallerFunction(ExecState* exec, JSFunction* functionObj)
+{
+    RetrieveCallerFunctionFunctor functor(functionObj);
+    exec->iterate(functor);
+    return functor.result();
+}
+
+EncodedJSValue JSFunction::callerGetter(ExecState* exec, EncodedJSValue slotBase, EncodedJSValue, PropertyName)
+{
+    JSFunction* thisObj = jsCast<JSFunction*>(JSValue::decode(slotBase));
+    ASSERT(!thisObj->isHostFunction());
+    JSValue caller = retrieveCallerFunction(exec, thisObj);
 
     // See ES5.1 15.3.5.4 - Function.caller may not be used to retrieve a strict caller.
-    if (!caller.isObject() || !asObject(caller)->inherits(&JSFunction::s_info))
-        return caller;
+    if (!caller.isObject() || !asObject(caller)->inherits(JSFunction::info()))
+        return JSValue::encode(caller);
     JSFunction* function = jsCast<JSFunction*>(caller);
     if (function->isHostFunction() || !function->jsExecutable()->isStrictMode())
-        return caller;
-    return throwTypeError(exec, ASCIILiteral("Function.caller used to retrieve strict caller"));
+        return JSValue::encode(caller);
+    return JSValue::encode(throwTypeError(exec, ASCIILiteral("Function.caller used to retrieve strict caller")));
 }
 
-JSValue JSFunction::lengthGetter(ExecState*, JSValue slotBase, PropertyName)
+EncodedJSValue JSFunction::lengthGetter(ExecState*, EncodedJSValue slotBase, EncodedJSValue, PropertyName)
 {
-    JSFunction* thisObj = jsCast<JSFunction*>(slotBase);
+    JSFunction* thisObj = jsCast<JSFunction*>(JSValue::decode(slotBase));
     ASSERT(!thisObj->isHostFunction());
-    return jsNumber(thisObj->jsExecutable()->parameterCount());
+    return JSValue::encode(jsNumber(thisObj->jsExecutable()->parameterCount()));
 }
 
-JSValue JSFunction::nameGetter(ExecState*, JSValue slotBase, PropertyName)
+EncodedJSValue JSFunction::nameGetter(ExecState*, EncodedJSValue slotBase, EncodedJSValue, PropertyName)
 {
-    JSFunction* thisObj = jsCast<JSFunction*>(slotBase);
+    JSFunction* thisObj = jsCast<JSFunction*>(JSValue::decode(slotBase));
     ASSERT(!thisObj->isHostFunction());
-    return thisObj->jsExecutable()->nameValue();
+    return JSValue::encode(thisObj->jsExecutable()->nameValue());
 }
 
-bool JSFunction::getOwnPropertySlot(JSCell* cell, ExecState* exec, PropertyName propertyName, PropertySlot& slot)
+bool JSFunction::getOwnPropertySlot(JSObject* object, ExecState* exec, PropertyName propertyName, PropertySlot& slot)
 {
-    JSFunction* thisObject = jsCast<JSFunction*>(cell);
+    JSFunction* thisObject = jsCast<JSFunction*>(object);
     if (thisObject->isHostFunction())
         return Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
 
     if (propertyName == exec->propertyNames().prototype) {
-        JSGlobalData& globalData = exec->globalData();
-        PropertyOffset offset = thisObject->getDirectOffset(globalData, propertyName);
+        VM& vm = exec->vm();
+        unsigned attributes;
+        PropertyOffset offset = thisObject->getDirectOffset(vm, propertyName, attributes);
         if (!isValidOffset(offset)) {
             JSObject* prototype = constructEmptyObject(exec);
-            prototype->putDirect(globalData, exec->propertyNames().constructor, thisObject, DontEnum);
-            thisObject->putDirect(globalData, exec->propertyNames().prototype, prototype, DontDelete | DontEnum);
-            offset = thisObject->getDirectOffset(globalData, exec->propertyNames().prototype);
+            prototype->putDirect(vm, exec->propertyNames().constructor, thisObject, DontEnum);
+            thisObject->putDirect(vm, exec->propertyNames().prototype, prototype, DontDelete | DontEnum);
+            offset = thisObject->getDirectOffset(vm, exec->propertyNames().prototype, attributes);
             ASSERT(isValidOffset(offset));
         }
 
-        slot.setValue(thisObject, thisObject->getDirect(offset), offset);
+        slot.setValue(thisObject, attributes, thisObject->getDirect(offset), offset);
     }
 
     if (propertyName == exec->propertyNames().arguments) {
         if (thisObject->jsExecutable()->isStrictMode()) {
             bool result = Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
             if (!result) {
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
+                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec->vm()), DontDelete | DontEnum | Accessor);
                 result = Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
                 ASSERT(result);
             }
             return result;
         }
-        slot.setCacheableCustom(thisObject, argumentsGetter);
+        slot.setCacheableCustom(thisObject, ReadOnly | DontEnum | DontDelete, argumentsGetter);
         return true;
     }
 
     if (propertyName == exec->propertyNames().length) {
-        slot.setCacheableCustom(thisObject, lengthGetter);
+        slot.setCacheableCustom(thisObject, ReadOnly | DontEnum | DontDelete, lengthGetter);
         return true;
     }
 
     if (propertyName == exec->propertyNames().name) {
-        slot.setCacheableCustom(thisObject, nameGetter);
+        slot.setCacheableCustom(thisObject, ReadOnly | DontEnum | DontDelete, nameGetter);
         return true;
     }
 
@@ -262,70 +345,17 @@ bool JSFunction::getOwnPropertySlot(JSCell* cell, ExecState* exec, PropertyName 
         if (thisObject->jsExecutable()->isStrictMode()) {
             bool result = Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
             if (!result) {
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
+                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec->vm()), DontDelete | DontEnum | Accessor);
                 result = Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
                 ASSERT(result);
             }
             return result;
         }
-        slot.setCacheableCustom(thisObject, callerGetter);
+        slot.setCacheableCustom(thisObject, ReadOnly | DontEnum | DontDelete, callerGetter);
         return true;
     }
 
     return Base::getOwnPropertySlot(thisObject, exec, propertyName, slot);
-}
-
-bool JSFunction::getOwnPropertyDescriptor(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
-{
-    JSFunction* thisObject = jsCast<JSFunction*>(object);
-    if (thisObject->isHostFunction())
-        return Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-    
-    if (propertyName == exec->propertyNames().prototype) {
-        PropertySlot slot;
-        thisObject->methodTable()->getOwnPropertySlot(thisObject, exec, propertyName, slot);
-        return Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-    }
-    
-    if (propertyName == exec->propertyNames().arguments) {
-        if (thisObject->jsExecutable()->isStrictMode()) {
-            bool result = Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-            if (!result) {
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
-                result = Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-                ASSERT(result);
-            }
-            return result;
-        }
-        descriptor.setDescriptor(exec->interpreter()->retrieveArgumentsFromVMCode(exec, thisObject), ReadOnly | DontEnum | DontDelete);
-        return true;
-    }
-    
-    if (propertyName == exec->propertyNames().length) {
-        descriptor.setDescriptor(jsNumber(thisObject->jsExecutable()->parameterCount()), ReadOnly | DontEnum | DontDelete);
-        return true;
-    }
-    
-    if (propertyName == exec->propertyNames().name) {
-        descriptor.setDescriptor(thisObject->jsExecutable()->nameValue(), ReadOnly | DontEnum | DontDelete);
-        return true;
-    }
-
-    if (propertyName == exec->propertyNames().caller) {
-        if (thisObject->jsExecutable()->isStrictMode()) {
-            bool result = Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-            if (!result) {
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
-                result = Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
-                ASSERT(result);
-            }
-            return result;
-        }
-        descriptor.setDescriptor(exec->interpreter()->retrieveCallerFromVMCode(exec, thisObject), ReadOnly | DontEnum | DontDelete);
-        return true;
-    }
-    
-    return Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
 }
 
 void JSFunction::getOwnNonIndexPropertyNames(JSObject* object, ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
@@ -333,7 +363,7 @@ void JSFunction::getOwnNonIndexPropertyNames(JSObject* object, ExecState* exec, 
     JSFunction* thisObject = jsCast<JSFunction*>(object);
     if (!thisObject->isHostFunction() && (mode == IncludeDontEnumProperties)) {
         // Make sure prototype has been reified.
-        PropertySlot slot;
+        PropertySlot slot(thisObject);
         thisObject->methodTable()->getOwnPropertySlot(thisObject, exec, exec->propertyNames().prototype, slot);
 
         propertyNames.add(exec->propertyNames().arguments);
@@ -354,12 +384,12 @@ void JSFunction::put(JSCell* cell, ExecState* exec, PropertyName propertyName, J
     if (propertyName == exec->propertyNames().prototype) {
         // Make sure prototype has been reified, such that it can only be overwritten
         // following the rules set out in ECMA-262 8.12.9.
-        PropertySlot slot;
+        PropertySlot slot(thisObject);
         thisObject->methodTable()->getOwnPropertySlot(thisObject, exec, propertyName, slot);
         thisObject->m_allocationProfile.clear();
-        thisObject->m_allocationProfileWatchpoint.notifyWrite();
+        thisObject->m_allocationProfileWatchpoint.fireAll();
         // Don't allow this to be cached, since a [[Put]] must clear m_allocationProfile.
-        PutPropertySlot dontCache;
+        PutPropertySlot dontCache(thisObject);
         Base::put(thisObject, exec, propertyName, value, dontCache);
         return;
     }
@@ -382,7 +412,7 @@ bool JSFunction::deleteProperty(JSCell* cell, ExecState* exec, PropertyName prop
 {
     JSFunction* thisObject = jsCast<JSFunction*>(cell);
     // For non-host functions, don't let these properties by deleted - except by DefineOwnProperty.
-    if (!thisObject->isHostFunction() && !exec->globalData().isInDefineOwnProperty()
+    if (!thisObject->isHostFunction() && !exec->vm().isInDefineOwnProperty()
         && (propertyName == exec->propertyNames().arguments
             || propertyName == exec->propertyNames().length
             || propertyName == exec->propertyNames().name
@@ -392,7 +422,7 @@ bool JSFunction::deleteProperty(JSCell* cell, ExecState* exec, PropertyName prop
     return Base::deleteProperty(thisObject, exec, propertyName);
 }
 
-bool JSFunction::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor, bool throwException)
+bool JSFunction::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName propertyName, const PropertyDescriptor& descriptor, bool throwException)
 {
     JSFunction* thisObject = jsCast<JSFunction*>(object);
     if (thisObject->isHostFunction())
@@ -401,28 +431,30 @@ bool JSFunction::defineOwnProperty(JSObject* object, ExecState* exec, PropertyNa
     if (propertyName == exec->propertyNames().prototype) {
         // Make sure prototype has been reified, such that it can only be overwritten
         // following the rules set out in ECMA-262 8.12.9.
-        PropertySlot slot;
+        PropertySlot slot(thisObject);
         thisObject->methodTable()->getOwnPropertySlot(thisObject, exec, propertyName, slot);
         thisObject->m_allocationProfile.clear();
-        thisObject->m_allocationProfileWatchpoint.notifyWrite();
+        thisObject->m_allocationProfileWatchpoint.fireAll();
         return Base::defineOwnProperty(object, exec, propertyName, descriptor, throwException);
     }
 
     bool valueCheck;
     if (propertyName == exec->propertyNames().arguments) {
         if (thisObject->jsExecutable()->isStrictMode()) {
-            if (!Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor))
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
+            PropertySlot slot(thisObject);
+            if (!Base::getOwnPropertySlot(thisObject, exec, propertyName, slot))
+                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec->vm()), DontDelete | DontEnum | Accessor);
             return Base::defineOwnProperty(object, exec, propertyName, descriptor, throwException);
         }
-        valueCheck = !descriptor.value() || sameValue(exec, descriptor.value(), exec->interpreter()->retrieveArgumentsFromVMCode(exec, thisObject));
+        valueCheck = !descriptor.value() || sameValue(exec, descriptor.value(), retrieveArguments(exec, thisObject));
     } else if (propertyName == exec->propertyNames().caller) {
         if (thisObject->jsExecutable()->isStrictMode()) {
-            if (!Base::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor))
-                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec), DontDelete | DontEnum | Accessor);
+            PropertySlot slot(thisObject);
+            if (!Base::getOwnPropertySlot(thisObject, exec, propertyName, slot))
+                thisObject->putDirectAccessor(exec, propertyName, thisObject->globalObject()->throwTypeErrorGetterSetter(exec->vm()), DontDelete | DontEnum | Accessor);
             return Base::defineOwnProperty(object, exec, propertyName, descriptor, throwException);
         }
-        valueCheck = !descriptor.value() || sameValue(exec, descriptor.value(), exec->interpreter()->retrieveCallerFromVMCode(exec, thisObject));
+        valueCheck = !descriptor.value() || sameValue(exec, descriptor.value(), retrieveCallerFunction(exec, thisObject));
     } else if (propertyName == exec->propertyNames().length)
         valueCheck = !descriptor.value() || sameValue(exec, descriptor.value(), jsNumber(thisObject->jsExecutable()->parameterCount()));
     else if (propertyName == exec->propertyNames().name)
@@ -432,27 +464,27 @@ bool JSFunction::defineOwnProperty(JSObject* object, ExecState* exec, PropertyNa
      
     if (descriptor.configurablePresent() && descriptor.configurable()) {
         if (throwException)
-            throwError(exec, createTypeError(exec, ASCIILiteral("Attempting to configurable attribute of unconfigurable property.")));
+            exec->vm().throwException(exec, createTypeError(exec, ASCIILiteral("Attempting to configurable attribute of unconfigurable property.")));
         return false;
     }
     if (descriptor.enumerablePresent() && descriptor.enumerable()) {
         if (throwException)
-            throwError(exec, createTypeError(exec, ASCIILiteral("Attempting to change enumerable attribute of unconfigurable property.")));
+            exec->vm().throwException(exec, createTypeError(exec, ASCIILiteral("Attempting to change enumerable attribute of unconfigurable property.")));
         return false;
     }
     if (descriptor.isAccessorDescriptor()) {
         if (throwException)
-            throwError(exec, createTypeError(exec, ASCIILiteral("Attempting to change access mechanism for an unconfigurable property.")));
+            exec->vm().throwException(exec, createTypeError(exec, ASCIILiteral("Attempting to change access mechanism for an unconfigurable property.")));
         return false;
     }
     if (descriptor.writablePresent() && descriptor.writable()) {
         if (throwException)
-            throwError(exec, createTypeError(exec, ASCIILiteral("Attempting to change writable attribute of unconfigurable property.")));
+            exec->vm().throwException(exec, createTypeError(exec, ASCIILiteral("Attempting to change writable attribute of unconfigurable property.")));
         return false;
     }
     if (!valueCheck) {
         if (throwException)
-            throwError(exec, createTypeError(exec, ASCIILiteral("Attempting to change value of a readonly property.")));
+            exec->vm().throwException(exec, createTypeError(exec, ASCIILiteral("Attempting to change value of a readonly property.")));
         return false;
     }
     return true;

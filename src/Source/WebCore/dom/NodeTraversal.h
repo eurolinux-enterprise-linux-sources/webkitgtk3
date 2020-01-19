@@ -25,28 +25,10 @@
 #ifndef NodeTraversal_h
 #define NodeTraversal_h
 
-#include "Element.h"
+#include "ContainerNode.h"
+#include "Text.h"
 
 namespace WebCore {
-
-namespace ElementTraversal {
-
-// First element child of the node.
-Element* firstWithin(const Node*);
-Element* firstWithin(const ContainerNode*);
-// Pre-order traversal skipping non-element nodes.
-Element* next(const Node*);
-Element* next(const Node*, const Node* stayWithin);
-Element* next(const ContainerNode*);
-Element* next(const ContainerNode*, const Node* stayWithin);
-// Like next, but skips children.
-Element* nextSkippingChildren(const Node*);
-Element* nextSkippingChildren(const Node*, const Node* stayWithin);
-Element* nextSkippingChildren(const ContainerNode*);
-Element* nextSkippingChildren(const ContainerNode*, const Node* stayWithin);
-
-}
-
 namespace NodeTraversal {
 
 // Does a pre-order traversal of the tree to find the next node after this one.
@@ -57,6 +39,8 @@ Node* next(const Node*);
 Node* next(const Node*, const Node* stayWithin);
 Node* next(const ContainerNode*);
 Node* next(const ContainerNode*, const Node* stayWithin);
+Node* next(const Text*);
+Node* next(const Text*, const Node* stayWithin);
 
 // Like next, but skips children and starts with the next sibling.
 Node* nextSkippingChildren(const Node*);
@@ -65,6 +49,7 @@ Node* nextSkippingChildren(const ContainerNode*);
 Node* nextSkippingChildren(const ContainerNode*, const Node* stayWithin);
 
 // Does a reverse pre-order traversal to find the node that comes before the current one in document order
+Node* last(const ContainerNode*);
 Node* previous(const Node*, const Node* stayWithin = 0);
 
 // Like previous, but skips children and starts with the next sibling.
@@ -77,70 +62,18 @@ Node* nextPostOrder(const Node*, const Node* stayWithin = 0);
 Node* previousPostOrder(const Node*, const Node* stayWithin = 0);
 Node* previousSkippingChildrenPostOrder(const Node*, const Node* stayWithin = 0);
 
-}
+// Pre-order traversal including the pseudo-elements.
+Node* previousIncludingPseudo(const Node*, const Node* = 0);
+Node* nextIncludingPseudo(const Node*, const Node* = 0);
+Node* nextIncludingPseudoSkippingChildren(const Node*, const Node* = 0);
 
-namespace ElementTraversal {
-template <class NodeType>
-inline Element* firstElementWithinTemplate(NodeType* current)
-{
-    // Except for the root containers, only elements can have element children.
-    Node* node = current->firstChild();
-    while (node && !node->isElementNode())
-        node = node->nextSibling();
-    return toElement(node);
-}
-inline Element* firstWithin(const ContainerNode* current) { return firstElementWithinTemplate(current); }
-inline Element* firstWithin(const Node* current) { return firstElementWithinTemplate(current); }
-
-template <class NodeType>
-inline Element* traverseNextElementTemplate(NodeType* current)
-{
-    Node* node = NodeTraversal::next(current);
-    while (node && !node->isElementNode())
-        node = NodeTraversal::nextSkippingChildren(node);
-    return toElement(node);
-}
-inline Element* next(const ContainerNode* current) { return traverseNextElementTemplate(current); }
-inline Element* next(const Node* current) { return traverseNextElementTemplate(current); }
-
-template <class NodeType>
-inline Element* traverseNextElementTemplate(NodeType* current, const Node* stayWithin)
-{
-    Node* node = NodeTraversal::next(current, stayWithin);
-    while (node && !node->isElementNode())
-        node = NodeTraversal::nextSkippingChildren(node, stayWithin);
-    return toElement(node);
-}
-inline Element* next(const ContainerNode* current, const Node* stayWithin) { return traverseNextElementTemplate(current, stayWithin); }
-inline Element* next(const Node* current, const Node* stayWithin) { return traverseNextElementTemplate(current, stayWithin); }
-
-template <class NodeType>
-inline Element* traverseNextElementSkippingChildrenTemplate(NodeType* current)
-{
-    Node* node = NodeTraversal::nextSkippingChildren(current);
-    while (node && !node->isElementNode())
-        node = NodeTraversal::nextSkippingChildren(node);
-    return toElement(node);
-}
-inline Element* nextSkippingChildren(const ContainerNode* current) { return traverseNextElementSkippingChildrenTemplate(current); }
-inline Element* nextSkippingChildren(const Node* current) { return traverseNextElementSkippingChildrenTemplate(current); }
-
-template <class NodeType>
-inline Element* traverseNextElementSkippingChildrenTemplate(NodeType* current, const Node* stayWithin)
-{
-    Node* node = NodeTraversal::nextSkippingChildren(current, stayWithin);
-    while (node && !node->isElementNode())
-        node = NodeTraversal::nextSkippingChildren(node, stayWithin);
-    return toElement(node);
-}
-inline Element* nextSkippingChildren(const ContainerNode* current, const Node* stayWithin) { return traverseNextElementSkippingChildrenTemplate(current, stayWithin); }
-inline Element* nextSkippingChildren(const Node* current, const Node* stayWithin) { return traverseNextElementSkippingChildrenTemplate(current, stayWithin); }
 }
 
 namespace NodeTraversal {
 
 Node* nextAncestorSibling(const Node*);
 Node* nextAncestorSibling(const Node*, const Node* stayWithin);
+Node* deepLastChild(Node*);
 
 template <class NodeType>
 inline Node* traverseNextTemplate(NodeType* current)
@@ -153,7 +86,7 @@ inline Node* traverseNextTemplate(NodeType* current)
 }
 inline Node* next(const Node* current) { return traverseNextTemplate(current); }
 inline Node* next(const ContainerNode* current) { return traverseNextTemplate(current); }
-    
+
 template <class NodeType>
 inline Node* traverseNextTemplate(NodeType* current, const Node* stayWithin)
 {
@@ -190,8 +123,19 @@ inline Node* traverseNextSkippingChildrenTemplate(NodeType* current, const Node*
 inline Node* nextSkippingChildren(const Node* current, const Node* stayWithin) { return traverseNextSkippingChildrenTemplate(current, stayWithin); }
 inline Node* nextSkippingChildren(const ContainerNode* current, const Node* stayWithin) { return traverseNextSkippingChildrenTemplate(current, stayWithin); }
 
+inline Node* next(const Text* current) { return traverseNextSkippingChildrenTemplate(current); }
+inline Node* next(const Text* current, const Node* stayWithin) { return traverseNextSkippingChildrenTemplate(current, stayWithin); }
+
+inline Node* previous(const Node* current, const Node* stayWithin)
+{
+    if (Node* previous = current->previousSibling())
+        return deepLastChild(previous);
+    if (current->parentNode() == stayWithin)
+        return nullptr;
+    return current->parentNode();
 }
 
+}
 }
 
 #endif

@@ -20,11 +20,11 @@
 #include "config.h"
 #include "TextureMapper.h"
 
+#include "FilterOperations.h"
 #include "GraphicsLayer.h"
 #include "TextureMapperImageBuffer.h"
 #include "Timer.h"
 #include <wtf/CurrentTime.h>
-#include <wtf/NonCopyingSort.h>
 
 #if USE(ACCELERATED_COMPOSITING) && USE(TEXTURE_MAPPER)
 
@@ -84,7 +84,7 @@ void BitmapTexturePool::releaseUnusedTexturesTimerFired(Timer<BitmapTexturePool>
         return;
 
     // Delete entries, which have been unused in s_releaseUnusedSecondsTolerance.
-    nonCopyingSort(m_textures.begin(), m_textures.end(), BitmapTexturePoolEntry::compareTimeLastUsed);
+    std::sort(m_textures.begin(), m_textures.end(), BitmapTexturePoolEntry::compareTimeLastUsed);
 
     double minUsedTime = monotonicallyIncreasingTime() - s_releaseUnusedSecondsTolerance;
     for (size_t i = 0; i < m_textures.size(); ++i) {
@@ -121,10 +121,10 @@ PassRefPtr<BitmapTexture> BitmapTexturePool::acquireTexture(const IntSize& size,
     return selectedEntry->m_texture;
 }
 
-PassRefPtr<BitmapTexture> TextureMapper::acquireTextureFromPool(const IntSize& size)
+PassRefPtr<BitmapTexture> TextureMapper::acquireTextureFromPool(const IntSize& size, const BitmapTexture::Flags flags)
 {
     RefPtr<BitmapTexture> selectedTexture = m_texturePool->acquireTexture(size, this);
-    selectedTexture->reset(size, BitmapTexture::SupportsAlpha);
+    selectedTexture->reset(size, flags);
     return selectedTexture;
 }
 
@@ -141,6 +141,8 @@ TextureMapper::TextureMapper(AccelerationMode accelerationMode)
     , m_textDrawingMode(TextModeFill)
     , m_texturePool(adoptPtr(new BitmapTexturePool()))
     , m_accelerationMode(accelerationMode)
+    , m_isMaskMode(false)
+    , m_wrapMode(StretchWrap)
 { }
 
 TextureMapper::~TextureMapper()
@@ -148,7 +150,7 @@ TextureMapper::~TextureMapper()
 
 void BitmapTexture::updateContents(TextureMapper* textureMapper, GraphicsLayer* sourceLayer, const IntRect& targetRect, const IntPoint& offset, UpdateContentsFlag updateContentsFlag)
 {
-    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(targetRect.size());
+    std::unique_ptr<ImageBuffer> imageBuffer = ImageBuffer::create(targetRect.size());
     GraphicsContext* context = imageBuffer->context();
     context->setImageInterpolationQuality(textureMapper->imageInterpolationQuality());
     context->setTextDrawingMode(textureMapper->textDrawingMode());

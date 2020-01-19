@@ -28,13 +28,9 @@
 namespace WebCore {
 
 class DocumentFragment;
+class FormNamedItem;
 class HTMLCollection;
 class HTMLFormElement;
-
-#if ENABLE(MICRODATA)
-class HTMLPropertiesCollection;
-class MicroDataItemValue;
-#endif
 
 enum TranslateAttributeMode {
     TranslateAttributeYes,
@@ -44,13 +40,13 @@ enum TranslateAttributeMode {
 
 class HTMLElement : public StyledElement {
 public:
-    static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document*);
+    static PassRefPtr<HTMLElement> create(const QualifiedName& tagName, Document&);
 
     PassRefPtr<HTMLCollection> children();
 
-    virtual String title() const;
+    virtual String title() const override final;
 
-    virtual short tabIndex() const;
+    virtual short tabIndex() const override;
     void setTabIndex(int);
 
     String innerHTML() const;
@@ -65,7 +61,7 @@ public:
     void insertAdjacentText(const String& where, const String& text, ExceptionCode&);
 
     virtual bool hasCustomFocusLogic() const;
-    virtual bool supportsFocus() const;
+    virtual bool supportsFocus() const override;
 
     String contentEditable() const;
     void setContentEditable(const String&, ExceptionCode&);
@@ -81,54 +77,51 @@ public:
 
     void click();
 
-    virtual void accessKeyAction(bool sendMouseEvents);
+    virtual void accessKeyAction(bool sendMouseEvents) override;
 
     bool ieForbidsInsertHTML() const;
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
 
     HTMLFormElement* form() const { return virtualForm(); }
-
-    HTMLFormElement* findFormAncestor() const;
 
     bool hasDirectionAuto() const;
     TextDirection directionalityIfhasDirAutoAttribute(bool& isAuto) const;
 
-#if ENABLE(MICRODATA)
-    void setItemValue(const String&, ExceptionCode&);
-    PassRefPtr<MicroDataItemValue> itemValue() const;
-    PassRefPtr<HTMLPropertiesCollection> properties();
-    void getItemRefElements(Vector<HTMLElement*>&);
-#endif
-
     virtual bool isHTMLUnknownElement() const { return false; }
+    virtual bool isTextControlInnerTextElement() const { return false; }
+
+    virtual bool willRespondToMouseMoveEvents() override;
+    virtual bool willRespondToMouseWheelEvents() override;
+    virtual bool willRespondToMouseClickEvents() override;
 
     virtual bool isLabelable() const { return false; }
+    virtual FormNamedItem* asFormNamedItem() { return 0; }
 
 protected:
-    HTMLElement(const QualifiedName& tagName, Document*, ConstructionType);
+    HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
 
-    void addHTMLLengthToStyle(StylePropertySet*, CSSPropertyID, const String& value);
-    void addHTMLColorToStyle(StylePropertySet*, CSSPropertyID, const String& color);
+    void addHTMLLengthToStyle(MutableStyleProperties&, CSSPropertyID, const String& value);
+    void addHTMLColorToStyle(MutableStyleProperties&, CSSPropertyID, const String& color);
 
-    void applyAlignmentAttributeToStyle(const Attribute&, StylePropertySet*);
-    void applyBorderAttributeToStyle(const Attribute&, StylePropertySet*);
+    void applyAlignmentAttributeToStyle(const AtomicString&, MutableStyleProperties&);
+    void applyBorderAttributeToStyle(const AtomicString&, MutableStyleProperties&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
-    unsigned parseBorderWidthAttribute(const QualifiedName&, const AtomicString& value) const;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStyleProperties&) override;
+    unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(const ChildChange&) override;
     void calculateAndAdjustDirectionality();
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
 
 private:
-    virtual String nodeName() const;
+    virtual String nodeName() const override final;
 
-    void mapLanguageAttributeToLocale(const Attribute&, StylePropertySet*);
+    void mapLanguageAttributeToLocale(const AtomicString&, MutableStyleProperties&);
 
     virtual HTMLFormElement* virtualForm() const;
 
@@ -137,38 +130,29 @@ private:
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
-    void adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta);
+    void adjustDirectionalityIfNeededAfterChildrenChanged(Element* beforeChange, ChildChangeType);
     TextDirection directionality(Node** strongDirectionalityTextNode= 0) const;
 
     TranslateAttributeMode translateAttributeMode() const;
-
-#if ENABLE(MICRODATA)
-    virtual String itemValueText() const;
-    virtual void setItemValueText(const String&, ExceptionCode&);
-#endif
 };
 
-inline HTMLElement* toHTMLElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
-    return static_cast<HTMLElement*>(node);
-}
-
-inline const HTMLElement* toHTMLElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
-    return static_cast<const HTMLElement*>(node);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toHTMLElement(const HTMLElement*);
-
-inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document* document, ConstructionType type = CreateHTMLElement)
+inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document, ConstructionType type = CreateHTMLElement)
     : StyledElement(tagName, document, type)
 {
     ASSERT(tagName.localName().impl());
 }
 
+template <typename Type> bool isElementOfType(const HTMLElement&);
+
+void isHTMLElement(const HTMLElement&); // Catch unnecessary runtime check of type known at compile time.
+inline bool isHTMLElement(const Node& node) { return node.isHTMLElement(); }
+template <> inline bool isElementOfType<const HTMLElement>(const HTMLElement&) { return true; }
+template <> inline bool isElementOfType<const HTMLElement>(const Element& element) { return element.isHTMLElement(); }
+
+NODE_TYPE_CASTS(HTMLElement)
+
 } // namespace WebCore
+
+#include "HTMLElementTypeHelpers.h"
 
 #endif // HTMLElement_h

@@ -29,10 +29,7 @@
 #ifndef Console_h
 #define Console_h
 
-#include "ConsoleAPITypes.h"
-#include "ConsoleTypes.h"
 #include "DOMWindowProperty.h"
-#include "ScriptCallStack.h"
 #include "ScriptProfile.h"
 #include "ScriptState.h"
 #include "ScriptWrappable.h"
@@ -42,67 +39,45 @@
 
 namespace WebCore {
 
-class Document;
 class Frame;
-class MemoryInfo;
 class Page;
 class ScriptArguments;
-class ScriptCallStack;
 
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-typedef Vector<RefPtr<ScriptProfile> > ProfilesArray;
-#endif
+typedef Vector<RefPtr<ScriptProfile>> ProfilesArray;
 
 class Console : public ScriptWrappable, public RefCounted<Console>, public DOMWindowProperty {
 public:
     static PassRefPtr<Console> create(Frame* frame) { return adoptRef(new Console(frame)); }
     virtual ~Console();
 
-    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
-    void addMessage(MessageSource, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>);
-    void addMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0, Document* = 0);
-
-    void debug(ScriptState*, PassRefPtr<ScriptArguments>);
-    void error(ScriptState*, PassRefPtr<ScriptArguments>);
-    void info(ScriptState*, PassRefPtr<ScriptArguments>);
-    void log(ScriptState*, PassRefPtr<ScriptArguments>);
-    void clear(ScriptState*, PassRefPtr<ScriptArguments>);
-    void warn(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dir(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dirxml(ScriptState*, PassRefPtr<ScriptArguments>);
-    void table(ScriptState*, PassRefPtr<ScriptArguments>);
-    void trace(ScriptState*, PassRefPtr<ScriptArguments>);
-    void assertCondition(ScriptState*, PassRefPtr<ScriptArguments>, bool condition);
-    void count(ScriptState*, PassRefPtr<ScriptArguments>);
-    void markTimeline(PassRefPtr<ScriptArguments>);
-#if ENABLE(JAVASCRIPT_DEBUGGER)
+    void debug(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void error(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void info(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void log(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void clear(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void warn(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void dir(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void dirxml(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void table(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void trace(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void assertCondition(JSC::ExecState*, PassRefPtr<ScriptArguments>, bool condition);
+    void count(JSC::ExecState*, PassRefPtr<ScriptArguments>);
     const ProfilesArray& profiles() const { return m_profiles; }
-    void profile(const String&, ScriptState*);
-    void profileEnd(const String&, ScriptState*);
-#endif
+    void profile(JSC::ExecState*, const String& = String());
+    void profileEnd(JSC::ExecState*, const String& = String());
     void time(const String&);
-    void timeEnd(ScriptState*, const String&);
+    void timeEnd(JSC::ExecState*, const String&);
     void timeStamp(PassRefPtr<ScriptArguments>);
-    void group(ScriptState*, PassRefPtr<ScriptArguments>);
-    void groupCollapsed(ScriptState*, PassRefPtr<ScriptArguments>);
+    void group(JSC::ExecState*, PassRefPtr<ScriptArguments>);
+    void groupCollapsed(JSC::ExecState*, PassRefPtr<ScriptArguments>);
     void groupEnd();
-
-    static void mute();
-    static void unmute();
-
-    static bool shouldPrintExceptions();
-    static void setShouldPrintExceptions(bool);
-
-    PassRefPtr<MemoryInfo> memory() const;
 
 private:
     inline Page* page() const;
 
     explicit Console(Frame*);
 
-#if ENABLE(JAVASCRIPT_DEBUGGER)
     ProfilesArray m_profiles;
-#endif
 };
 
 } // namespace WebCore

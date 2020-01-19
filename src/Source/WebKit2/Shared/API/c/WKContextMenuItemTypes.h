@@ -26,6 +26,8 @@
 #ifndef WKContextMenuItemTypes_h
 #define WKContextMenuItemTypes_h
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -107,6 +109,7 @@ enum {
     kWKContextMenuItemTagCapitalize,
     kWKContextMenuItemTagChangeBack,
     kWKContextMenuItemTagOpenMediaInNewWindow,
+    kWKContextMenuItemTagDownloadMediaToDisk,
     kWKContextMenuItemTagCopyMediaLinkToClipboard,
     kWKContextMenuItemTagToggleMediaControls,
     kWKContextMenuItemTagToggleMediaLoop,
@@ -114,6 +117,10 @@ enum {
     kWKContextMenuItemTagMediaPlayPause,
     kWKContextMenuItemTagMediaMute,
     kWKContextMenuItemTagDictationAlternative,
+    kWKContextMenuItemTagCopyImageUrlToClipboard,
+    kWKContextMenuItemTagSelectAll,
+    kWKContextMenuItemTagOpenLinkInThisWindow,
+    kWKContextMenuItemTagToggleVideoFullscreen,
     kWKContextMenuItemBaseApplicationTag = 10000
 };
 typedef uint32_t WKContextMenuItemTag;

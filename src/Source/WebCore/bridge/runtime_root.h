@@ -28,6 +28,7 @@
 
 #include <heap/Strong.h>
 #include <heap/Weak.h>
+#include <heap/WeakInlines.h>
 #include <wtf/Forward.h>
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashSet.h>
@@ -54,7 +55,7 @@ class RootObject : public RefCounted<RootObject>, private JSC::WeakHandleOwner {
     friend class JavaJSObject;
 
 public:
-    ~RootObject();
+    virtual ~RootObject();
     
     static PassRefPtr<RootObject> create(const void* nativeHandle, JSGlobalObject*);
 
@@ -69,7 +70,7 @@ public:
     JSGlobalObject* globalObject() const;
     void updateGlobalObject(JSGlobalObject*);
 
-    void addRuntimeObject(JSGlobalData&, RuntimeObject*);
+    void addRuntimeObject(VM&, RuntimeObject*);
     void removeRuntimeObject(RuntimeObject*);
 
     struct InvalidationCallback {
@@ -82,7 +83,7 @@ private:
     RootObject(const void* nativeHandle, JSGlobalObject*);
 
     // WeakHandleOwner
-    virtual void finalize(JSC::Handle<JSC::Unknown>, void* context);
+    virtual void finalize(JSC::Handle<JSC::Unknown>, void* context) override;
 
     bool m_isValid;
     
@@ -90,7 +91,7 @@ private:
     Strong<JSGlobalObject> m_globalObject;
 
     ProtectCountSet m_protectCountSet;
-    HashMap<RuntimeObject*, JSC::Weak<RuntimeObject> > m_runtimeObjects; // We use a map to implement a set.
+    HashMap<RuntimeObject*, JSC::Weak<RuntimeObject>> m_runtimeObjects; // We use a map to implement a set.
 
     HashSet<InvalidationCallback*> m_invalidationCallbacks;
 };

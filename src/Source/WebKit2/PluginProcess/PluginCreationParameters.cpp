@@ -26,7 +26,7 @@
 #include "config.h"
 #include "PluginCreationParameters.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "ArgumentCoders.h"
 
@@ -45,7 +45,7 @@ PluginCreationParameters::PluginCreationParameters()
 {
 }
 
-void PluginCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
+void PluginCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
 {
     encoder << pluginInstanceID;
     encoder << windowNPObjectID;
@@ -61,7 +61,7 @@ void PluginCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
 #endif
 }
 
-bool PluginCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, PluginCreationParameters& result)
+bool PluginCreationParameters::decode(IPC::ArgumentDecoder& decoder, PluginCreationParameters& result)
 {
     if (!decoder.decode(result.pluginInstanceID) || !result.pluginInstanceID)
         return false;
@@ -98,4 +98,4 @@ bool PluginCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, PluginC
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

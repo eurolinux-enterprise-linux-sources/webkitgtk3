@@ -31,6 +31,7 @@
 #if ENABLE(DFG_JIT)
 
 #include "DFGCommon.h"
+#include "DumpContext.h"
 #include "LinkBuffer.h"
 #include "MacroAssembler.h"
 #include <wtf/HashMap.h>
@@ -41,13 +42,15 @@ namespace JSC { namespace DFG {
 
 class Graph;
 
+#if ENABLE(DISASSEMBLER)
+
 class Disassembler {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     Disassembler(Graph&);
     
     void setStartOfCode(MacroAssembler::Label label) { m_startOfCode = label; }
-    void setForBlock(BlockIndex blockIndex, MacroAssembler::Label label)
+    void setForBlockIndex(BlockIndex blockIndex, MacroAssembler::Label label)
     {
         m_labelForBlockIndex[blockIndex] = label;
     }
@@ -88,12 +91,32 @@ private:
     void dumpDisassembly(PrintStream&, const char* prefix, LinkBuffer&, MacroAssembler::Label& previousLabel, MacroAssembler::Label currentLabel, Node* context);
     
     Graph& m_graph;
+    DumpContext m_dumpContext;
     MacroAssembler::Label m_startOfCode;
     Vector<MacroAssembler::Label> m_labelForBlockIndex;
     HashMap<Node*, MacroAssembler::Label> m_labelForNode;
     MacroAssembler::Label m_endOfMainPath;
     MacroAssembler::Label m_endOfCode;
 };
+
+#else // ENABLE(DISASSEMBLER)
+
+class Disassembler {
+    WTF_MAKE_FAST_ALLOCATED;
+public:
+    Disassembler(Graph&) { }
+
+    void setStartOfCode(MacroAssembler::Label) { }
+    void setForBlockIndex(BlockIndex, MacroAssembler::Label) { }
+    void setForNode(Node*, MacroAssembler::Label) { }
+    void setEndOfMainPath(MacroAssembler::Label) { }
+    void setEndOfCode(MacroAssembler::Label) { }
+
+    void dump(LinkBuffer&) { }
+    void reportToProfiler(Profiler::Compilation*, LinkBuffer&) { }
+};
+
+#endif // ENABLE(DISASSEMBLER)
 
 } } // namespace JSC::DFG
 

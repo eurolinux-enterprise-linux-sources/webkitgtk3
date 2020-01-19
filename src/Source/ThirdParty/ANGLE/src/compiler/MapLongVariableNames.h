@@ -31,7 +31,7 @@ public:
     void Insert(const char* originalName, const char* mappedName);
 
     // Return the number of entries in the map.
-    int Size() const;
+    size_t Size() const;
 
 private:
     LongNameMap();
@@ -48,7 +48,6 @@ public:
     MapLongVariableNames(LongNameMap* globalMap);
 
     virtual void visitSymbol(TIntermSymbol*);
-    virtual bool visitLoop(Visit, TIntermLoop*);
 
 private:
     TString mapGlobalLongName(const TString& name);

@@ -24,12 +24,13 @@
 #define Length_h
 
 #include "AnimationUtilities.h"
+#include <memory>
+#include <string.h>
 #include <wtf/Assertions.h>
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
 #include <wtf/MathExtras.h>
-#include <wtf/PassOwnArrayPtr.h>
 
 namespace WebCore {
 
@@ -88,13 +89,25 @@ public:
     {
         initFromLength(length);
     }
-    
+
+    Length(Length&& other)
+    {
+        moveFromLength(std::move(other));
+    }
+
     Length& operator=(const Length& length)
     {
         initFromLength(length);
         return *this;
     }
-    
+
+    Length& operator=(Length&& other)
+    {
+        if (this != &other)
+            moveFromLength(std::move(other));
+        return *this;
+    }
+
     ~Length()
     {
         if (isCalculated())
@@ -135,7 +148,7 @@ public:
 
     float percent() const
     {
-        ASSERT(type() == Percent);
+        ASSERT(isPercent());
         return getFloatValue();
     }
 
@@ -223,6 +236,7 @@ public:
     bool isLegacyIntrinsic() const { return type() == Intrinsic || type() == MinIntrinsic; }
     bool isIntrinsic() const { return type() == MinContent || type() == MaxContent || type() == FillAvailable || type() == FitContent; }
     bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated || isViewportPercentage(); }
+    bool isSpecifiedOrIntrinsic() const { return isSpecified() || isIntrinsic(); }
     bool isCalculated() const { return type() == Calculated; }
     bool isCalculatedEqual(const Length&) const;
     bool isMinContent() const { return type() == MinContent; }
@@ -278,19 +292,18 @@ private:
         ASSERT(!isUndefined());
         return m_isFloat ? static_cast<int>(m_floatValue) : m_intValue;
     }
-    void initFromLength(const Length &length) 
+    void initFromLength(const Length& length)
     {
-        m_quirk = length.m_quirk;
-        m_type = length.m_type;
-        m_isFloat = length.m_isFloat;
-        
-        if (m_isFloat)
-            m_floatValue = length.m_floatValue;
-        else
-            m_intValue = length.m_intValue;
-        
+        memcpy(this, &length, sizeof(Length));
         if (isCalculated())
             incrementCalculatedRef();
+    }
+
+    void moveFromLength(Length&& length)
+    {
+        ASSERT(this != &length);
+        memcpy(this, &length, sizeof(Length));
+        length.m_type = Auto;
     }
 
     Length blendMixedTypes(const Length& from, double progress) const;
@@ -312,8 +325,8 @@ private:
     bool m_isFloat;
 };
 
-PassOwnArrayPtr<Length> newCoordsArray(const String&, int& len);
-PassOwnArrayPtr<Length> newLengthArray(const String&, int& len);
+std::unique_ptr<Length[]> newCoordsArray(const String&, int& len);
+std::unique_ptr<Length[]> newLengthArray(const String&, int& len);
 
 } // namespace WebCore
 

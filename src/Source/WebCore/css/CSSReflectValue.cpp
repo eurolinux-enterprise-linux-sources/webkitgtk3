@@ -27,30 +27,18 @@
 #include "CSSReflectValue.h"
 
 #include "CSSPrimitiveValue.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/StringBuilder.h>
-
-using namespace std;
 
 namespace WebCore {
 
-String CSSReflectValue::customCssText() const
+String CSSReflectValue::customCSSText() const
 {
     if (m_mask)
         return m_direction->cssText() + ' ' + m_offset->cssText() + ' ' + m_mask->cssText();
     return m_direction->cssText() + ' ' + m_offset->cssText();
 }
 
-#if ENABLE(CSS_VARIABLES)
-String CSSReflectValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-{
-    if (m_mask)
-        return m_direction->customSerializeResolvingVariables(variables) + ' ' + m_offset->customSerializeResolvingVariables(variables) + ' ' + m_mask->serializeResolvingVariables(variables);
-    return m_direction->customSerializeResolvingVariables(variables) + ' ' + m_offset->customSerializeResolvingVariables(variables);
-}
-#endif
-
-void CSSReflectValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
+void CSSReflectValue::addSubresourceStyleURLs(ListHashSet<URL>& urls, const StyleSheetContents* styleSheet) const
 {
     if (m_mask)
         m_mask->addSubresourceStyleURLs(urls, styleSheet);
@@ -61,13 +49,6 @@ bool CSSReflectValue::equals(const CSSReflectValue& other) const
     return m_direction == other.m_direction
         && compareCSSValuePtr(m_offset, other.m_offset)
         && compareCSSValuePtr(m_mask, other.m_mask);
-}
-
-void CSSReflectValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_offset, "offset");
-    info.addMember(m_mask, "mask");
 }
 
 } // namespace WebCore

@@ -30,13 +30,11 @@
 #include "config.h"
 #include "CryptographicallyRandomNumber.h"
 
+#include "NeverDestroyed.h"
 #include "OSRandomSource.h"
-#include "StdLibExtras.h"
-#include "ThreadingPrimitives.h"
+#include <mutex>
 
 namespace WTF {
-
-#if USE(OS_RANDOMNESS)
 
 namespace {
 
@@ -66,7 +64,7 @@ private:
 
     ARC4Stream m_stream;
     int m_count;
-    Mutex m_mutex;
+    std::mutex m_mutex;
 };
 
 ARC4Stream::ARC4Stream()
@@ -138,7 +136,7 @@ uint32_t ARC4RandomNumberGenerator::getWord()
 
 uint32_t ARC4RandomNumberGenerator::randomNumber()
 {
-    MutexLocker locker(m_mutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     m_count -= 4;
     stirIfNeeded();
@@ -147,7 +145,7 @@ uint32_t ARC4RandomNumberGenerator::randomNumber()
 
 void ARC4RandomNumberGenerator::randomValues(void* buffer, size_t length)
 {
-    MutexLocker locker(m_mutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     unsigned char* result = reinterpret_cast<unsigned char*>(buffer);
     stirIfNeeded();
@@ -160,7 +158,8 @@ void ARC4RandomNumberGenerator::randomValues(void* buffer, size_t length)
 
 ARC4RandomNumberGenerator& sharedRandomNumberGenerator()
 {
-    DEFINE_STATIC_LOCAL(ARC4RandomNumberGenerator, randomNumberGenerator, ());
+    static NeverDestroyed<ARC4RandomNumberGenerator> randomNumberGenerator;
+
     return randomNumberGenerator;
 }
 
@@ -175,7 +174,5 @@ void cryptographicallyRandomValues(void* buffer, size_t length)
 {
     sharedRandomNumberGenerator().randomValues(buffer, length);
 }
-
-#endif
 
 }

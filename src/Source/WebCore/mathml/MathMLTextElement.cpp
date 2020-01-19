@@ -32,27 +32,50 @@
 
 #include "MathMLNames.h"
 #include "RenderMathMLOperator.h"
+#include "RenderMathMLSpace.h"
 
 namespace WebCore {
     
 using namespace MathMLNames;
 
-inline MathMLTextElement::MathMLTextElement(const QualifiedName& tagName, Document* document)
+inline MathMLTextElement::MathMLTextElement(const QualifiedName& tagName, Document& document)
     : MathMLElement(tagName, document)
 {
+    setHasCustomStyleResolveCallbacks();
 }
 
-PassRefPtr<MathMLTextElement> MathMLTextElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<MathMLTextElement> MathMLTextElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new MathMLTextElement(tagName, document));
 }
 
-RenderObject* MathMLTextElement::createRenderer(RenderArena* arena, RenderStyle* style)
+void MathMLTextElement::didAttachRenderers()
+{
+    MathMLElement::didAttachRenderers();
+    if (renderer())
+        renderer()->updateFromElement();
+}
+
+void MathMLTextElement::childrenChanged(const ChildChange& change)
+{
+    MathMLElement::childrenChanged(change);
+    if (renderer())
+        renderer()->updateFromElement();
+}
+
+RenderPtr<RenderElement> MathMLTextElement::createElementRenderer(PassRef<RenderStyle> style)
 {
     if (hasLocalName(MathMLNames::moTag))
-        return new (arena) RenderMathMLOperator(this);
+        return createRenderer<RenderMathMLOperator>(*this, std::move(style));
+    if (hasLocalName(MathMLNames::mspaceTag))
+        return createRenderer<RenderMathMLSpace>(*this, std::move(style));
 
-    return MathMLElement::createRenderer(arena, style);
+    return MathMLElement::createElementRenderer(std::move(style));
+}
+
+bool MathMLTextElement::childShouldCreateRenderer(const Node& child) const
+{
+    return child.isTextNode();
 }
 
 }

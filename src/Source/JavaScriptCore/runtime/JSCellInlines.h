@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,44 +27,48 @@
 #define JSCellInlines_h
 
 #include "CallFrame.h"
+#include "DeferGC.h"
 #include "Handle.h"
 #include "JSCell.h"
 #include "JSObject.h"
 #include "JSString.h"
 #include "Structure.h"
+#include <wtf/CompilationThread.h>
 
 namespace JSC {
 
 inline JSCell::JSCell(CreatingEarlyCellTag)
 {
+    ASSERT(!isCompilationThread());
 }
 
-inline JSCell::JSCell(JSGlobalData& globalData, Structure* structure)
-    : m_structure(globalData, this, structure)
+inline JSCell::JSCell(VM& vm, Structure* structure)
+    : m_structure(vm, this, structure)
 {
+    ASSERT(!isCompilationThread());
 }
 
-inline void JSCell::finishCreation(JSGlobalData& globalData)
+inline void JSCell::finishCreation(VM& vm)
 {
 #if ENABLE(GC_VALIDATION)
-    ASSERT(globalData.isInitializingObject());
-    globalData.setInitializingObjectClass(0);
+    ASSERT(vm.isInitializingObject());
+    vm.setInitializingObjectClass(0);
 #else
-    UNUSED_PARAM(globalData);
+    UNUSED_PARAM(vm);
 #endif
     ASSERT(m_structure);
 }
 
-inline void JSCell::finishCreation(JSGlobalData& globalData, Structure* structure, CreatingEarlyCellTag)
+inline void JSCell::finishCreation(VM& vm, Structure* structure, CreatingEarlyCellTag)
 {
 #if ENABLE(GC_VALIDATION)
-    ASSERT(globalData.isInitializingObject());
-    globalData.setInitializingObjectClass(0);
+    ASSERT(vm.isInitializingObject());
+    vm.setInitializingObjectClass(0);
     if (structure)
 #endif
-        m_structure.setEarlyValue(globalData, this, structure);
+        m_structure.setEarlyValue(vm, this, structure);
     // Very first set of allocations won't have a real structure.
-    ASSERT(m_structure || !globalData.structureStructure);
+    ASSERT(m_structure || !vm.structureStructure);
 }
 
 inline Structure* JSCell::structure() const
@@ -82,11 +86,8 @@ inline void JSCell::visitChildren(JSCell* cell, SlotVisitor& visitor)
 template<typename T>
 void* allocateCell(Heap& heap, size_t size)
 {
+    ASSERT(!DisallowGC::isGCDisallowedOnCurrentThread());
     ASSERT(size >= sizeof(T));
-#if ENABLE(GC_VALIDATION)
-    ASSERT(!heap.globalData()->isInitializingObject());
-    heap.globalData()->setInitializingObjectClass(&T::s_info);
-#endif
     JSCell* result = 0;
     if (T::needsDestruction && T::hasImmortalStructure)
         result = static_cast<JSCell*>(heap.allocateWithImmortalStructureDestructor(size));
@@ -94,6 +95,10 @@ void* allocateCell(Heap& heap, size_t size)
         result = static_cast<JSCell*>(heap.allocateWithNormalDestructor(size));
     else 
         result = static_cast<JSCell*>(heap.allocateWithoutDestructor(size));
+#if ENABLE(GC_VALIDATION)
+    ASSERT(!heap.vm()->isInitializingObject());
+    heap.vm()->setInitializingObjectClass(T::info());
+#endif
     result->clearStructure();
     return result;
 }
@@ -134,14 +139,14 @@ inline bool JSCell::isAPIValueWrapper() const
     return m_structure->typeInfo().type() == APIValueWrapperType;
 }
 
-inline void JSCell::setStructure(JSGlobalData& globalData, Structure* structure)
+inline void JSCell::setStructure(VM& vm, Structure* structure)
 {
     ASSERT(structure->typeInfo().overridesVisitChildren() == this->structure()->typeInfo().overridesVisitChildren());
     ASSERT(structure->classInfo() == m_structure->classInfo());
     ASSERT(!m_structure
         || m_structure->transitionWatchpointSetHasBeenInvalidated()
         || m_structure.get() == structure);
-    m_structure.set(globalData, this, structure);
+    m_structure.set(vm, this, structure);
 }
 
 inline const MethodTable* JSCell::methodTableForDestruction() const
@@ -162,13 +167,6 @@ inline bool JSCell::inherits(const ClassInfo* info) const
     return classInfo()->isSubClassOf(info);
 }
 
-ALWAYS_INLINE bool JSCell::fastGetOwnPropertySlot(ExecState* exec, PropertyName propertyName, PropertySlot& slot)
-{
-    if (!structure()->typeInfo().overridesGetOwnPropertySlot())
-        return asObject(this)->inlineGetOwnPropertySlot(exec, propertyName, slot);
-    return methodTable()->getOwnPropertySlot(this, exec, propertyName, slot);
-}
-
 // Fast call to get a property where we may not yet have converted the string to an
 // identifier. The first time we perform a property access with a given string, try
 // performing the property map lookup without forming an identifier. We detect this
@@ -177,8 +175,8 @@ ALWAYS_INLINE JSValue JSCell::fastGetOwnProperty(ExecState* exec, const String& 
 {
     if (!structure()->typeInfo().overridesGetOwnPropertySlot() && !structure()->hasGetterSetterProperties()) {
         PropertyOffset offset = name.impl()->hasHash()
-            ? structure()->get(exec->globalData(), Identifier(exec, name))
-            : structure()->get(exec->globalData(), name);
+            ? structure()->get(exec->vm(), Identifier(exec, name))
+            : structure()->get(exec->vm(), name);
         if (offset != invalidOffset)
             return asObject(this)->locationForOffset(offset)->get();
     }
@@ -190,6 +188,13 @@ inline bool JSCell::toBoolean(ExecState* exec) const
     if (isString()) 
         return static_cast<const JSString*>(this)->toBoolean();
     return !structure()->masqueradesAsUndefined(exec->lexicalGlobalObject());
+}
+
+inline TriState JSCell::pureToBoolean() const
+{
+    if (isString()) 
+        return static_cast<const JSString*>(this)->toBoolean() ? TrueTriState : FalseTriState;
+    return MixedTriState;
 }
 
 } // namespace JSC

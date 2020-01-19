@@ -26,12 +26,12 @@
 #include "config.h"
 #include "WKBundle.h"
 
-#include "ImmutableArray.h"
+#include "APIArray.h"
+#include "APIData.h"
 #include "InjectedBundle.h"
 #include "WKAPICast.h"
 #include "WKBundleAPICast.h"
 #include "WKBundlePrivate.h"
-#include "WebData.h"
 
 using namespace WebKit;
 
@@ -40,7 +40,7 @@ WKTypeID WKBundleGetTypeID()
     return toAPI(InjectedBundle::APIType);
 }
 
-void WKBundleSetClient(WKBundleRef bundleRef, WKBundleClient * wkClient)
+void WKBundleSetClient(WKBundleRef bundleRef, WKBundleClientBase *wkClient)
 {
     toImpl(bundleRef)->initializeClient(wkClient);
 }
@@ -52,7 +52,7 @@ void WKBundlePostMessage(WKBundleRef bundleRef, WKStringRef messageNameRef, WKTy
 
 void WKBundlePostSynchronousMessage(WKBundleRef bundleRef, WKStringRef messageNameRef, WKTypeRef messageBodyRef, WKTypeRef* returnDataRef)
 {
-    RefPtr<APIObject> returnData;
+    RefPtr<API::Object> returnData;
     toImpl(bundleRef)->postSynchronousMessage(toWTFString(messageNameRef), toImpl(messageBodyRef), returnData);
     if (returnDataRef)
         *returnDataRef = toAPI(returnData.release().leakRef());
@@ -183,11 +183,6 @@ void WKBundleSetPopupBlockingEnabled(WKBundleRef bundleRef, WKBundlePageGroupRef
     toImpl(bundleRef)->setPopupBlockingEnabled(toImpl(pageGroupRef), enabled);
 }
 
-void WKBundleSwitchNetworkLoaderToNewTestingSession(WKBundleRef bundleRef)
-{
-    toImpl(bundleRef)->switchNetworkLoaderToNewTestingSession();
-}
-
 void WKBundleSetAuthorAndUserStylesEnabled(WKBundleRef bundleRef, WKBundlePageGroupRef pageGroupRef, bool enabled)
 {
     toImpl(bundleRef)->setAuthorAndUserStylesEnabled(toImpl(pageGroupRef), enabled);
@@ -211,6 +206,11 @@ void WKBundleRemoveOriginAccessWhitelistEntry(WKBundleRef bundleRef, WKStringRef
 void WKBundleResetOriginAccessWhitelists(WKBundleRef bundleRef)
 {
     toImpl(bundleRef)->resetOriginAccessWhitelists();
+}
+
+void WKBundleSetAsynchronousSpellCheckingEnabled(WKBundleRef bundleRef, WKBundlePageGroupRef pageGroupRef, bool enabled)
+{
+    toImpl(bundleRef)->setAsynchronousSpellCheckingEnabled(toImpl(pageGroupRef), enabled);
 }
 
 void WKBundleReportException(JSContextRef context, JSValueRef exception)
@@ -260,14 +260,13 @@ void WKBundleResetApplicationCacheOriginQuota(WKBundleRef bundleRef, WKStringRef
 
 WKArrayRef WKBundleCopyOriginsWithApplicationCache(WKBundleRef bundleRef)
 {
-    RefPtr<ImmutableArray> origins = toImpl(bundleRef)->originsWithApplicationCache();
+    RefPtr<API::Array> origins = toImpl(bundleRef)->originsWithApplicationCache();
     return toAPI(origins.release().leakRef());
 }
 
 WKDataRef WKBundleCreateWKDataFromUInt8Array(WKBundleRef bundle, JSContextRef context, JSValueRef data)
 {
-    RefPtr<WebData> webData = toImpl(bundle)->createWebDataFromUint8Array(context, data);
-    return toAPI(webData.release().leakRef());
+    return toAPI(toImpl(bundle)->createWebDataFromUint8Array(context, data).leakRef());
 }
 
 int WKBundleNumberOfPages(WKBundleRef bundleRef, WKBundleFrameRef frameRef, double pageWidthInPixels, double pageHeightInPixels)

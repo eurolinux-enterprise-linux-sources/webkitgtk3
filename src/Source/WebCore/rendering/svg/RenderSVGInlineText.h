@@ -26,14 +26,17 @@
 #include "Font.h"
 #include "RenderText.h"
 #include "SVGTextLayoutAttributes.h"
+#include "Text.h"
 
 namespace WebCore {
 
 class SVGInlineTextBox;
 
-class RenderSVGInlineText : public RenderText {
+class RenderSVGInlineText final : public RenderText {
 public:
-    RenderSVGInlineText(Node*, PassRefPtr<StringImpl>);
+    RenderSVGInlineText(Text&, const String&);
+
+    Text& textNode() const { return toText(nodeForNonAnonymous()); }
 
     bool characterStartsNewTextChunk(int position) const;
     SVGTextLayoutAttributes* layoutAttributes() { return &m_layoutAttributes; }
@@ -47,40 +50,27 @@ public:
     FloatRect floatLinesBoundingBox() const;
 
 private:
-    virtual const char* renderName() const { return "RenderSVGInlineText"; }
+    virtual const char* renderName() const override { return "RenderSVGInlineText"; }
 
-    virtual void setTextInternal(PassRefPtr<StringImpl>);
-    virtual void styleDidChange(StyleDifference, const RenderStyle*);
+    virtual String originalText() const override;
+    virtual void setTextInternal(const String&) override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle*) override;
 
-    virtual FloatRect objectBoundingBox() const { return floatLinesBoundingBox(); }
+    virtual FloatRect objectBoundingBox() const override { return floatLinesBoundingBox(); }
 
-    virtual bool requiresLayer() const { return false; }
-    virtual bool isSVGInlineText() const { return true; }
+    virtual bool isSVGInlineText() const override { return true; }
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&);
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
-    virtual IntRect linesBoundingBox() const;
-    virtual InlineTextBox* createTextBox();
+    virtual VisiblePosition positionForPoint(const LayoutPoint&) override;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
+    virtual IntRect linesBoundingBox() const override;
+    virtual std::unique_ptr<InlineTextBox> createTextBox() override;
 
     float m_scalingFactor;
     Font m_scaledFont;
     SVGTextLayoutAttributes m_layoutAttributes;
 };
 
-inline RenderSVGInlineText* toRenderSVGInlineText(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGInlineText());
-    return static_cast<RenderSVGInlineText*>(object);
-}
-
-inline const RenderSVGInlineText* toRenderSVGInlineText(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGInlineText());
-    return static_cast<const RenderSVGInlineText*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderSVGInlineText(const RenderSVGInlineText*);
+RENDER_OBJECT_TYPE_CASTS(RenderSVGInlineText, isSVGInlineText())
 
 }
 

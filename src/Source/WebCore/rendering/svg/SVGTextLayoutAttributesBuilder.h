@@ -22,7 +22,6 @@
 
 #if ENABLE(SVG)
 #include "SVGTextMetricsBuilder.h"
-#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -44,7 +43,7 @@ class SVGTextLayoutAttributesBuilder {
 public:
     SVGTextLayoutAttributesBuilder();
     bool buildLayoutAttributesForForSubtree(RenderSVGText*);
-    void buildLayoutAttributesForTextRenderer(RenderSVGInlineText*);
+    void buildLayoutAttributesForTextRenderer(RenderSVGInlineText&);
 
     void rebuildMetricsForTextRenderer(RenderSVGInlineText*);
 

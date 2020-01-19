@@ -29,6 +29,7 @@
 #include "MessageReceiver.h"
 #include "ResourceCachesToClear.h"
 #include "WebProcessSupplement.h"
+#include <WebCore/MemoryCache.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/text/WTFString.h>
@@ -38,7 +39,7 @@ namespace WebKit {
 class WebProcess;
 struct SecurityOriginData;
 
-class WebResourceCacheManager : public WebProcessSupplement, public CoreIPC::MessageReceiver {
+class WebResourceCacheManager : public WebProcessSupplement, public IPC::MessageReceiver {
     WTF_MAKE_NONCOPYABLE(WebResourceCacheManager);
 public:
     WebResourceCacheManager(WebProcess*);
@@ -46,16 +47,21 @@ public:
     static const char* supplementName();
 
 private:
-    // CoreIPC::MessageReceiver
+    // IPC::MessageReceiver
     // Implemented in generated WebResourceCacheManagerMessageReceiver.cpp
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
     void getCacheOrigins(uint64_t callbackID) const;
+    void returnCacheOrigins(uint64_t callbackID, const WebCore::MemoryCache::SecurityOriginSet&) const;
     void clearCacheForOrigin(const SecurityOriginData&, uint32_t cachesToClear) const;
     void clearCacheForAllOrigins(uint32_t cachesToClear) const;
 
 #if USE(CFURLCACHE)
     static RetainPtr<CFArrayRef> cfURLCacheHostNames();
+#if ENABLE(CACHE_PARTITIONING)
+    typedef void (^CacheCallback)(RetainPtr<CFArrayRef>);
+    static void cfURLCacheHostNamesWithCallback(CacheCallback);
+#endif
     static void clearCFURLCacheForHostNames(CFArrayRef);
 #endif
 

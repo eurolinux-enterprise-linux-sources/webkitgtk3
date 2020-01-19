@@ -29,6 +29,7 @@
 #include "EventNames.h"
 #include "FileSystem.h"
 #include "HTMLElement.h"
+#include "SQLiteDatabaseTracker.h"
 #include "SQLiteFileSystem.h"
 #include "SQLiteStatement.h"
 #include "SQLiteTransaction.h"
@@ -37,6 +38,7 @@
 #include "StorageSyncManager.h"
 #include "StorageTracker.h"
 #include "SuddenTermination.h"
+#include <wtf/Functional.h>
 #include <wtf/MainThread.h>
 #include <wtf/text/CString.h>
 
@@ -67,16 +69,15 @@ inline StorageAreaSync::StorageAreaSync(PassRefPtr<StorageSyncManager> storageSy
     ASSERT(isMainThread());
     ASSERT(m_storageArea);
     ASSERT(m_syncManager);
+
+    // FIXME: If it can't import, then the default WebKit behavior should be that of private browsing,
+    // not silently ignoring it. https://bugs.webkit.org/show_bug.cgi?id=25894
+    m_syncManager->dispatch(bind(&StorageAreaSync::performImport, this));
 }
 
 PassRefPtr<StorageAreaSync> StorageAreaSync::create(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageAreaImpl> storageArea, const String& databaseIdentifier)
 {
     RefPtr<StorageAreaSync> area = adoptRef(new StorageAreaSync(storageSyncManager, storageArea, databaseIdentifier));
-
-    // FIXME: If it can't import, then the default WebKit behavior should be that of private browsing,
-    // not silently ignoring it. https://bugs.webkit.org/show_bug.cgi?id=25894
-    if (!area->m_syncManager->scheduleImport(area.get()))
-        area->m_importComplete = true;
 
     return area.release();
 }
@@ -106,7 +107,8 @@ void StorageAreaSync::scheduleFinalSync()
     // we should do it safely.
     m_finalSyncScheduled = true;
     syncTimerFired(&m_syncTimer);
-    m_syncManager->scheduleDeleteEmptyDatabase(this);
+
+    m_syncManager->dispatch(bind(&StorageAreaSync::deleteEmptyDatabase, this));
 }
 
 void StorageAreaSync::scheduleItemForSync(const String& key, const String& value)
@@ -208,7 +210,7 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
             // performSync function.
             disableSuddenTermination();
 
-            m_syncManager->scheduleSync(this);
+            m_syncManager->dispatch(bind(&StorageAreaSync::performSync, this));
         }
     }
 
@@ -230,6 +232,8 @@ void StorageAreaSync::openDatabase(OpenDatabaseParamType openingStrategy)
     ASSERT(!isMainThread());
     ASSERT(!m_database.isOpen());
     ASSERT(!m_databaseOpenFailed);
+
+    SQLiteTransactionInProgressAutoCounter transactionCounter;
 
     String databaseFilename = m_syncManager->fullDatabaseFilename(m_databaseIdentifier);
 
@@ -341,11 +345,7 @@ void StorageAreaSync::performImport()
         return;
     }
 
-    HashMap<String, String>::iterator it = itemMap.begin();
-    HashMap<String, String>::iterator end = itemMap.end();
-
-    for (; it != end; ++it)
-        m_storageArea->importItem(it->key, it->value);
+    m_storageArea->importItems(itemMap);
 
     markImported();
 }
@@ -406,6 +406,8 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
         return;
     }
     
+    SQLiteTransactionInProgressAutoCounter transactionCounter;
+
     // If the clear flag is set, then we clear all items out before we write any new ones in.
     if (clearItems) {
         SQLiteStatement clear(m_database, "DELETE FROM ItemTable");
@@ -512,7 +514,7 @@ void StorageAreaSync::deleteEmptyDatabase()
         query.finalize();
         m_database.close();
         if (StorageTracker::tracker().isActive())
-            StorageTracker::tracker().deleteOrigin(m_databaseIdentifier);
+            StorageTracker::tracker().deleteOriginWithIdentifier(m_databaseIdentifier);
         else {
             String databaseFilename = m_syncManager->fullDatabaseFilename(m_databaseIdentifier);
             if (!SQLiteFileSystem::deleteDatabaseFile(databaseFilename))

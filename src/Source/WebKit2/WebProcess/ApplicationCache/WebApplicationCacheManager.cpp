@@ -48,20 +48,20 @@ const char* WebApplicationCacheManager::supplementName()
 WebApplicationCacheManager::WebApplicationCacheManager(ChildProcess* childProcess)
     : m_childProcess(childProcess)
 {
-    m_childProcess->addMessageReceiver(Messages::WebApplicationCacheManager::messageReceiverName(), this);
+    m_childProcess->addMessageReceiver(Messages::WebApplicationCacheManager::messageReceiverName(), *this);
 }
 
 void WebApplicationCacheManager::getApplicationCacheOrigins(uint64_t callbackID)
 {
-    HashSet<RefPtr<SecurityOrigin> > origins;
+    HashSet<RefPtr<SecurityOrigin>> origins;
 
     cacheStorage().getOriginsWithCache(origins);
 
     Vector<SecurityOriginData> identifiers;
     identifiers.reserveCapacity(origins.size());
 
-    HashSet<RefPtr<SecurityOrigin> >::iterator end = origins.end();
-    HashSet<RefPtr<SecurityOrigin> >::iterator i = origins.begin();
+    HashSet<RefPtr<SecurityOrigin>>::iterator end = origins.end();
+    HashSet<RefPtr<SecurityOrigin>>::iterator i = origins.begin();
     for (; i != end; ++i) {
         RefPtr<SecurityOrigin> origin = *i;
         

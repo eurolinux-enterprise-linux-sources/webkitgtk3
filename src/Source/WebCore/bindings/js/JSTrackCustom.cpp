@@ -29,7 +29,9 @@
 
 #include "JSTrackCustom.h"
 
+#include "JSAudioTrack.h"
 #include "JSTextTrack.h"
+#include "JSVideoTrack.h"
 
 using namespace JSC;
 
@@ -41,8 +43,8 @@ TrackBase* toTrack(JSValue value)
         return 0;
 
     JSObject* object = asObject(value);
-    if (object->inherits(&JSTextTrack::s_info))
-        return jsCast<JSTextTrack*>(object)->impl();
+    if (object->inherits(JSTextTrack::info()))
+        return &jsCast<JSTextTrack*>(object)->impl();
     
     // FIXME: Fill in additional tests and casts here for VideoTrack and AudioTrack when 
     // they have been added to WebCore.
@@ -55,7 +57,7 @@ JSC::JSValue toJS(JSC::ExecState* exec, JSDOMGlobalObject* globalObject, TrackBa
     if (!track)
         return jsNull();
     
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), track);
+    JSObject* wrapper = getCachedWrapper(currentWorld(exec), track);
     if (wrapper)
         return wrapper;
     
@@ -66,9 +68,11 @@ JSC::JSValue toJS(JSC::ExecState* exec, JSDOMGlobalObject* globalObject, TrackBa
         break;
         
     case TrackBase::AudioTrack:
+        return CREATE_DOM_WRAPPER(exec, globalObject, AudioTrack, track);
+        break;
+
     case TrackBase::VideoTrack:
-        // This should not happen until VideoTrack and AudioTrack are implemented.
-        ASSERT_NOT_REACHED();
+        return CREATE_DOM_WRAPPER(exec, globalObject, VideoTrack, track);
         break;
 
     case TrackBase::TextTrack:

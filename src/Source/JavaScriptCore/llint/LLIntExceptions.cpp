@@ -31,33 +31,11 @@
 #include "CallFrame.h"
 #include "CodeBlock.h"
 #include "Instruction.h"
-#include "JITExceptions.h"
 #include "LLIntCommon.h"
 #include "LowLevelInterpreter.h"
 #include "Operations.h"
 
 namespace JSC { namespace LLInt {
-
-static void fixupPCforExceptionIfNeeded(ExecState* exec)
-{
-    CodeBlock* codeBlock = exec->codeBlock();
-    ASSERT(!!codeBlock);
-    Instruction* pc = exec->currentVPC();
-    exec->setCurrentVPC(codeBlock->adjustPCIfAtCallSite(pc));
-}
-
-void interpreterThrowInCaller(ExecState* exec, ReturnAddressPtr pc)
-{
-    JSGlobalData* globalData = &exec->globalData();
-    NativeCallFrameTracer tracer(globalData, exec);
-#if LLINT_SLOW_PATH_TRACING
-    dataLog("Throwing exception ", globalData->exception, ".\n");
-#endif
-    fixupPCforExceptionIfNeeded(exec);
-    genericThrow(
-        globalData, exec, globalData->exception,
-        exec->codeBlock()->bytecodeOffset(exec, pc));
-}
 
 Instruction* returnToThrowForThrownException(ExecState* exec)
 {
@@ -65,29 +43,23 @@ Instruction* returnToThrowForThrownException(ExecState* exec)
     return LLInt::exceptionInstructions();
 }
 
-Instruction* returnToThrow(ExecState* exec, Instruction* pc)
+Instruction* returnToThrow(ExecState* exec)
 {
-    JSGlobalData* globalData = &exec->globalData();
-    NativeCallFrameTracer tracer(globalData, exec);
+    UNUSED_PARAM(exec);
 #if LLINT_SLOW_PATH_TRACING
-    dataLog("Throwing exception ", globalData->exception, " (returnToThrow).\n");
+    VM* vm = &exec->vm();
+    dataLog("Throwing exception ", vm->exception(), " (returnToThrow).\n");
 #endif
-    fixupPCforExceptionIfNeeded(exec);
-    genericThrow(globalData, exec, globalData->exception, pc - exec->codeBlock()->instructions().begin());
-    
     return LLInt::exceptionInstructions();
 }
 
-void* callToThrow(ExecState* exec, Instruction* pc)
+void* callToThrow(ExecState* exec)
 {
-    JSGlobalData* globalData = &exec->globalData();
-    NativeCallFrameTracer tracer(globalData, exec);
+    UNUSED_PARAM(exec);
 #if LLINT_SLOW_PATH_TRACING
-    dataLog("Throwing exception ", globalData->exception, " (callToThrow).\n");
+    VM* vm = &exec->vm();
+    dataLog("Throwing exception ", vm->exception(), " (callToThrow).\n");
 #endif
-    fixupPCforExceptionIfNeeded(exec);
-    genericThrow(globalData, exec, globalData->exception, pc - exec->codeBlock()->instructions().begin());
-
     return LLInt::getCodePtr(llint_throw_during_call_trampoline);
 }
 

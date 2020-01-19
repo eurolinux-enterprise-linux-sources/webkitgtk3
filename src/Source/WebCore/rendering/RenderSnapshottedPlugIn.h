@@ -26,7 +26,7 @@
 #ifndef RenderSnapshottedPlugIn_h
 #define RenderSnapshottedPlugIn_h
 
-#include "RenderBlock.h"
+#include "RenderEmbeddedObject.h"
 #include "RenderImageResource.h"
 #include "Timer.h"
 
@@ -34,57 +34,36 @@ namespace WebCore {
 
 class HTMLPlugInImageElement;
 
-class RenderSnapshottedPlugIn : public RenderBlock {
+class RenderSnapshottedPlugIn final : public RenderEmbeddedObject {
 public:
-    explicit RenderSnapshottedPlugIn(HTMLPlugInImageElement*);
+    RenderSnapshottedPlugIn(HTMLPlugInImageElement&, PassRef<RenderStyle>);
     virtual ~RenderSnapshottedPlugIn();
+
+    HTMLPlugInImageElement& plugInImageElement() const;
 
     void updateSnapshot(PassRefPtr<Image>);
 
     void handleEvent(Event*);
-    void showLabelDelayTimerFired(Timer<RenderSnapshottedPlugIn>*);
-
-    void setShouldShowLabelAutomatically(bool = true);
 
 private:
-    HTMLPlugInImageElement* plugInImageElement() const;
+    void frameOwnerElement() const = delete;
     virtual const char* renderName() const { return "RenderSnapshottedPlugIn"; }
 
-    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const OVERRIDE;
-    virtual bool isSnapshottedPlugIn() const OVERRIDE { return true; }
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const override final;
+    virtual bool isSnapshottedPlugIn() const override final { return true; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    
+    virtual bool canHaveWidget() const override final { return false; }
 
     void paintSnapshot(PaintInfo&, const LayoutPoint&);
-    void paintSnapshotWithLabel(PaintInfo&, const LayoutPoint&);
-    void paintSnapshotImage(Image*, PaintInfo&, const LayoutPoint&);
-    void repaintLabel();
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    enum ShowReason {
-        UserMousedOver,
-        ShouldShowAutomatically
-    };
-
-    void resetDelayTimer(ShowReason);
-
-    OwnPtr<RenderImageResource> m_snapshotResource;
-    bool m_shouldShowLabel;
-    bool m_shouldShowLabelAutomatically;
-    bool m_showedLabelOnce;
-    ShowReason m_showReason;
-    Timer<RenderSnapshottedPlugIn> m_showLabelDelayTimer;
-    OwnPtr<RenderImageResource> m_snapshotResourceForLabel;
+    std::unique_ptr<RenderImageResource> m_snapshotResource;
+    bool m_isPotentialMouseActivation;
 };
 
-inline RenderSnapshottedPlugIn* toRenderSnapshottedPlugIn(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSnapshottedPlugIn());
-    return static_cast<RenderSnapshottedPlugIn*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderSnapshottedPlugIn(const RenderSnapshottedPlugIn*);
+RENDER_OBJECT_TYPE_CASTS(RenderSnapshottedPlugIn, isSnapshottedPlugIn())
 
 } // namespace WebCore
 

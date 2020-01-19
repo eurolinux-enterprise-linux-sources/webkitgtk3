@@ -36,6 +36,7 @@
 
 #include "DatabaseBackend.h"
 #include "SQLTransactionBackend.h"
+#include "SecurityOrigin.h"
 #include <wtf/Deque.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
@@ -47,7 +48,7 @@ static String getDatabaseIdentifier(SQLTransactionBackend* transaction)
 {
     DatabaseBackend* database = transaction->database();
     ASSERT(database);
-    return database->stringIdentifier();
+    return database->securityOrigin()->databaseIdentifier();
 }
 
 SQLTransactionCoordinator::SQLTransactionCoordinator()
@@ -129,7 +130,7 @@ void SQLTransactionCoordinator::shutdown()
         // transaction is interrupted?" at the top of SQLTransactionBackend.cpp.
         if (info.activeWriteTransaction)
             info.activeWriteTransaction->notifyDatabaseThreadIsShuttingDown();
-        for (HashSet<RefPtr<SQLTransactionBackend> >::iterator activeReadTransactionsIterator =
+        for (HashSet<RefPtr<SQLTransactionBackend>>::iterator activeReadTransactionsIterator =
                      info.activeReadTransactions.begin();
              activeReadTransactionsIterator != info.activeReadTransactions.end();
              ++activeReadTransactionsIterator) {

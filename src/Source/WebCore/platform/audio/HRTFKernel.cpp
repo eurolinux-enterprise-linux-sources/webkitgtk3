@@ -36,10 +36,7 @@
 #include "Biquad.h"
 #include "FFTFrame.h"
 #include "FloatConversion.h"
-#include "PlatformMemoryInstrumentation.h"
 #include <wtf/MathExtras.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -83,7 +80,7 @@ HRTFKernel::HRTFKernel(AudioChannel* channel, size_t fftSize, float sampleRate)
     size_t responseLength = channel->length();
 
     // We need to truncate to fit into 1/2 the FFT size (with zero padding) in order to do proper convolution.
-    size_t truncatedResponseLength = min(responseLength, fftSize / 2); // truncate if necessary to max impulse response length allowed by FFT
+    size_t truncatedResponseLength = std::min(responseLength, fftSize / 2); // truncate if necessary to max impulse response length allowed by FFT
 
     // Quick fade-out (apply window) at truncation point
     unsigned numberOfFadeOutFrames = static_cast<unsigned>(sampleRate / 4410); // 10 sample-frames @44.1KHz sample-rate
@@ -95,20 +92,25 @@ HRTFKernel::HRTFKernel(AudioChannel* channel, size_t fftSize, float sampleRate)
         }
     }
 
-    m_fftFrame = adoptPtr(new FFTFrame(fftSize));
+    m_fftFrame = std::make_unique<FFTFrame>(fftSize);
     m_fftFrame->doPaddedFFT(impulseResponse, truncatedResponseLength);
 }
 
-PassOwnPtr<AudioChannel> HRTFKernel::createImpulseResponse()
+size_t HRTFKernel::fftSize() const
 {
-    OwnPtr<AudioChannel> channel = adoptPtr(new AudioChannel(fftSize()));
+    return m_fftFrame->fftSize();
+}
+
+std::unique_ptr<AudioChannel> HRTFKernel::createImpulseResponse()
+{
+    auto channel = std::make_unique<AudioChannel>(fftSize());
     FFTFrame fftFrame(*m_fftFrame);
 
     // Add leading delay back in.
     fftFrame.addConstantGroupDelay(m_frameDelay);
     fftFrame.doInverseFFT(channel->mutableData());
 
-    return channel.release();
+    return channel;
 }
 
 // Interpolates two kernels with x: 0 -> 1 and returns the result.
@@ -119,7 +121,7 @@ PassRefPtr<HRTFKernel> HRTFKernel::createInterpolatedKernel(HRTFKernel* kernel1,
         return 0;
  
     ASSERT(x >= 0.0 && x < 1.0);
-    x = min(1.0f, max(0.0f, x));
+    x = std::min(1.0f, std::max(0.0f, x));
     
     float sampleRate1 = kernel1->sampleRate();
     float sampleRate2 = kernel2->sampleRate();
@@ -129,14 +131,8 @@ PassRefPtr<HRTFKernel> HRTFKernel::createInterpolatedKernel(HRTFKernel* kernel1,
     
     float frameDelay = (1 - x) * kernel1->frameDelay() + x * kernel2->frameDelay();
     
-    OwnPtr<FFTFrame> interpolatedFrame = FFTFrame::createInterpolatedFrame(*kernel1->fftFrame(), *kernel2->fftFrame(), x);
-    return HRTFKernel::create(interpolatedFrame.release(), frameDelay, sampleRate1);
-}
-
-void HRTFKernel::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::AudioSharedData);
-    info.addMember(m_fftFrame, "fftFrame");
+    std::unique_ptr<FFTFrame> interpolatedFrame = FFTFrame::createInterpolatedFrame(*kernel1->fftFrame(), *kernel2->fftFrame(), x);
+    return HRTFKernel::create(std::move(interpolatedFrame), frameDelay, sampleRate1);
 }
 
 } // namespace WebCore

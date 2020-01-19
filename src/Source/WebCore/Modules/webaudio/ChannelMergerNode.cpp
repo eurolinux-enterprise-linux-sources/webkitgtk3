@@ -43,7 +43,7 @@ namespace WebCore {
 PassRefPtr<ChannelMergerNode> ChannelMergerNode::create(AudioContext* context, float sampleRate, unsigned numberOfInputs)
 {
     if (!numberOfInputs || numberOfInputs > AudioContext::maxNumberOfChannels())
-        return 0;
+        return nullptr;
     
     return adoptRef(new ChannelMergerNode(context, sampleRate, numberOfInputs));      
 }
@@ -54,9 +54,9 @@ ChannelMergerNode::ChannelMergerNode(AudioContext* context, float sampleRate, un
 {
     // Create the requested number of inputs.
     for (unsigned i = 0; i < numberOfInputs; ++i)
-        addInput(adoptPtr(new AudioNodeInput(this)));
+        addInput(std::make_unique<AudioNodeInput>(this));
 
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addOutput(std::make_unique<AudioNodeOutput>(this, 1));
     
     setNodeType(NodeTypeChannelMerger);
     
@@ -111,7 +111,7 @@ void ChannelMergerNode::checkNumberOfChannelsForInput(AudioNodeInput* input)
     for (unsigned i = 0; i < numberOfInputs(); ++i) {
         AudioNodeInput* input = this->input(i);
         if (input->isConnected())
-            numberOfOutputChannels += input->bus()->numberOfChannels();
+            numberOfOutputChannels += input->numberOfChannels();
     }
 
     // Set the correct number of channels on the output

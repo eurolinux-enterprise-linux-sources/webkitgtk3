@@ -33,6 +33,7 @@
 #include "WebPage.h"
 #include "WebPageProxyMessages.h"
 #include <WebCore/Frame.h>
+#include <WebCore/FrameLoader.h>
 #include <WebCore/Geolocation.h>
 #include <WebCore/SecurityOrigin.h>
 
@@ -58,10 +59,12 @@ void GeolocationPermissionRequestManager::startRequestForGeolocation(Geolocation
     m_geolocationToIDMap.set(geolocation, geolocationID);
     m_idToGeolocationMap.set(geolocationID, geolocation);
 
-
     Frame* frame = geolocation->frame();
 
-    WebFrame* webFrame = static_cast<WebFrameLoaderClient*>(frame->loader()->client())->webFrame();
+    WebFrameLoaderClient* webFrameLoaderClient = toWebFrameLoaderClient(frame->loader().client());
+    WebFrame* webFrame = webFrameLoaderClient ? webFrameLoaderClient->webFrame() : 0;
+    ASSERT(webFrame);
+
     SecurityOrigin* origin = frame->document()->securityOrigin();
 
     m_page->send(Messages::WebPageProxy::RequestGeolocationPermissionForFrame(geolocationID, webFrame->frameID(), origin->databaseIdentifier()));
@@ -69,26 +72,20 @@ void GeolocationPermissionRequestManager::startRequestForGeolocation(Geolocation
 
 void GeolocationPermissionRequestManager::cancelRequestForGeolocation(Geolocation* geolocation)
 {
-    GeolocationToIDMap::iterator it = m_geolocationToIDMap.find(geolocation);
-    if (it == m_geolocationToIDMap.end())
+    uint64_t geolocationID = m_geolocationToIDMap.take(geolocation);
+    if (!geolocationID)
         return;
-
-    uint64_t geolocationID = it->value;
-    m_geolocationToIDMap.remove(it);
     m_idToGeolocationMap.remove(geolocationID);
 }
 
 void GeolocationPermissionRequestManager::didReceiveGeolocationPermissionDecision(uint64_t geolocationID, bool allowed)
 {
-    IDToGeolocationMap::iterator it = m_idToGeolocationMap.find(geolocationID);
-    if (it == m_idToGeolocationMap.end())
+    Geolocation* geolocation = m_idToGeolocationMap.take(geolocationID);
+    if (!geolocation)
         return;
-
-    Geolocation* geolocation = it->value;
-    geolocation->setIsAllowed(allowed);
-
-    m_idToGeolocationMap.remove(it);
     m_geolocationToIDMap.remove(geolocation);
+
+    geolocation->setIsAllowed(allowed);
 }
 
 } // namespace WebKit

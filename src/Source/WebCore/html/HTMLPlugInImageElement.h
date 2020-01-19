@@ -25,11 +25,11 @@
 
 #include "RenderStyle.h"
 #include <wtf/OwnPtr.h>
-#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
 class HTMLImageLoader;
+class HTMLVideoElement;
 class FrameLoader;
 class Image;
 class MouseEvent;
@@ -52,75 +52,127 @@ public:
 
     RenderEmbeddedObject* renderEmbeddedObject() const;
 
+    virtual void setDisplayState(DisplayState) override;
+
     virtual void updateWidget(PluginCreationOption) = 0;
 
     const String& serviceType() const { return m_serviceType; }
     const String& url() const { return m_url; }
+    const URL& loadedUrl() const { return m_loadedUrl; }
+
+    const String loadedMimeType() const
+    {
+        String mimeType = serviceType();
+        if (mimeType.isEmpty())
+            mimeType = mimeTypeFromURL(m_loadedUrl);
+        return mimeType;
+    }
+
     bool shouldPreferPlugInsForImages() const { return m_shouldPreferPlugInsForImages; }
 
     // Public for FrameView::addWidgetToUpdate()
     bool needsWidgetUpdate() const { return m_needsWidgetUpdate; }
     void setNeedsWidgetUpdate(bool needsWidgetUpdate) { m_needsWidgetUpdate = needsWidgetUpdate; }
+    
+#if PLATFORM(IOS)
+    void createShadowIFrameSubtree(const String& src);
+#endif
 
-    void userDidClickSnapshot(PassRefPtr<MouseEvent>);
-    void updateSnapshotInfo();
+    void userDidClickSnapshot(PassRefPtr<MouseEvent>, bool forwardEvent);
+    void checkSnapshotStatus();
+    Image* snapshotImage() const { return m_snapshotImage.get(); }
+    void restartSnapshottedPlugIn();
 
     // Plug-in URL might not be the same as url() with overriding parameters.
-    void subframeLoaderWillCreatePlugIn(const KURL& plugInURL);
+    void subframeLoaderWillCreatePlugIn(const URL& plugInURL);
     void subframeLoaderDidCreatePlugIn(const Widget*);
 
+    void setIsPrimarySnapshottedPlugIn(bool);
+    bool partOfSnapshotOverlay(Node*);
+
+    bool needsCheckForSizeChange() const { return m_needsCheckForSizeChange; }
+    void setNeedsCheckForSizeChange() { m_needsCheckForSizeChange = true; }
+    void checkSizeChangeForSnapshotting();
+
+    enum SnapshotDecision {
+        SnapshotNotYetDecided,
+        NeverSnapshot,
+        Snapshotted,
+        MaySnapshotWhenResized,
+        MaySnapshotWhenContentIsSet
+    };
+    SnapshotDecision snapshotDecision() const { return m_snapshotDecision; }
+
 protected:
-    HTMLPlugInImageElement(const QualifiedName& tagName, Document*, bool createdByParser, PreferPlugInsForImagesOption);
+    HTMLPlugInImageElement(const QualifiedName& tagName, Document&, bool createdByParser, PreferPlugInsForImagesOption);
 
     bool isImageType();
 
     OwnPtr<HTMLImageLoader> m_imageLoader;
     String m_serviceType;
     String m_url;
-    
-    static void updateWidgetCallback(Node*, unsigned = 0);
-    virtual void attach();
-    virtual void detach();
+    URL m_loadedUrl;
+
+    static void updateWidgetCallback(Node&, unsigned);
+    static void startLoadingImageCallback(Node&, unsigned);
+
+    virtual void didAttachRenderers() override;
+    virtual void willDetachRenderers() override;
 
     bool allowedToLoadFrameURL(const String& url);
     bool wouldLoadAsNetscapePlugin(const String& url, const String& serviceType);
 
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
-    
-    virtual void documentWillSuspendForPageCache() OVERRIDE;
-    virtual void documentDidResumeFromPageCache() OVERRIDE;
+    virtual void didMoveToNewDocument(Document* oldDocument) override;
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
+    virtual void documentWillSuspendForPageCache() override;
+    virtual void documentDidResumeFromPageCache() override;
+
+    virtual bool isRestartedPlugin() const override { return m_isRestartedPlugin; }
+    virtual bool requestObject(const String& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues) override;
 
 private:
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual bool willRecalcStyle(StyleChange);
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
+    virtual bool willRecalcStyle(Style::Change) override;
 
-    void didAddUserAgentShadowRoot(ShadowRoot*) OVERRIDE;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot*) override;
 
-    virtual void finishParsingChildren();
+    virtual void finishParsingChildren() override;
 
     void updateWidgetIfNecessary();
-    virtual bool useFallbackContent() const { return false; }
+    void startLoadingImage();
 
-    virtual void updateSnapshot(PassRefPtr<Image>) OVERRIDE;
-    virtual void dispatchPendingMouseClick() OVERRIDE;
-    void simulatedMouseClickTimerFired(DeferrableOneShotTimer<HTMLPlugInImageElement>*);
+    virtual void updateSnapshot(PassRefPtr<Image>) override;
+    virtual void dispatchPendingMouseClick() override;
+    void simulatedMouseClickTimerFired(DeferrableOneShotTimer<HTMLPlugInImageElement>&);
 
-    void swapRendererTimerFired(Timer<HTMLPlugInImageElement>*);
+    void restartSimilarPlugIns();
 
-    void setShouldShowSnapshotLabelAutomatically() { m_shouldShowSnapshotLabelAutomatically = true; }
+    virtual bool isPlugInImageElement() const override { return true; }
+
+    void removeSnapshotTimerFired(Timer<HTMLPlugInImageElement>&);
+
+    virtual void defaultEventHandler(Event*) override;
 
     bool m_needsWidgetUpdate;
     bool m_shouldPreferPlugInsForImages;
     bool m_needsDocumentActivationCallbacks;
-    bool m_shouldShowSnapshotLabelAutomatically;
-    RefPtr<RenderStyle> m_customStyleForPageCache;
     RefPtr<MouseEvent> m_pendingClickEventFromSnapshot;
     DeferrableOneShotTimer<HTMLPlugInImageElement> m_simulatedMouseClickTimer;
-    Timer<HTMLPlugInImageElement> m_swapRendererTimer;
+    Timer<HTMLPlugInImageElement> m_removeSnapshotTimer;
     RefPtr<Image> m_snapshotImage;
+    bool m_createdDuringUserGesture;
+    bool m_isRestartedPlugin;
+    bool m_needsCheckForSizeChange;
+    bool m_plugInWasCreated;
+    bool m_deferredPromotionToPrimaryPlugIn;
+    IntSize m_sizeWhenSnapshotted;
+    SnapshotDecision m_snapshotDecision;
 };
+
+void isHTMLPlugInImageElement(const HTMLPlugInImageElement&); // Catch unnecessary runtime check of type known at compile time.
+inline bool isHTMLPlugInImageElement(const HTMLPlugInElement& element) { return element.isPlugInImageElement(); }
+inline bool isHTMLPlugInImageElement(const Node& node) { return node.isPluginElement() && toHTMLPlugInElement(node).isPlugInImageElement(); }
+NODE_TYPE_CASTS(HTMLPlugInImageElement)
 
 } // namespace WebCore
 

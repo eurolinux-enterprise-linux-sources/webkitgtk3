@@ -30,27 +30,23 @@
 
 #include "Document.h"
 #include "ExceptionCode.h"
-#include "HRTFDatabaseLoader.h"
 #include "ScriptExecutionContext.h"
 
 namespace WebCore {
 
-PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ScriptExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionCode& ec)
+PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ScriptExecutionContext& context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionCode& ec)
 {
     // FIXME: add support for workers.
-    if (!context || !context->isDocument()) {
+    if (!context.isDocument()) {
         ec = NOT_SUPPORTED_ERR;
-        return 0;
+        return nullptr;
     }
 
-    Document* document = static_cast<Document*>(context);
+    Document& document = toDocument(context);
 
-    // FIXME: offline contexts have limitations on supported sample-rates.
-    // Currently all AudioContexts must have the same sample-rate.
-    HRTFDatabaseLoader* loader = HRTFDatabaseLoader::loader();
-    if (numberOfChannels > 10 || !isSampleRateRangeGood(sampleRate) || (loader && loader->databaseSampleRate() != sampleRate)) {
+    if (numberOfChannels > 10 || !isSampleRateRangeGood(sampleRate)) {
         ec = SYNTAX_ERR;
-        return 0;
+        return nullptr;
     }
 
     RefPtr<OfflineAudioContext> audioContext(adoptRef(new OfflineAudioContext(document, numberOfChannels, numberOfFrames, sampleRate)));
@@ -58,7 +54,7 @@ PassRefPtr<OfflineAudioContext> OfflineAudioContext::create(ScriptExecutionConte
     return audioContext.release();
 }
 
-OfflineAudioContext::OfflineAudioContext(Document* document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
+OfflineAudioContext::OfflineAudioContext(Document& document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
     : AudioContext(document, numberOfChannels, numberOfFrames, sampleRate)
 {
 }

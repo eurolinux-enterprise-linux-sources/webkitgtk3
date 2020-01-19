@@ -26,12 +26,13 @@
 #ifndef DeleteButtonController_h
 #define DeleteButtonController_h
 
+#if ENABLE(DELETION_UI)
+
 #include "DeleteButton.h"
+#include "Editor.h"
 #include "Frame.h"
 
 namespace WebCore {
-
-#if ENABLE(DELETION_UI)
 
 class DeleteButton;
 class HTMLElement;
@@ -41,7 +42,7 @@ class VisibleSelection;
 class DeleteButtonController {
     WTF_MAKE_NONCOPYABLE(DeleteButtonController); WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit DeleteButtonController(Frame*);
+    explicit DeleteButtonController(Frame&);
 
     HTMLElement* containerElement() const { return m_containerElement.get(); }
 
@@ -66,7 +67,7 @@ private:
     void createDeletionUI();
     bool enabled() const { return (!m_disableStack); }
 
-    Frame* m_frame;
+    Frame& m_frame;
     RefPtr<HTMLElement> m_target;
     RefPtr<HTMLElement> m_containerElement;
     RefPtr<HTMLElement> m_outlineElement;
@@ -82,21 +83,21 @@ public:
         : m_frame(frame)
     {
         if (frame)
-            frame->editor()->deleteButtonController()->disable();
+            frame->editor().deleteButtonController().disable();
     }
 
     ~DeleteButtonControllerDisableScope()
     {
         if (m_frame)
-            m_frame->editor()->deleteButtonController()->enable();
+            m_frame->editor().deleteButtonController().enable();
     }
 
 private:
     RefPtr<Frame> m_frame;
 };
 
-#endif
-
 } // namespace WebCore
 
-#endif
+#endif // ENABLE(DELETION_UI)
+
+#endif // DeleteButtonController_h

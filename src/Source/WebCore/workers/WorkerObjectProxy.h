@@ -31,8 +31,6 @@
 #ifndef WorkerObjectProxy_h
 #define WorkerObjectProxy_h
 
-#if ENABLE(WORKERS)
-
 #include "WorkerReportingProxy.h"
 #include "MessagePort.h"
 #include <wtf/PassOwnPtr.h>
@@ -50,11 +48,9 @@ namespace WebCore {
         virtual void reportPendingActivity(bool hasPendingActivity) = 0;
 
         // No need to notify the parent page context when dedicated workers are closing.
-        virtual void workerContextClosed() { }
+        virtual void workerGlobalScopeClosed() override { }
     };
 
 } // namespace WebCore
-
-#endif // ENABLE(WORKERS)
 
 #endif // WorkerObjectProxy_h

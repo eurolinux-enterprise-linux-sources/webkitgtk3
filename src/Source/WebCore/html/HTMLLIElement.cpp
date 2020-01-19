@@ -26,7 +26,6 @@
 #include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "EventPathWalker.h"
 #include "HTMLNames.h"
 #include "RenderListItem.h"
 
@@ -34,18 +33,19 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLLIElement::HTMLLIElement(const QualifiedName& tagName, Document* document)
+HTMLLIElement::HTMLLIElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(liTag));
+    setHasCustomStyleResolveCallbacks();
 }
 
-PassRefPtr<HTMLLIElement> HTMLLIElement::create(Document* document)
+PassRefPtr<HTMLLIElement> HTMLLIElement::create(Document& document)
 {
     return adoptRef(new HTMLLIElement(liTag, document));
 }
 
-PassRefPtr<HTMLLIElement> HTMLLIElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLLIElement> HTMLLIElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLLIElement(tagName, document));
 }
@@ -57,23 +57,23 @@ bool HTMLLIElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLLIElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLLIElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == typeAttr) {
-        if (attribute.value() == "a")
+    if (name == typeAttr) {
+        if (value == "a")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueLowerAlpha);
-        else if (attribute.value() == "A")
+        else if (value == "A")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueUpperAlpha);
-        else if (attribute.value() == "i")
+        else if (value == "i")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueLowerRoman);
-        else if (attribute.value() == "I")
+        else if (value == "I")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueUpperRoman);
-        else if (attribute.value() == "1")
+        else if (value == "1")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueDecimal);
         else
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, attribute.value());
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, value);
     } else
-        HTMLElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLLIElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -85,33 +85,29 @@ void HTMLLIElement::parseAttribute(const QualifiedName& name, const AtomicString
         HTMLElement::parseAttribute(name, value);
 }
 
-void HTMLLIElement::attach()
+void HTMLLIElement::didAttachRenderers()
 {
-    ASSERT(!attached());
+    if (!renderer() || !renderer()->isListItem())
+        return;
+    RenderListItem* listItemRenderer = toRenderListItem(renderer());
 
-    HTMLElement::attach();
-
-    if (renderer() && renderer()->isListItem()) {
-        RenderListItem* render = toRenderListItem(renderer());
-
-        // Find the enclosing list node.
-        Node* listNode = 0;
-        EventPathWalker walker(this);
-        while (!listNode) {
-            walker.moveToParent();
-            if (!walker.node())
-                break;
-            if (walker.node()->hasTagName(ulTag) || walker.node()->hasTagName(olTag))
-                listNode = walker.node();
-        }
-
-        // If we are not in a list, tell the renderer so it can position us inside.
-        // We don't want to change our style to say "inside" since that would affect nested nodes.
-        if (!listNode)
-            render->setNotInList(true);
-
-        parseValue(fastGetAttribute(valueAttr));
+    // Find the enclosing list node.
+    Element* listNode = 0;
+    Element* current = this;
+    while (!listNode) {
+        current = current->parentElement();
+        if (!current)
+            break;
+        if (current->hasTagName(ulTag) || current->hasTagName(olTag))
+            listNode = current;
     }
+
+    // If we are not in a list, tell the renderer so it can position us inside.
+    // We don't want to change our style to say "inside" since that would affect nested nodes.
+    if (!listNode)
+        listItemRenderer->setNotInList(true);
+
+    parseValue(fastGetAttribute(valueAttr));
 }
 
 inline void HTMLLIElement::parseValue(const AtomicString& value)

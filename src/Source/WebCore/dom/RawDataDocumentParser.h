@@ -32,7 +32,7 @@ namespace WebCore {
 
 class RawDataDocumentParser : public DocumentParser {
 protected:
-    explicit RawDataDocumentParser(Document* document)
+    explicit RawDataDocumentParser(Document& document)
         : DocumentParser(document)
     {
     }
@@ -44,7 +44,7 @@ protected:
     }
 
 private:
-    virtual void flush(DocumentWriter* writer)
+    virtual void flush(DocumentWriter& writer)
     {
         // Make sure appendBytes is called at least once.
         appendBytes(writer, 0, 0);
@@ -56,7 +56,7 @@ private:
         ASSERT_NOT_REACHED();
     }
 
-    virtual void append(const SegmentedString&)
+    virtual void append(PassRefPtr<StringImpl>)
     {
         ASSERT_NOT_REACHED();
     }

@@ -20,22 +20,19 @@
  */
 
 #include "config.h"
-#include "XSLStyleSheet.h"
 
 #if ENABLE(XSLT)
 
-#include "Console.h"
-#include "DOMWindow.h"
 #include "CachedResourceLoader.h"
 #include "Document.h"
 #include "Frame.h"
-#include "Node.h"
+#include "Page.h"
+#include "PageConsole.h"
 #include "TransformSource.h"
 #include "XMLDocumentParser.h"
 #include "XMLDocumentParserScope.h"
 #include "XSLImportRule.h"
 #include "XSLTProcessor.h"
-#include <wtf/text/CString.h>
 
 #include <libxml/uri.h>
 #include <libxslt/xsltutils.h>
@@ -54,7 +51,7 @@ SOFT_LINK(libxslt, xsltLoadStylesheetPI, xsltStylesheetPtr, (xmlDocPtr doc), (do
 
 namespace WebCore {
 
-XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalURL, const KURL& finalURL)
+XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalURL, const URL& finalURL)
     : m_ownerNode(0)
     , m_originalURL(originalURL)
     , m_finalURL(finalURL)
@@ -67,7 +64,7 @@ XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalUR
 {
 }
 
-XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const KURL& finalURL,  bool embedded)
+XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const URL& finalURL,  bool embedded)
     : m_ownerNode(parentNode)
     , m_originalURL(originalURL)
     , m_finalURL(finalURL)
@@ -144,13 +141,14 @@ bool XSLStyleSheet::parseString(const String& string)
         xmlFreeDoc(m_stylesheetDoc);
     m_stylesheetDocTaken = false;
 
-    Console* console = 0;
-    if (ownerDocument()->frame())
-        console = ownerDocument()->domWindow()->console();
+    PageConsole* console = 0;
+    Frame* frame = ownerDocument()->frame();
+    if (frame && frame->page())
+        console = &frame->page()->console();
 
     XMLDocumentParserScope scope(cachedResourceLoader(), XSLTProcessor::genericErrorFunc, XSLTProcessor::parseErrorFunc, console);
 
-    const char* buffer = reinterpret_cast<const char*>(string.characters());
+    const char* buffer = reinterpret_cast<const char*>(string.deprecatedCharacters());
     int size = string.length() * sizeof(UChar);
 
     xmlParserCtxtPtr ctxt = xmlCreateMemoryParserCtxt(buffer, size);
@@ -235,7 +233,7 @@ void XSLStyleSheet::loadChildSheets()
 
 void XSLStyleSheet::loadChildSheet(const String& href)
 {
-    OwnPtr<XSLImportRule> childRule = XSLImportRule::create(this, href);
+    auto childRule = std::make_unique<XSLImportRule>(this, href);
     XSLImportRule* c = childRule.get();
     m_children.append(childRule.release());
     c->loadSheet();
@@ -266,7 +264,7 @@ Document* XSLStyleSheet::ownerDocument()
     for (XSLStyleSheet* styleSheet = this; styleSheet; styleSheet = styleSheet->parentStyleSheet()) {
         Node* node = styleSheet->ownerNode();
         if (node)
-            return node->document();
+            return &node->document();
     }
     return 0;
 }

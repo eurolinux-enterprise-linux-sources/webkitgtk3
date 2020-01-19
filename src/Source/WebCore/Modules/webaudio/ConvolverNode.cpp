@@ -49,9 +49,14 @@ ConvolverNode::ConvolverNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
     , m_normalize(true)
 {
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
-    
+    addInput(std::make_unique<AudioNodeInput>(this));
+    addOutput(std::make_unique<AudioNodeOutput>(this, 2));
+
+    // Node-specific default mixing rules.
+    m_channelCount = 2;
+    m_channelCountMode = ClampedMax;
+    m_channelInterpretation = AudioBus::Speakers;
+
     setNodeType(NodeTypeConvolver);
     
     initialize();
@@ -68,27 +73,28 @@ void ConvolverNode::process(size_t framesToProcess)
     ASSERT(outputBus);
 
     // Synchronize with possible dynamic changes to the impulse response.
-    MutexTryLocker tryLocker(m_processLock);
-    if (tryLocker.locked()) {
-        if (!isInitialized() || !m_reverb.get())
-            outputBus->zero();
-        else {
-            // Process using the convolution engine.
-            // Note that we can handle the case where nothing is connected to the input, in which case we'll just feed silence into the convolver.
-            // FIXME:  If we wanted to get fancy we could try to factor in the 'tail time' and stop processing once the tail dies down if
-            // we keep getting fed silence.
-            m_reverb->process(input(0)->bus(), outputBus, framesToProcess);
-        }
-    } else {
-        // Too bad - the tryLock() failed.  We must be in the middle of setting a new impulse response.
+    std::unique_lock<std::mutex> lock(m_processMutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        // Too bad - the try_lock() failed. We must be in the middle of setting a new impulse response.
         outputBus->zero();
+        return;
+    }
+
+    if (!isInitialized() || !m_reverb.get())
+        outputBus->zero();
+    else {
+        // Process using the convolution engine.
+        // Note that we can handle the case where nothing is connected to the input, in which case we'll just feed silence into the convolver.
+        // FIXME: If we wanted to get fancy we could try to factor in the 'tail time' and stop processing once the tail dies down if
+        // we keep getting fed silence.
+        m_reverb->process(input(0)->bus(), outputBus, framesToProcess);
     }
 }
 
 void ConvolverNode::reset()
 {
-    MutexLocker locker(m_processLock);
-    if (m_reverb.get())
+    std::lock_guard<std::mutex> lock(m_processMutex);
+    if (m_reverb)
         m_reverb->reset();
 }
 
@@ -105,7 +111,7 @@ void ConvolverNode::uninitialize()
     if (!isInitialized())
         return;
 
-    m_reverb.clear();
+    m_reverb = nullptr;
     AudioNode::uninitialize();
 }
 
@@ -127,20 +133,20 @@ void ConvolverNode::setBuffer(AudioBuffer* buffer)
 
     // Wrap the AudioBuffer by an AudioBus. It's an efficient pointer set and not a memcpy().
     // This memory is simply used in the Reverb constructor and no reference to it is kept for later use in that class.
-    AudioBus bufferBus(numberOfChannels, bufferLength, false);
+    RefPtr<AudioBus> bufferBus = AudioBus::create(numberOfChannels, bufferLength, false);
     for (unsigned i = 0; i < numberOfChannels; ++i)
-        bufferBus.setChannelMemory(i, buffer->getChannelData(i)->data(), bufferLength);
+        bufferBus->setChannelMemory(i, buffer->getChannelData(i)->data(), bufferLength);
 
-    bufferBus.setSampleRate(buffer->sampleRate());
+    bufferBus->setSampleRate(buffer->sampleRate());
 
     // Create the reverb with the given impulse response.
     bool useBackgroundThreads = !context()->isOfflineContext();
-    OwnPtr<Reverb> reverb = adoptPtr(new Reverb(&bufferBus, AudioNode::ProcessingSizeInFrames, MaxFFTSize, 2, useBackgroundThreads, m_normalize));
+    auto reverb = std::make_unique<Reverb>(bufferBus.get(), AudioNode::ProcessingSizeInFrames, MaxFFTSize, 2, useBackgroundThreads, m_normalize);
 
     {
         // Synchronize with process().
-        MutexLocker locker(m_processLock);
-        m_reverb = reverb.release();
+        std::lock_guard<std::mutex> lock(m_processMutex);
+        m_reverb = std::move(reverb);
         m_buffer = buffer;
     }
 }

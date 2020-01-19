@@ -26,15 +26,15 @@
 #ifndef PluginProcessCreationParameters_h
 #define PluginProcessCreationParameters_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
-#include "PluginProcess.h"
+#include "PluginProcessAttributes.h"
 
 #if PLATFORM(MAC)
 #include "MachPort.h"
 #endif
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -44,22 +44,22 @@ namespace WebKit {
 struct PluginProcessCreationParameters {
     PluginProcessCreationParameters();
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, PluginProcessCreationParameters&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, PluginProcessCreationParameters&);
 
-    PluginProcess::Type processType;
+    PluginProcessType processType;
     bool supportsAsynchronousPluginInitialization;
 
     double minimumLifetime;
     double terminationTimeout;
 
 #if PLATFORM(MAC)
-    CoreIPC::MachPort acceleratedCompositingPort;
+    IPC::MachPort acceleratedCompositingPort;
 #endif
 };
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginProcessCreationParameters_h

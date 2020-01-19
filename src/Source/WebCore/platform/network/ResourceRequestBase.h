@@ -30,7 +30,7 @@
 
 #include "FormData.h"
 #include "HTTPHeaderMap.h"
-#include "KURL.h"
+#include "URL.h"
 #include "ResourceLoadPriority.h"
 
 #include <wtf/OwnPtr.h>
@@ -42,6 +42,11 @@ namespace WebCore {
         ReloadIgnoringCacheData, // reload
         ReturnCacheDataElseLoad, // back/forward or encoding change - allow stale data
         ReturnCacheDataDontLoad  // results of a post - allow stale data and only use cache
+    };
+
+    enum HTTPBodyUpdatePolicy {
+        DoNotUpdateHTTPBody,
+        UpdateHTTPBody
     };
 
     class ResourceRequest;
@@ -59,8 +64,8 @@ namespace WebCore {
         bool isNull() const;
         bool isEmpty() const;
 
-        const KURL& url() const;
-        void setURL(const KURL& url);
+        const URL& url() const;
+        void setURL(const URL& url);
 
         void removeCredentials();
 
@@ -70,8 +75,8 @@ namespace WebCore {
         double timeoutInterval() const; // May return 0 when using platform default.
         void setTimeoutInterval(double timeoutInterval);
         
-        const KURL& firstPartyForCookies() const;
-        void setFirstPartyForCookies(const KURL& firstPartyForCookies);
+        const URL& firstPartyForCookies() const;
+        void setFirstPartyForCookies(const URL& firstPartyForCookies);
         
         const String& httpMethod() const;
         void setHTTPMethod(const String& httpMethod);
@@ -106,6 +111,7 @@ namespace WebCore {
         void setHTTPAccept(const String& httpAccept) { setHTTPHeaderField("Accept", httpAccept); }
         void clearHTTPAccept();
 
+        const Vector<String>& responseContentDispositionEncodingFallbackArray() const { return m_responseContentDispositionEncodingFallbackArray; }
         void setResponseContentDispositionEncodingFallbackArray(const String& encoding1, const String& encoding2 = String(), const String& encoding3 = String());
 
         FormData* httpBody() const;
@@ -118,6 +124,7 @@ namespace WebCore {
         void setPriority(ResourceLoadPriority);
 
         bool isConditional() const;
+        void makeUnconditional();
 
         // Whether the associated ResourceHandleClient needs to be notified of
         // upload progress made for that resource.
@@ -135,6 +142,11 @@ namespace WebCore {
         static double defaultTimeoutInterval(); // May return 0 when using platform default.
         static void setDefaultTimeoutInterval(double);
 
+#if PLATFORM(IOS)
+        static bool defaultAllowCookies();
+        static void setDefaultAllowCookies(bool);
+#endif
+
         static bool compare(const ResourceRequest&, const ResourceRequest&);
 
     protected:
@@ -142,6 +154,8 @@ namespace WebCore {
         ResourceRequestBase()
             : m_resourceRequestUpdated(false)
             , m_platformRequestUpdated(true)
+            , m_resourceRequestBodyUpdated(false)
+            , m_platformRequestBodyUpdated(true)
             , m_reportUploadProgress(false)
             , m_reportLoadTiming(false)
             , m_reportRawHeaders(false)
@@ -149,14 +163,20 @@ namespace WebCore {
         {
         }
 
-        ResourceRequestBase(const KURL& url, ResourceRequestCachePolicy policy)
+        ResourceRequestBase(const URL& url, ResourceRequestCachePolicy policy)
             : m_url(url)
-            , m_cachePolicy(policy)
             , m_timeoutInterval(s_defaultTimeoutInterval)
-            , m_httpMethod("GET")
+            , m_httpMethod(ASCIILiteral("GET"))
+            , m_cachePolicy(policy)
+#if !PLATFORM(IOS)
             , m_allowCookies(true)
+#else
+            , m_allowCookies(ResourceRequestBase::defaultAllowCookies())
+#endif
             , m_resourceRequestUpdated(true)
             , m_platformRequestUpdated(false)
+            , m_resourceRequestBodyUpdated(true)
+            , m_platformRequestBodyUpdated(false)
             , m_reportUploadProgress(false)
             , m_reportLoadTiming(false)
             , m_reportRawHeaders(false)
@@ -164,35 +184,37 @@ namespace WebCore {
         {
         }
 
-        void updatePlatformRequest() const; 
-        void updateResourceRequest() const; 
-
-        void reportMemoryUsageBase(MemoryObjectInfo*) const;
+        void updatePlatformRequest(HTTPBodyUpdatePolicy = DoNotUpdateHTTPBody) const;
+        void updateResourceRequest(HTTPBodyUpdatePolicy = DoNotUpdateHTTPBody) const;
 
         // The ResourceRequest subclass may "shadow" this method to compare platform specific fields
         static bool platformCompare(const ResourceRequest&, const ResourceRequest&) { return true; }
 
-        KURL m_url;
-
-        ResourceRequestCachePolicy m_cachePolicy;
+        URL m_url;
         double m_timeoutInterval; // 0 is a magic value for platform default on platforms that have one.
-        KURL m_firstPartyForCookies;
+        URL m_firstPartyForCookies;
         String m_httpMethod;
         HTTPHeaderMap m_httpHeaderFields;
         Vector<String> m_responseContentDispositionEncodingFallbackArray;
         RefPtr<FormData> m_httpBody;
+        ResourceRequestCachePolicy m_cachePolicy : 3;
         bool m_allowCookies : 1;
         mutable bool m_resourceRequestUpdated : 1;
         mutable bool m_platformRequestUpdated : 1;
+        mutable bool m_resourceRequestBodyUpdated : 1;
+        mutable bool m_platformRequestBodyUpdated : 1;
         bool m_reportUploadProgress : 1;
         bool m_reportLoadTiming : 1;
         bool m_reportRawHeaders : 1;
-        ResourceLoadPriority m_priority;
+        ResourceLoadPriority m_priority : 4;
 
     private:
         const ResourceRequest& asResourceRequest() const;
 
         static double s_defaultTimeoutInterval;
+#if PLATFORM(IOS)
+        static bool s_defaultAllowCookies;
+#endif
     };
 
     bool equalIgnoringHeaderFields(const ResourceRequestBase&, const ResourceRequestBase&);
@@ -204,11 +226,11 @@ namespace WebCore {
         WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestDataBase); WTF_MAKE_FAST_ALLOCATED;
     public:
         CrossThreadResourceRequestDataBase() { }
-        KURL m_url;
+        URL m_url;
 
         ResourceRequestCachePolicy m_cachePolicy;
         double m_timeoutInterval;
-        KURL m_firstPartyForCookies;
+        URL m_firstPartyForCookies;
 
         String m_httpMethod;
         OwnPtr<CrossThreadHTTPHeaderMapData> m_httpHeaders;
@@ -219,7 +241,9 @@ namespace WebCore {
     };
     
     unsigned initializeMaximumHTTPConnectionCountPerHost();
-
+#if PLATFORM(IOS)
+    void initializeHTTPConnectionSettingsOnStartup();
+#endif
 } // namespace WebCore
 
 #endif // ResourceRequestBase_h

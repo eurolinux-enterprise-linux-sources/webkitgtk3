@@ -25,6 +25,8 @@
 
 #include "Element.h"
 #include "HTMLDocument.h"
+#include "HTMLFormElement.h"
+#include "HTMLImageElement.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
 #include "NodeRareData.h"
@@ -34,73 +36,60 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLNameCollection::HTMLNameCollection(Node* document, CollectionType type, const AtomicString& name)
-    : HTMLCollection(document, type, OverridesItemAfter)
+HTMLNameCollection::HTMLNameCollection(Document& document, CollectionType type, const AtomicString& name)
+    : HTMLCollection(document, type)
     , m_name(name)
 {
 }
 
 HTMLNameCollection::~HTMLNameCollection()
 {
-    ASSERT(ownerNode());
-    ASSERT(ownerNode()->isDocumentNode());
     ASSERT(type() == WindowNamedItems || type() == DocumentNamedItems);
 
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, type(), m_name);
+    document().nodeLists()->removeCachedCollection(this, m_name);
 }
 
-Element* HTMLNameCollection::virtualItemAfter(unsigned& offsetInArray, Element* previous) const
+bool WindowNameCollection::nodeMatchesIfNameAttributeMatch(Element* element)
 {
-    ASSERT_UNUSED(offsetInArray, !offsetInArray);
-    ASSERT(previous != ownerNode());
+    return isHTMLImageElement(element) || isHTMLFormElement(element) || element->hasTagName(appletTag)
+        || element->hasTagName(embedTag) || element->hasTagName(objectTag);
+}
 
-    Element* current;
-    if (!previous)
-        current = ElementTraversal::firstWithin(ownerNode());
-    else
-        current = ElementTraversal::next(previous, ownerNode());
+bool WindowNameCollection::nodeMatches(Element* element, const AtomicStringImpl* name)
+{
+    // Find only images, forms, applets, embeds and objects by name, but anything by id
+    if (nodeMatchesIfNameAttributeMatch(element) && element->getNameAttribute().impl() == name)
+        return true;
+    return element->getIdAttribute().impl() == name;
+}
 
-    for (; current; current = ElementTraversal::next(current, ownerNode())) {
-        switch (type()) {
-        case WindowNamedItems:
-            // find only images, forms, applets, embeds and objects by name, 
-            // but anything by id
-            if (current->hasTagName(imgTag)
-                || current->hasTagName(formTag)
-                || current->hasTagName(appletTag)
-                || current->hasTagName(embedTag)
-                || current->hasTagName(objectTag)) {
-                if (current->getNameAttribute() == m_name)
-                    return current;
-            }
-            if (current->getIdAttribute() == m_name)
-                return current;
-            break;
-        case DocumentNamedItems:
-            // find images, forms, applets, embeds, objects and iframes by name, 
-            // applets and object by id, and images by id but only if they have
-            // a name attribute (this very strange rule matches IE)
-            if (current->hasTagName(formTag) || current->hasTagName(embedTag) || current->hasTagName(iframeTag)) {
-                if (current->getNameAttribute() == m_name)
-                    return current;
-            } else if (current->hasTagName(appletTag)) {
-                if (current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    return current;
-            } else if (current->hasTagName(objectTag)) {
-                if ((current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    && static_cast<HTMLObjectElement*>(current)->isDocNamedItem())
-                    return current;
-            } else if (current->hasTagName(imgTag)) {
-                if (current->getNameAttribute() == m_name || (current->getIdAttribute() == m_name && current->hasName()))
-                    return current;
-            }
-            break;
-        default:
-            ASSERT_NOT_REACHED();
-        }
-    }
+bool DocumentNameCollection::nodeMatchesIfIdAttributeMatch(Element* element)
+{
+    // FIXME: we need to fix HTMLImageElement to update the hash map for us when name attribute has been removed.
+    return element->hasTagName(appletTag) || (element->hasTagName(objectTag) && toHTMLObjectElement(element)->isDocNamedItem())
+        || (isHTMLImageElement(element) && element->hasName());
+}
 
-    return 0;
+bool DocumentNameCollection::nodeMatchesIfNameAttributeMatch(Element* element)
+{
+    return isHTMLFormElement(element) || element->hasTagName(embedTag) || element->hasTagName(iframeTag)
+        || element->hasTagName(appletTag) || (element->hasTagName(objectTag) && toHTMLObjectElement(element)->isDocNamedItem())
+        || isHTMLImageElement(element);
+}
+
+bool DocumentNameCollection::nodeMatches(Element* element, const AtomicStringImpl* name)
+{
+    // Find images, forms, applets, embeds, objects and iframes by name, applets and object by id, and images by id
+    // but only if they have a name attribute (this very strange rule matches IE)
+    if (isHTMLFormElement(element) || element->hasTagName(embedTag) || element->hasTagName(iframeTag))
+        return element->getNameAttribute().impl() == name;
+    if (element->hasTagName(appletTag))
+        return element->getNameAttribute().impl() == name || element->getIdAttribute().impl() == name;
+    if (element->hasTagName(objectTag))
+        return (element->getNameAttribute().impl() == name || element->getIdAttribute().impl() == name) && toHTMLObjectElement(element)->isDocNamedItem();
+    if (isHTMLImageElement(element))
+        return element->getNameAttribute().impl() == name || (element->getIdAttribute().impl() == name && element->hasName());
+    return false;
 }
 
 }

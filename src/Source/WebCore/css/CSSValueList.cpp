@@ -1,6 +1,6 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2010, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,8 +22,6 @@
 #include "CSSValueList.h"
 
 #include "CSSParserValues.h"
-#include "WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/StringBuilder.h>
 
@@ -41,15 +39,13 @@ CSSValueList::CSSValueList(ValueListSeparator listSeparator)
     m_valueListSeparator = listSeparator;
 }
 
-CSSValueList::CSSValueList(CSSParserValueList* parserValues)
+CSSValueList::CSSValueList(CSSParserValueList& parserValues)
     : CSSValue(ValueListClass)
 {
     m_valueListSeparator = SpaceSeparator;
-    if (parserValues) {
-        m_values.reserveInitialCapacity(parserValues->size());
-        for (unsigned i = 0; i < parserValues->size(); ++i)
-            m_values.uncheckedAppend(parserValues->valueAt(i)->createCSSValue());
-    }
+    m_values.reserveInitialCapacity(parserValues.size());
+    for (unsigned i = 0, size = parserValues.size(); i < size; ++i)
+        m_values.uncheckedAppend(parserValues.valueAt(i)->createCSSValue());
 }
 
 bool CSSValueList::removeAll(CSSValue* val)
@@ -97,19 +93,19 @@ PassRefPtr<CSSValueList> CSSValueList::copy()
     return newList.release();
 }
 
-String CSSValueList::customCssText() const
+String CSSValueList::customCSSText() const
 {
     StringBuilder result;
     String separator;
     switch (m_valueListSeparator) {
     case SpaceSeparator:
-        separator = " ";
+        separator = ASCIILiteral(" ");
         break;
     case CommaSeparator:
-        separator = ", ";
+        separator = ASCIILiteral(", ");
         break;
     case SlashSeparator:
-        separator = " / ";
+        separator = ASCIILiteral(" / ");
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -139,37 +135,7 @@ bool CSSValueList::equals(const CSSValue& other) const
     return value && value->equals(other);
 }
 
-#if ENABLE(CSS_VARIABLES)
-String CSSValueList::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-{
-    StringBuilder result;
-    String separator;
-    switch (m_valueListSeparator) {
-    case SpaceSeparator:
-        separator = " ";
-        break;
-    case CommaSeparator:
-        separator = ", ";
-        break;
-    case SlashSeparator:
-        separator = " / ";
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-    }
-
-    unsigned size = m_values.size();
-    for (unsigned i = 0; i < size; i++) {
-        if (!result.isEmpty())
-            result.append(separator);
-        result.append(m_values[i]->serializeResolvingVariables(variables));
-    }
-
-    return result.toString();
-}
-#endif
-
-void CSSValueList::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
+void CSSValueList::addSubresourceStyleURLs(ListHashSet<URL>& urls, const StyleSheetContents* styleSheet) const
 {
     size_t size = m_values.size();
     for (size_t i = 0; i < size; ++i)
@@ -197,12 +163,6 @@ CSSValueList::CSSValueList(const CSSValueList& cloneFrom)
 PassRefPtr<CSSValueList> CSSValueList::cloneForCSSOM() const
 {
     return adoptRef(new CSSValueList(*this));
-}
-
-void CSSValueList::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_values, "values");
 }
 
 } // namespace WebCore

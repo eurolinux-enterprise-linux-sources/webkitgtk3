@@ -1,7 +1,8 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Google Inc. All rights reserved.
  * Copyright (C) 2007-2009 Torch Mobile, Inc.
+ * Copyright (C) 2008 Cameron Zwarich <cwzwarich@uwaterloo.ca>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -33,7 +34,8 @@
 #include "config.h"
 #include "CurrentTime.h"
 
-#if PLATFORM(MAC)
+#if OS(DARWIN)
+#include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <sys/time.h>
 #elif OS(WINDOWS)
@@ -47,25 +49,17 @@
 #include <stdint.h>
 #include <time.h>
 
-#elif PLATFORM(WX)
-#include <wx/datetime.h>
 #elif PLATFORM(EFL)
 #include <Ecore.h>
 #else
 #include <sys/time.h>
 #endif
 
-#if PLATFORM(GTK)
+#if USE(GLIB) && !PLATFORM(EFL)
 #include <glib.h>
 #endif
 
-#if PLATFORM(QT)
-#include <QElapsedTimer>
-#endif
-
 namespace WTF {
-
-#if !PLATFORM(CHROMIUM)
 
 #if OS(WINDOWS)
 
@@ -224,7 +218,7 @@ double currentTime()
 
 #endif // USE(QUERY_PERFORMANCE_COUNTER)
 
-#elif PLATFORM(GTK)
+#elif USE(GLIB) && !PLATFORM(EFL)
 
 // Note: GTK on Windows will pick up the PLATFORM(WIN) implementation above which provides
 // better accuracy compared with Windows implementation of g_get_current_time:
@@ -237,29 +231,11 @@ double currentTime()
     return static_cast<double>(now.tv_sec) + static_cast<double>(now.tv_usec / 1000000.0);
 }
 
-#elif PLATFORM(WX)
-
-double currentTime()
-{
-    wxDateTime now = wxDateTime::UNow();
-    return (double)now.GetTicks() + (double)(now.GetMillisecond() / 1000.0);
-}
-
 #elif PLATFORM(EFL)
 
 double currentTime()
 {
     return ecore_time_unix_get();
-}
-
-#elif OS(QNX)
-
-double currentTime()
-{
-    struct timespec time;
-    if (clock_gettime(CLOCK_REALTIME, &time))
-        CRASH();
-    return time.tv_sec + time.tv_nsec / 1.0e9;
 }
 
 #else
@@ -293,30 +269,11 @@ double monotonicallyIncreasingTime()
     return ecore_time_get();
 }
 
-#elif PLATFORM(GTK)
+#elif USE(GLIB) && !PLATFORM(EFL)
 
 double monotonicallyIncreasingTime()
 {
     return static_cast<double>(g_get_monotonic_time() / 1000000.0);
-}
-
-#elif PLATFORM(QT)
-
-double monotonicallyIncreasingTime()
-{
-    ASSERT(QElapsedTimer::isMonotonic());
-    static QElapsedTimer timer;
-    return timer.nsecsElapsed() / 1.0e9;
-}
-
-#elif OS(QNX)
-
-double monotonicallyIncreasingTime()
-{
-    struct timespec time;
-    if (clock_gettime(CLOCK_MONOTONIC, &time))
-        CRASH();
-    return time.tv_sec + time.tv_nsec / 1.0e9;
 }
 
 #else
@@ -333,6 +290,46 @@ double monotonicallyIncreasingTime()
 
 #endif
 
-#endif // !PLATFORM(CHROMIUM)
+double currentCPUTime()
+{
+#if OS(DARWIN)
+    mach_msg_type_number_t infoCount = THREAD_BASIC_INFO_COUNT;
+    thread_basic_info_data_t info;
+
+    // Get thread information
+    mach_port_t threadPort = mach_thread_self();
+    thread_info(threadPort, THREAD_BASIC_INFO, reinterpret_cast<thread_info_t>(&info), &infoCount);
+    mach_port_deallocate(mach_task_self(), threadPort);
+    
+    double time = info.user_time.seconds + info.user_time.microseconds / 1000000.;
+    time += info.system_time.seconds + info.system_time.microseconds / 1000000.;
+    
+    return time;
+#elif OS(WINDOWS)
+    union {
+        FILETIME fileTime;
+        unsigned long long fileTimeAsLong;
+    } userTime, kernelTime;
+    
+    // GetThreadTimes won't accept null arguments so we pass these even though
+    // they're not used.
+    FILETIME creationTime, exitTime;
+    
+    GetThreadTimes(GetCurrentThread(), &creationTime, &exitTime, &kernelTime.fileTime, &userTime.fileTime);
+    
+    return userTime.fileTimeAsLong / 10000000. + kernelTime.fileTimeAsLong / 10000000.;
+#else
+    // FIXME: We should return the time the current thread has spent executing.
+
+    // use a relative time from first call in order to avoid an overflow
+    static double firstTime = currentTime();
+    return currentTime() - firstTime;
+#endif
+}
+
+double currentCPUTimeMS()
+{
+    return currentCPUTime() * 1000;
+}
 
 } // namespace WTF

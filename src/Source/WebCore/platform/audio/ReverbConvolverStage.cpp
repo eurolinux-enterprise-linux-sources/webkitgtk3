@@ -32,12 +32,11 @@
 
 #include "ReverbConvolverStage.h"
 
+#include "FFTFrame.h"
 #include "VectorMath.h"
 #include "ReverbAccumulationBuffer.h"
 #include "ReverbConvolver.h"
 #include "ReverbInputBuffer.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
@@ -54,13 +53,13 @@ ReverbConvolverStage::ReverbConvolverStage(const float* impulseResponse, size_t,
     ASSERT(accumulationBuffer);
 
     if (!m_directMode) {
-        m_fftKernel = adoptPtr(new FFTFrame(fftSize));
+        m_fftKernel = std::make_unique<FFTFrame>(fftSize);
         m_fftKernel->doPaddedFFT(impulseResponse + stageOffset, stageLength);
-        m_fftConvolver = adoptPtr(new FFTConvolver(fftSize));
+        m_fftConvolver = std::make_unique<FFTConvolver>(fftSize);
     } else {
-        m_directKernel = adoptPtr(new AudioFloatArray(fftSize / 2));
+        m_directKernel = std::make_unique<AudioFloatArray>(fftSize / 2);
         m_directKernel->copyToRange(impulseResponse + stageOffset, 0, fftSize / 2);
-        m_directConvolver = adoptPtr(new DirectConvolver(renderSliceSize));
+        m_directConvolver = std::make_unique<DirectConvolver>(renderSliceSize);
     }
     m_temporaryBuffer.allocate(renderSliceSize);
 
@@ -89,6 +88,10 @@ ReverbConvolverStage::ReverbConvolverStage(const float* impulseResponse, size_t,
     size_t delayBufferSize = m_preDelayLength < fftSize ? fftSize : m_preDelayLength;
     delayBufferSize = delayBufferSize < renderSliceSize ? renderSliceSize : delayBufferSize;
     m_preDelayBuffer.allocate(delayBufferSize);
+}
+
+ReverbConvolverStage::~ReverbConvolverStage()
+{
 }
 
 void ReverbConvolverStage::processInBackground(ReverbConvolver* convolver, size_t framesToProcess)

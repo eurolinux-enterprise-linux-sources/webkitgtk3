@@ -37,9 +37,6 @@ enum WKFontSmoothingLevel {
     kWKFontSmoothingLevelLight = 1,
     kWKFontSmoothingLevelMedium = 2,
     kWKFontSmoothingLevelStrong = 3,
-#if defined(WIN32) || defined(_WIN32)
-    kWKFontSmoothingLevelWindows = 4,
-#endif
 };
 typedef enum WKFontSmoothingLevel WKFontSmoothingLevel;
 
@@ -55,7 +52,7 @@ typedef enum WKEditableLinkBehavior WKEditableLinkBehavior;
 // Creates a copy with no identifier.
 WK_EXPORT WKPreferencesRef WKPreferencesCreateCopy(WKPreferencesRef);
 
-// Defaults to kWKFontSmoothingLevelWindows on Windows, kWKFontSmoothingLevelMedium on other platforms.
+// Defaults to kWKFontSmoothingLevelMedium.
 WK_EXPORT void WKPreferencesSetFontSmoothingLevel(WKPreferencesRef, WKFontSmoothingLevel);
 WK_EXPORT WKFontSmoothingLevel WKPreferencesGetFontSmoothingLevel(WKPreferencesRef);
 
@@ -76,6 +73,10 @@ WK_EXPORT void WKPreferencesSetAcceleratedCompositingEnabled(WKPreferencesRef, b
 WK_EXPORT bool WKPreferencesGetAcceleratedCompositingEnabled(WKPreferencesRef);
 
 // Defaults to false.
+WK_EXPORT void WKPreferencesSetAcceleratedCompositingForOverflowScrollEnabled(WKPreferencesRef, bool);
+WK_EXPORT bool WKPreferencesGetAcceleratedCompositingForOverflowScrollEnabled(WKPreferencesRef);
+
+// Defaults to false.
 WK_EXPORT void WKPreferencesSetCompositingBordersVisible(WKPreferencesRef, bool);
 WK_EXPORT bool WKPreferencesGetCompositingBordersVisible(WKPreferencesRef);
 
@@ -88,12 +89,16 @@ WK_EXPORT void WKPreferencesSetTiledScrollingIndicatorVisible(WKPreferencesRef, 
 WK_EXPORT bool WKPreferencesGetTiledScrollingIndicatorVisible(WKPreferencesRef);
 
 // Defaults to true.
-WK_EXPORT void WKPreferencesSetCSSCustomFilterEnabled(WKPreferencesRef, bool flag);
-WK_EXPORT bool WKPreferencesGetCSSCustomFilterEnabled(WKPreferencesRef);
-
-// Defaults to false.
 WK_EXPORT void WKPreferencesSetWebGLEnabled(WKPreferencesRef, bool);
 WK_EXPORT bool WKPreferencesGetWebGLEnabled(WKPreferencesRef);
+
+// Defaults to false.
+WK_EXPORT void WKPreferencesSetMultithreadedWebGLEnabled(WKPreferencesRef, bool);
+WK_EXPORT bool WKPreferencesGetMultithreadedWebGLEnabled(WKPreferencesRef);
+
+// Defaults to false.
+WK_EXPORT void WKPreferencesSetForceSoftwareWebGLRendering(WKPreferencesRef, bool);
+WK_EXPORT bool WKPreferencesGetForceSoftwareWebGLRendering(WKPreferencesRef);
 
 // Defaults to false.
 WK_EXPORT void WKPreferencesSetAccelerated2DCanvasEnabled(WKPreferencesRef, bool);
@@ -183,7 +188,7 @@ WK_EXPORT bool WKPreferencesGetMockScrollbarsEnabled(WKPreferencesRef preference
 WK_EXPORT void WKPreferencesSetApplicationChromeModeEnabled(WKPreferencesRef preferencesRef, bool enabled);
 WK_EXPORT bool WKPreferencesGetApplicationChromeModeEnabled(WKPreferencesRef preferencesRef);
 
-// Defaults to false.
+// Deprecated. Always returns false.
 WK_EXPORT void WKPreferencesSetInspectorUsesWebKitUserInterface(WKPreferencesRef preferencesRef, bool enabled);
 WK_EXPORT bool WKPreferencesGetInspectorUsesWebKitUserInterface(WKPreferencesRef preferencesRef);
 
@@ -231,7 +236,7 @@ WK_EXPORT bool WKPreferencesGetScreenFontSubstitutionEnabled(WKPreferencesRef pr
 WK_EXPORT void WKPreferencesSetCookieEnabled(WKPreferencesRef preferences, bool enabled);
 WK_EXPORT bool WKPreferencesGetCookieEnabled(WKPreferencesRef preferences);
 
-// Defaults to false
+// Defaults to true on Mac, false elsewhere
 WK_EXPORT void WKPreferencesSetPDFPluginEnabled(WKPreferencesRef preferences, bool enabled);
 WK_EXPORT bool WKPreferencesGetPDFPluginEnabled(WKPreferencesRef preferences);
 
@@ -247,7 +252,67 @@ WK_EXPORT bool WKPreferencesGetLogsPageMessagesToSystemConsoleEnabled(WKPreferen
 WK_EXPORT void WKPreferencesSetPageVisibilityBasedProcessSuppressionEnabled(WKPreferencesRef preferences, bool enabled);
 WK_EXPORT bool WKPreferencesGetPageVisibilityBasedProcessSuppressionEnabled(WKPreferencesRef);
 
+// Defaults to true
+WK_EXPORT void WKPreferencesSetSmartInsertDeleteEnabled(WKPreferencesRef preferences, bool enabled);
+WK_EXPORT bool WKPreferencesGetSmartInsertDeleteEnabled(WKPreferencesRef preferences);
+
+// Defaults to false
+WK_EXPORT void WKPreferencesSetSelectTrailingWhitespaceEnabled(WKPreferencesRef preferences, bool enabled);
+WK_EXPORT bool WKPreferencesGetSelectTrailingWhitespaceEnabled(WKPreferencesRef preferences);
+
+// Defaults to false
+WK_EXPORT void WKPreferencesSetShowsURLsInToolTipsEnabled(WKPreferencesRef preferences, bool enabled);
+WK_EXPORT bool WKPreferencesGetShowsURLsInToolTipsEnabled(WKPreferencesRef preferences);
+
+// Defaults to true on Mac, false on other platforms.
+WK_EXPORT void WKPreferencesSetHiddenPageDOMTimerThrottlingEnabled(WKPreferencesRef preferences, bool enabled);
+WK_EXPORT bool WKPreferencesGetHiddenPageDOMTimerThrottlingEnabled(WKPreferencesRef preferences);
+
+// Defaults to true on Mac, false on other platforms.
+WK_EXPORT void WKPreferencesSetHiddenPageCSSAnimationSuspensionEnabled(WKPreferencesRef preferences, bool enabled);
+WK_EXPORT bool WKPreferencesGetHiddenPageCSSAnimationSuspensionEnabled(WKPreferencesRef preferences);
+
+// Defaults to false
+WK_EXPORT void WKPreferencesSetSnapshotAllPlugIns(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetSnapshotAllPlugIns(WKPreferencesRef preferencesRef);
+
+// Defaults to true
+WK_EXPORT void WKPreferencesSetAutostartOriginPlugInSnapshottingEnabled(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetAutostartOriginPlugInSnapshottingEnabled(WKPreferencesRef preferencesRef);
+
+// Defaults to true
+WK_EXPORT void WKPreferencesSetPrimaryPlugInSnapshotDetectionEnabled(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetPrimaryPlugInSnapshotDetectionEnabled(WKPreferencesRef preferencesRef);
+
+// Defaults to true
+WK_EXPORT void WKPreferencesSetThreadedScrollingEnabled(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetThreadedScrollingEnabled(WKPreferencesRef preferencesRef);
+
+// Defaults to 5 seconds.
+WK_EXPORT void WKPreferencesSetIncrementalRenderingSuppressionTimeout(WKPreferencesRef preferencesRef, double timeout);
+WK_EXPORT double WKPreferencesGetIncrementalRenderingSuppressionTimeout(WKPreferencesRef preferencesRef);
+
+// Defaults to true.
+WK_EXPORT void WKPreferencesSetSimpleLineLayoutEnabled(WKPreferencesRef, bool);
+WK_EXPORT bool WKPreferencesGetSimpleLineLayoutEnabled(WKPreferencesRef);
+
+// Defaults to false.
+WK_EXPORT void WKPreferencesSetSimpleLineLayoutDebugBordersEnabled(WKPreferencesRef, bool);
+WK_EXPORT bool WKPreferencesGetSimpleLineLayoutDebugBordersEnabled(WKPreferencesRef);
+
 WK_EXPORT void WKPreferencesResetTestRunnerOverrides(WKPreferencesRef preferencesRef);
+
+// Defaults to false.
+WK_EXPORT void WKPreferencesSetUseLegacyTextAlignPositionedElementBehavior(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesUseLegacyTextAlignPositionedElementBehavior(WKPreferencesRef preferencesRef);
+
+// Defaults to false.
+WK_EXPORT void WKPreferencesSetMediaSourceEnabled(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetMediaSourceEnabled(WKPreferencesRef preferencesRef);
+
+// Default to false.
+WK_EXPORT void WKPreferencesSetViewGestureDebuggingEnabled(WKPreferencesRef preferencesRef, bool enabled);
+WK_EXPORT bool WKPreferencesGetViewGestureDebuggingEnabled(WKPreferencesRef preferencesRef);
 
 #ifdef __cplusplus
 }

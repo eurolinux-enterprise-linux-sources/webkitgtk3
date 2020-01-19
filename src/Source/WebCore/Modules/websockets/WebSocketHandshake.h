@@ -33,16 +33,16 @@
 
 #if ENABLE(WEB_SOCKETS)
 
-#include "KURL.h"
+#include "URL.h"
+#include "ResourceResponse.h"
 #include "WebSocketExtensionDispatcher.h"
 #include "WebSocketExtensionProcessor.h"
-#include "WebSocketHandshakeRequest.h"
-#include "WebSocketHandshakeResponse.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
+class ResourceRequest;
 class ScriptExecutionContext;
 
 class WebSocketHandshake {
@@ -51,11 +51,11 @@ public:
     enum Mode {
         Incomplete, Normal, Failed, Connected
     };
-    WebSocketHandshake(const KURL&, const String& protocol, ScriptExecutionContext*);
+    WebSocketHandshake(const URL&, const String& protocol, ScriptExecutionContext*);
     ~WebSocketHandshake();
 
-    const KURL& url() const;
-    void setURL(const KURL&);
+    const URL& url() const;
+    void setURL(const URL&);
     const String host() const;
 
     const String& clientProtocol() const;
@@ -67,7 +67,7 @@ public:
     String clientLocation() const;
 
     CString clientHandshakeMessage() const;
-    PassRefPtr<WebSocketHandshakeRequest> clientHandshakeRequest() const;
+    ResourceRequest clientHandshakeRequest() const;
 
     void reset();
     void clearScriptExecutionContext();
@@ -84,14 +84,14 @@ public:
     String serverWebSocketAccept() const;
     String acceptedExtensions() const;
 
-    const WebSocketHandshakeResponse& serverHandshakeResponse() const;
+    const ResourceResponse& serverHandshakeResponse() const;
 
     void addExtensionProcessor(PassOwnPtr<WebSocketExtensionProcessor>);
 
     static String getExpectedWebSocketAccept(const String& secWebSocketKey);
 
 private:
-    KURL httpURLForAuthenticationAndCookies() const;
+    URL httpURLForAuthenticationAndCookies() const;
 
     int readStatusLine(const char* header, size_t headerLength, int& statusCode, String& statusText);
 
@@ -100,14 +100,14 @@ private:
     void processHeaders();
     bool checkResponseHeaders();
 
-    KURL m_url;
+    URL m_url;
     String m_clientProtocol;
     bool m_secure;
     ScriptExecutionContext* m_context;
 
     Mode m_mode;
 
-    WebSocketHandshakeResponse m_response;
+    ResourceResponse m_serverHandshakeResponse;
 
     String m_failureReason;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +27,8 @@
 #define SelectorQuery_h
 
 #include "CSSSelectorList.h"
+#include "NodeList.h"
+#include "SelectorCompiler.h"
 #include <wtf/HashMap.h>
 #include <wtf/Vector.h>
 #include <wtf/text/AtomicStringHash.h>
@@ -36,6 +38,7 @@ namespace WebCore {
 typedef int ExceptionCode;
     
 class CSSSelector;
+class ContainerNode;
 class Document;
 class Element;
 class Node;
@@ -44,20 +47,34 @@ class NodeList;
 class SelectorDataList {
 public:
     void initialize(const CSSSelectorList&);
-    bool matches(Element*) const;
-    PassRefPtr<NodeList> queryAll(Node* rootNode) const;
-    PassRefPtr<Element> queryFirst(Node* rootNode) const;
+    bool matches(Element&) const;
+    RefPtr<NodeList> queryAll(ContainerNode& rootNode) const;
+    Element* queryFirst(ContainerNode& rootNode) const;
 
 private:
     struct SelectorData {
         SelectorData(const CSSSelector* selector, bool isFastCheckable) : selector(selector), isFastCheckable(isFastCheckable) { }
         const CSSSelector* selector;
         bool isFastCheckable;
+
+#if ENABLE(CSS_SELECTOR_JIT)
+        mutable SelectorCompilationStatus compilationStatus;
+        mutable JSC::MacroAssemblerCodeRef compiledSelectorCodeRef;
+#endif // ENABLE(CSS_SELECTOR_JIT)
     };
 
-    bool canUseIdLookup(Node* rootNode) const;
-    template <bool firstMatchOnly>
-    void execute(Node* rootNode, Vector<RefPtr<Node> >&) const;
+    bool selectorMatches(const SelectorData&, Element&, const ContainerNode& rootNode) const;
+
+    template <typename SelectorQueryTrait> void execute(ContainerNode& rootNode, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeFastPathForIdSelector(const ContainerNode& rootNode, const SelectorData&, const CSSSelector* idSelector, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeSingleTagNameSelectorData(const ContainerNode& rootNode, const SelectorData&, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeSingleClassNameSelectorData(const ContainerNode& rootNode, const SelectorData&, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeSingleSelectorData(const ContainerNode& rootNode, const SelectorData&, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeSingleMultiSelectorData(const ContainerNode& rootNode, typename SelectorQueryTrait::OutputType&) const;
+#if ENABLE(CSS_SELECTOR_JIT)
+    template <typename SelectorQueryTrait> void executeCompiledSimpleSelectorChecker(const ContainerNode& rootNode, SelectorCompiler::SimpleSelectorChecker, typename SelectorQueryTrait::OutputType&) const;
+    template <typename SelectorQueryTrait> void executeCompiledSelectorCheckerWithContext(const ContainerNode& rootNode, SelectorCompiler::SelectorCheckerWithCheckingContext, const SelectorCompiler::CheckingContext&, typename SelectorQueryTrait::OutputType&) const;
+#endif // ENABLE(CSS_SELECTOR_JIT)
 
     Vector<SelectorData> m_selectors;
 };
@@ -65,11 +82,13 @@ private:
 class SelectorQuery {
     WTF_MAKE_NONCOPYABLE(SelectorQuery);
     WTF_MAKE_FAST_ALLOCATED;
+
 public:
     explicit SelectorQuery(const CSSSelectorList&);
-    bool matches(Element*) const;
-    PassRefPtr<NodeList> queryAll(Node* rootNode) const;
-    PassRefPtr<Element> queryFirst(Node* rootNode) const;
+    bool matches(Element&) const;
+    RefPtr<NodeList> queryAll(ContainerNode& rootNode) const;
+    Element* queryFirst(ContainerNode& rootNode) const;
+
 private:
     SelectorDataList m_selectors;
     CSSSelectorList m_selectorList;
@@ -77,13 +96,29 @@ private:
 
 class SelectorQueryCache {
     WTF_MAKE_FAST_ALLOCATED;
+
 public:
-    SelectorQuery* add(const AtomicString&, Document*, ExceptionCode&);
+    SelectorQuery* add(const AtomicString&, Document&, ExceptionCode&);
     void invalidate();
 
 private:
-    HashMap<AtomicString, OwnPtr<SelectorQuery> > m_entries;
+    HashMap<AtomicString, std::unique_ptr<SelectorQuery>> m_entries;
 };
+
+inline bool SelectorQuery::matches(Element& element) const
+{
+    return m_selectors.matches(element);
+}
+
+inline RefPtr<NodeList> SelectorQuery::queryAll(ContainerNode& rootNode) const
+{
+    return m_selectors.queryAll(rootNode);
+}
+
+inline Element* SelectorQuery::queryFirst(ContainerNode& rootNode) const
+{
+    return m_selectors.queryFirst(rootNode);
+}
 
 }
 

@@ -23,6 +23,7 @@
 #ifndef webkitwebsettingsprivate_h
 #define webkitwebsettingsprivate_h
 
+#include "URL.h"
 #include "webkitwebsettings.h"
 #include <wtf/text/CString.h>
 
@@ -83,16 +84,16 @@ struct _WebKitWebSettingsPrivate {
     gboolean enableWebAudio;
     gboolean enableAcceleratedCompositing;
     gboolean enableSmoothScrolling;
-    gboolean enableCSSShaders;
     gboolean mediaPlaybackRequiresUserGesture;
     gboolean mediaPlaybackAllowsInline;
     gboolean enableDisplayOfInsecureContent;
     gboolean enableRunningOfInsecureContent;
+    gboolean enableMediaSource;
 };
 
 WEBKIT_API void webkit_web_settings_add_extra_plugin_directory(WebKitWebView*, const gchar* directory);
 
-WEBKIT_API char* webkitWebSettingsUserAgentForURI(WebKitWebSettings*, const gchar* uri);
+WEBKIT_API char* webkitWebSettingsUserAgentForURI(WebKitWebSettings*, const WebCore::URL&);
 
 GSList* webkitWebViewGetEnchantDicts(WebKitWebView*);
 

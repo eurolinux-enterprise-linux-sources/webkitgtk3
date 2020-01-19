@@ -42,19 +42,21 @@ public:
     virtual ~AudioDestinationNode();
     
     // AudioNode   
-    virtual void process(size_t) { }; // we're pulled by hardware so this is never called
-    virtual void reset() { m_currentSampleFrame = 0; };
+    virtual void process(size_t) override { }; // we're pulled by hardware so this is never called
+    virtual void reset() override { m_currentSampleFrame = 0; }
     
     // The audio hardware calls render() to get the next render quantum of audio into destinationBus.
     // It will optionally give us local/live audio input in sourceBus (if it's not 0).
-    virtual void render(AudioBus* sourceBus, AudioBus* destinationBus, size_t numberOfFrames);
+    virtual void render(AudioBus* sourceBus, AudioBus* destinationBus, size_t numberOfFrames) override;
 
     size_t currentSampleFrame() const { return m_currentSampleFrame; }
     double currentTime() const { return currentSampleFrame() / static_cast<double>(sampleRate()); }
 
-    virtual unsigned numberOfChannels() const { return 2; } // FIXME: update when multi-channel (more than stereo) is supported
+    virtual unsigned long maxChannelCount() const { return 0; }
 
-    virtual void enableInput() = 0;
+    // Enable local/live input for the specified device.
+    virtual void enableInput(const String& inputDeviceId) = 0;
+
     virtual void startRendering() = 0;
 
     AudioSourceProvider* localAudioInputProvider() { return &m_localAudioInputProvider; }
@@ -65,31 +67,31 @@ protected:
     class LocalAudioInputProvider : public AudioSourceProvider {
     public:
         LocalAudioInputProvider()
-            : m_sourceBus(2, AudioNode::ProcessingSizeInFrames) // FIXME: handle non-stereo local input.
+            : m_sourceBus(AudioBus::create(2, AudioNode::ProcessingSizeInFrames)) // FIXME: handle non-stereo local input.
         {
         }
 
         void set(AudioBus* bus)
         {
             if (bus)
-                m_sourceBus.copyFrom(*bus);
+                m_sourceBus->copyFrom(*bus);
         }
 
         // AudioSourceProvider.
-        virtual void provideInput(AudioBus* destinationBus, size_t numberOfFrames)
+        virtual void provideInput(AudioBus* destinationBus, size_t numberOfFrames) override
         {
-            bool isGood = destinationBus && destinationBus->length() == numberOfFrames && m_sourceBus.length() == numberOfFrames;
+            bool isGood = destinationBus && destinationBus->length() == numberOfFrames && m_sourceBus->length() == numberOfFrames;
             ASSERT(isGood);
             if (isGood)
-                destinationBus->copyFrom(m_sourceBus);
+                destinationBus->copyFrom(*m_sourceBus);
         }
 
     private:
-        AudioBus m_sourceBus;
+        RefPtr<AudioBus> m_sourceBus;
     };
 
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE { return 0; }
+    virtual double tailTime() const override { return 0; }
+    virtual double latencyTime() const override { return 0; }
 
     // Counts the number of sample-frames processed by the destination.
     size_t m_currentSampleFrame;

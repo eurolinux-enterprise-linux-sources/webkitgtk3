@@ -42,11 +42,13 @@ private:
     WebConnectionToUIProcess(WebProcess*);
 
     // WebConnection
-    virtual void encodeMessageBody(CoreIPC::ArgumentEncoder&, APIObject*) OVERRIDE;
-    virtual bool decodeMessageBody(CoreIPC::ArgumentDecoder&, RefPtr<APIObject>&) OVERRIDE;
-    virtual CoreIPC::Connection* connection() const OVERRIDE;
-    virtual uint64_t destinationID() const OVERRIDE;
-    virtual bool hasValidConnection() const OVERRIDE;
+    virtual void encodeMessageBody(IPC::ArgumentEncoder&, API::Object*) override;
+    virtual bool decodeMessageBody(IPC::ArgumentDecoder&, RefPtr<API::Object>&) override;
+    virtual bool hasValidConnection() const override;
+
+    // IPC::MessageSender
+    virtual IPC::Connection* messageSenderConnection() override;
+    virtual uint64_t messageSenderDestinationID() override;
 
     WebProcess* m_process;
 };

@@ -33,14 +33,13 @@
 #include "HTMLNames.h"
 #include "KeyboardEvent.h"
 #include "RenderButton.h"
-#include "ScriptEventListener.h"
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLButtonElement::HTMLButtonElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+inline HTMLButtonElement::HTMLButtonElement(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
     : HTMLFormControlElement(tagName, document, form)
     , m_type(SUBMIT)
     , m_isActivatedSubmit(false)
@@ -48,7 +47,7 @@ inline HTMLButtonElement::HTMLButtonElement(const QualifiedName& tagName, Docume
     ASSERT(hasTagName(buttonTag));
 }
 
-PassRefPtr<HTMLButtonElement> HTMLButtonElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+PassRefPtr<HTMLButtonElement> HTMLButtonElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
 {
     return adoptRef(new HTMLButtonElement(tagName, document, form));
 }
@@ -58,9 +57,9 @@ void HTMLButtonElement::setType(const AtomicString& type)
     setAttribute(typeAttr, type);
 }
 
-RenderObject* HTMLButtonElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderPtr<RenderElement> HTMLButtonElement::createElementRenderer(PassRef<RenderStyle> style)
 {
-    return new (arena) RenderButton(this);
+    return createRenderer<RenderButton>(*this, std::move(style));
 }
 
 const AtomicString& HTMLButtonElement::formControlType() const
@@ -111,7 +110,7 @@ void HTMLButtonElement::parseAttribute(const QualifiedName& name, const AtomicSt
 
 void HTMLButtonElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().DOMActivateEvent && !disabled()) {
+    if (event->type() == eventNames().DOMActivateEvent && !isDisabledFormControl()) {
         if (form() && m_type == SUBMIT) {
             m_isActivatedSubmit = true;
             form()->prepareForSubmission(event);
@@ -155,7 +154,7 @@ void HTMLButtonElement::defaultEventHandler(Event* event)
 
 bool HTMLButtonElement::willRespondToMouseClickEvents()
 {
-    if (!disabled() && form() && (m_type == SUBMIT || m_type == RESET))
+    if (!isDisabledFormControl() && form() && (m_type == SUBMIT || m_type == RESET))
         return true;
     return HTMLFormControlElement::willRespondToMouseClickEvents();
 }
@@ -164,7 +163,7 @@ bool HTMLButtonElement::isSuccessfulSubmitButton() const
 {
     // HTML spec says that buttons must have names to be considered successful.
     // However, other browsers do not impose this constraint.
-    return m_type == SUBMIT && !disabled();
+    return m_type == SUBMIT && !isDisabledFormControl();
 }
 
 bool HTMLButtonElement::isActivatedSubmit() const

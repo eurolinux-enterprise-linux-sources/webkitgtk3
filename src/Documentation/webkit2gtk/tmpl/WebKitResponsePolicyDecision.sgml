@@ -56,3 +56,12 @@ WebKitResponsePolicyDecision
 @Returns: 
 
 
+<!-- ##### FUNCTION webkit_response_policy_decision_is_mime_type_supported ##### -->
+<para>
+
+</para>
+
+@decision: 
+@Returns: 
+
+

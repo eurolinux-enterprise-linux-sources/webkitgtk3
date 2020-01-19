@@ -26,13 +26,10 @@
 #include "config.h"
 #include "DrawingAreaProxy.h"
 
+#include "DrawingAreaMessages.h"
 #include "DrawingAreaProxyMessages.h"
 #include "WebPageProxy.h"
 #include "WebProcessProxy.h"
-
-#if USE(COORDINATED_GRAPHICS)
-#include "CoordinatedLayerTreeHostProxy.h"
-#endif
 
 using namespace WebCore;
 
@@ -42,34 +39,59 @@ DrawingAreaProxy::DrawingAreaProxy(DrawingAreaType type, WebPageProxy* webPagePr
     : m_type(type)
     , m_webPageProxy(webPageProxy)
     , m_size(webPageProxy->viewSize())
+#if PLATFORM(MAC)
+    , m_exposedRectChangedTimer(this, &DrawingAreaProxy::exposedRectChangedTimerFired)
+#endif
 {
-    m_webPageProxy->process()->addMessageReceiver(Messages::DrawingAreaProxy::messageReceiverName(), webPageProxy->pageID(), this);
+    m_webPageProxy->process().addMessageReceiver(Messages::DrawingAreaProxy::messageReceiverName(), webPageProxy->pageID(), *this);
 }
 
 DrawingAreaProxy::~DrawingAreaProxy()
 {
-    m_webPageProxy->process()->removeMessageReceiver(Messages::DrawingAreaProxy::messageReceiverName(), m_webPageProxy->pageID());
+    m_webPageProxy->process().removeMessageReceiver(Messages::DrawingAreaProxy::messageReceiverName(), m_webPageProxy->pageID());
 }
 
-void DrawingAreaProxy::setSize(const IntSize& size, const IntSize& scrollOffset)
+void DrawingAreaProxy::setSize(const IntSize& size, const IntSize& layerPosition, const IntSize& scrollOffset)
 { 
-    if (m_size == size && scrollOffset.isZero())
+    if (m_size == size && m_layerPosition == layerPosition && scrollOffset.isZero())
         return;
 
     m_size = size;
+    m_layerPosition = layerPosition;
     m_scrollOffset += scrollOffset;
     sizeDidChange();
 }
 
-#if USE(COORDINATED_GRAPHICS)
-void DrawingAreaProxy::updateViewport()
+#if PLATFORM(MAC)
+void DrawingAreaProxy::setExposedRect(const FloatRect& exposedRect)
 {
-    m_webPageProxy->setViewNeedsDisplay(viewportVisibleRect());
+    if (!m_webPageProxy->isValid())
+        return;
+
+    m_exposedRect = exposedRect;
+
+    if (!m_exposedRectChangedTimer.isActive())
+        m_exposedRectChangedTimer.startOneShot(0);
 }
 
-WebCore::IntRect DrawingAreaProxy::contentsRect() const
+void DrawingAreaProxy::exposedRectChangedTimerFired(Timer<DrawingAreaProxy>*)
 {
-    return IntRect(IntPoint::zero(), m_webPageProxy->viewSize());
+    if (!m_webPageProxy->isValid())
+        return;
+
+    if (m_exposedRect == m_lastSentExposedRect)
+        return;
+
+    m_webPageProxy->process().send(Messages::DrawingArea::SetExposedRect(m_exposedRect), m_webPageProxy->pageID());
+    m_lastSentExposedRect = m_exposedRect;
+}
+
+void DrawingAreaProxy::setCustomFixedPositionRect(const FloatRect& fixedPositionRect)
+{
+    if (!m_webPageProxy->isValid())
+        return;
+
+    m_webPageProxy->process().send(Messages::DrawingArea::SetCustomFixedPositionRect(fixedPositionRect), m_webPageProxy->pageID());
 }
 #endif
 

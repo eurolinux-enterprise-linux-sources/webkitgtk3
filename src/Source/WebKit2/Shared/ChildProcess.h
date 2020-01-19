@@ -29,9 +29,10 @@
 #include "Connection.h"
 #include "MessageReceiverMap.h"
 #include "MessageSender.h"
-#include <WebCore/RunLoop.h>
+#include <WebCore/UserActivity.h>
 #include <wtf/HashMap.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/RunLoop.h>
 #include <wtf/text/StringHash.h>
 #include <wtf/text/WTFString.h>
 
@@ -42,11 +43,11 @@ class SandboxInitializationParameters;
 struct ChildProcessInitializationParameters {
     String uiProcessName;
     String clientIdentifier;
-    CoreIPC::Connection::Identifier connectionIdentifier;
+    IPC::Connection::Identifier connectionIdentifier;
     HashMap<String, String> extraInitializationData;
 };
 
-class ChildProcess : protected CoreIPC::Connection::Client, public CoreIPC::MessageSender<ChildProcess> {
+class ChildProcess : protected IPC::Connection::Client, public IPC::MessageSender {
     WTF_MAKE_NONCOPYABLE(ChildProcess);
 
 public:
@@ -57,24 +58,23 @@ public:
     void disableTermination();
     void enableTermination();
 
-    void addMessageReceiver(CoreIPC::StringReference messageReceiverName, CoreIPC::MessageReceiver*);
-    void addMessageReceiver(CoreIPC::StringReference messageReceiverName, uint64_t destinationID, CoreIPC::MessageReceiver*);
-    void removeMessageReceiver(CoreIPC::StringReference messageReceiverName, uint64_t destinationID);
+    void addMessageReceiver(IPC::StringReference messageReceiverName, IPC::MessageReceiver&);
+    void addMessageReceiver(IPC::StringReference messageReceiverName, uint64_t destinationID, IPC::MessageReceiver&);
+    void removeMessageReceiver(IPC::StringReference messageReceiverName, uint64_t destinationID);
+
+    void setProcessSuppressionEnabled(bool);
+    bool processSuppressionEnabled() const { return !m_processSuppressionDisabled.isActive(); }
+    void incrementActiveTaskCount();
+    void decrementActiveTaskCount();
 
 #if PLATFORM(MAC)
-    bool processSuppressionEnabled() const { return !m_processVisibleAssertion; }
-    void setProcessSuppressionEnabled(bool);
-
-    void shutdownWindowServerConnection();
+    void setApplicationIsDaemon();
+    void setQOS(int latencyQOS, int throughputQOS);
 #endif
 
-    CoreIPC::Connection* parentProcessConnection() const { return m_connection.get(); }
+    IPC::Connection* parentProcessConnection() const { return m_connection.get(); }
 
-    // Used by CoreIPC::MessageSender
-    CoreIPC::Connection* connection() const { return m_connection.get(); }
-    uint64_t destinationID() const { return 0; }
-
-    CoreIPC::MessageReceiverMap& messageReceiverMap() { return m_messageReceiverMap; }
+    IPC::MessageReceiverMap& messageReceiverMap() { return m_messageReceiverMap; }
 
 protected:
     explicit ChildProcess();
@@ -85,12 +85,22 @@ protected:
     virtual void initializeProcess(const ChildProcessInitializationParameters&);
     virtual void initializeProcessName(const ChildProcessInitializationParameters&);
     virtual void initializeSandbox(const ChildProcessInitializationParameters&, SandboxInitializationParameters&);
-    virtual void initializeConnection(CoreIPC::Connection*);
+    virtual void initializeConnection(IPC::Connection*);
 
     virtual bool shouldTerminate() = 0;
     virtual void terminate();
 
+    virtual void stopRunLoop();
+
+#if PLATFORM(MAC)
+    static void stopNSAppRunLoop();
+#endif
+
 private:
+    // IPC::MessageSender
+    virtual IPC::Connection* messageSenderConnection() override;
+    virtual uint64_t messageSenderDestinationID() override;
+
     void terminationTimerFired();
 
     void platformInitialize();
@@ -103,14 +113,13 @@ private:
     // after a given period of time.
     unsigned m_terminationCounter;
 
-    WebCore::RunLoop::Timer<ChildProcess> m_terminationTimer;
+    RunLoop::Timer<ChildProcess> m_terminationTimer;
 
-    RefPtr<CoreIPC::Connection> m_connection;
-    CoreIPC::MessageReceiverMap m_messageReceiverMap;
+    RefPtr<IPC::Connection> m_connection;
+    IPC::MessageReceiverMap m_messageReceiverMap;
 
-#if PLATFORM(MAC)
-    RetainPtr<id> m_processVisibleAssertion;
-#endif
+    UserActivity m_processSuppressionDisabled;
+    UserActivity m_activeTasks;
 };
 
 } // namespace WebKit

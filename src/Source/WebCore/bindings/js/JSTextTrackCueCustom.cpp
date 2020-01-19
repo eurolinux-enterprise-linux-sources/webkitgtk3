@@ -28,7 +28,8 @@
 #if ENABLE(VIDEO_TRACK)
 
 #include "JSTextTrackCue.h"
-#include "JSTextTrackCustom.h"
+#include "JSTrackCustom.h"
+#include "TextTrack.h"
 
 using namespace JSC;
 
@@ -37,38 +38,38 @@ namespace WebCore {
 bool JSTextTrackCueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void*, SlotVisitor& visitor)
 {
     JSTextTrackCue* jsTextTrackCue = jsCast<JSTextTrackCue*>(handle.get().asCell());
-    TextTrackCue* textTrackCue = static_cast<TextTrackCue*>(jsTextTrackCue->impl());
+    TextTrackCue& textTrackCue = jsTextTrackCue->impl();
 
     // If the cue is firing event listeners, its wrapper is reachable because
     // the wrapper is responsible for marking those event listeners.
-    if (textTrackCue->isFiringEventListeners())
+    if (textTrackCue.isFiringEventListeners())
         return true;
 
     // If the cue has no event listeners and has no custom properties, it is not reachable.
-    if (!textTrackCue->hasEventListeners() && !jsTextTrackCue->hasCustomProperties())
+    if (!textTrackCue.hasEventListeners() && !jsTextTrackCue->hasCustomProperties())
         return false;
 
     // If the cue is not associated with a track, it is not reachable.
-    if (!textTrackCue->track())
+    if (!textTrackCue.track())
         return false;
 
-    return visitor.containsOpaqueRoot(root(textTrackCue->track()));
+    return visitor.containsOpaqueRoot(root(textTrackCue.track()));
 }
 
 void JSTextTrackCue::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
     JSTextTrackCue* jsTextTrackCue = jsCast<JSTextTrackCue*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(jsTextTrackCue, &s_info);
+    ASSERT_GC_OBJECT_INHERITS(jsTextTrackCue, info());
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
     ASSERT(jsTextTrackCue->structure()->typeInfo().overridesVisitChildren());
     Base::visitChildren(jsTextTrackCue, visitor);
     
     // Mark the cue's track root if it has one.
-    TextTrackCue* textTrackCue = static_cast<TextTrackCue*>(jsTextTrackCue->impl());
-    if (TextTrack* textTrack = textTrackCue->track())
+    TextTrackCue& textTrackCue = jsTextTrackCue->impl();
+    if (TextTrack* textTrack = textTrackCue.track())
         visitor.addOpaqueRoot(root(textTrack));
     
-    textTrackCue->visitJSEventListeners(visitor);
+    textTrackCue.visitJSEventListeners(visitor);
 }
 
 } // namespace WebCore

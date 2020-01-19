@@ -23,13 +23,15 @@
 
 #if ENABLE(SVG)
 #include "RenderSVGContainer.h"
+#include "SVGGraphicsElement.h"
 
 namespace WebCore {
     
-class SVGStyledTransformableElement;
-class RenderSVGTransformableContainer : public RenderSVGContainer {
+class SVGGraphicsElement;
+class RenderSVGTransformableContainer final : public RenderSVGContainer {
 public:
-    explicit RenderSVGTransformableContainer(SVGStyledTransformableElement*);
+    RenderSVGTransformableContainer(SVGGraphicsElement&, PassRef<RenderStyle>);
+    SVGGraphicsElement& graphicsElement() { return toSVGGraphicsElement(RenderSVGContainer::element()); }
 
     virtual bool isSVGTransformableContainer() const { return true; }
     virtual const AffineTransform& localToParentTransform() const { return m_localTransform; }
@@ -37,6 +39,7 @@ public:
     virtual bool didTransformToRootUpdate() { return m_didTransformToRootUpdate; }
 
 private:
+    void element() const = delete;
     virtual bool calculateLocalTransform();
     virtual AffineTransform localTransform() const { return m_localTransform; }
 

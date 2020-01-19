@@ -45,10 +45,11 @@
 #include "IDBKey.h"
 #include "IDBKeyRange.h"
 #include "IDBOpenDBRequest.h"
+#include "Logging.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "SecurityOrigin.h"
-#include "WorkerContext.h"
+#include "WorkerGlobalScope.h"
 #include "WorkerLoaderProxy.h"
 #include "WorkerThread.h"
 
@@ -68,15 +69,11 @@ IDBFactory::~IDBFactory()
 namespace {
 static bool isContextValid(ScriptExecutionContext* context)
 {
-    ASSERT(context->isDocument() || context->isWorkerContext());
+    ASSERT(context->isDocument() || context->isWorkerGlobalScope());
     if (context->isDocument()) {
-        Document* document = static_cast<Document*>(context);
+        Document* document = toDocument(context);
         return document->frame() && document->page();
     }
-#if !ENABLE(WORKERS)
-    if (context->isWorkerContext())
-        return false;
-#endif
     return true;
 }
 
@@ -84,21 +81,20 @@ static String getIndexedDBDatabasePath(ScriptExecutionContext* context)
 {
     ASSERT(isContextValid(context));
     if (context->isDocument()) {
-        Document* document = static_cast<Document*>(context);
-        return document->page()->group().groupSettings()->indexedDBDatabasePath();
+        Document* document = toDocument(context);
+        return document->page()->group().groupSettings().indexedDBDatabasePath();
     }
-#if ENABLE(WORKERS)
-    WorkerContext* workerContext = static_cast<WorkerContext*>(context);
-    const GroupSettings* groupSettings = workerContext->groupSettings();
+    WorkerGlobalScope* workerGlobalScope = static_cast<WorkerGlobalScope*>(context);
+    const GroupSettings* groupSettings = workerGlobalScope->groupSettings();
     if (groupSettings)
         return groupSettings->indexedDBDatabasePath();
-#endif
     return String();
 }
 }
 
 PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ScriptExecutionContext* context, ExceptionCode& ec)
 {
+    LOG(StorageAPI, "IDBFactory::getDatabaseNames");
     if (!isContextValid(context))
         return 0;
     if (!context->securityOrigin()->canAccessDatabase(context->topOrigin())) {
@@ -111,21 +107,26 @@ PassRefPtr<IDBRequest> IDBFactory::getDatabaseNames(ScriptExecutionContext* cont
     return request;
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, int64_t version, ExceptionCode& ec)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, ExceptionCode& ec)
 {
-    // FIXME: This should only need to check for 0 once webkit.org/b/96798 lands.
-    const int64_t maxECMAScriptInteger = 0x20000000000000LL - 1;
-    if (version < 1 || version > maxECMAScriptInteger) {
+    LOG(StorageAPI, "IDBFactory::open");
+    return openInternal(context, name, 0, IndexedDB::VersionNullness::Null, ec);
+}
+
+PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, unsigned long long version, ExceptionCode& ec)
+{
+    LOG(StorageAPI, "IDBFactory::open");
+    if (!version) {
         ec = TypeError;
         return 0;
     }
-    return openInternal(context, name, version, ec);
+    return openInternal(context, name, version, IndexedDB::VersionNullness::NonNull, ec);
 }
 
-PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* context, const String& name, int64_t version, ExceptionCode& ec)
+PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* context, const String& name, uint64_t version, IndexedDB::VersionNullness versionNullness, ExceptionCode& ec)
 {
     HistogramSupport::histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
-    ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
+    ASSERT(version >= 1 || versionNullness == IndexedDB::VersionNullness::Null);
     if (name.isNull()) {
         ec = TypeError;
         return 0;
@@ -137,20 +138,16 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::openInternal(ScriptExecutionContext* co
         return 0;
     }
 
-    RefPtr<IDBDatabaseCallbacksImpl> databaseCallbacks = IDBDatabaseCallbacksImpl::create();
+    RefPtr<IDBDatabaseCallbacks> databaseCallbacks = IDBDatabaseCallbacksImpl::create();
     int64_t transactionId = IDBDatabase::nextTransactionId();
-    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, databaseCallbacks, transactionId, version);
-    m_backend->open(name, version, transactionId, request, databaseCallbacks, context->securityOrigin(), context, getIndexedDBDatabasePath(context));
+    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, databaseCallbacks, transactionId, version, versionNullness);
+    m_backend->open(name, version, transactionId, request, databaseCallbacks, *(context->securityOrigin()), *(context->topOrigin()));
     return request;
-}
-
-PassRefPtr<IDBOpenDBRequest> IDBFactory::open(ScriptExecutionContext* context, const String& name, ExceptionCode& ec)
-{
-    return openInternal(context, name, IDBDatabaseMetadata::NoIntVersion, ec);
 }
 
 PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ScriptExecutionContext* context, const String& name, ExceptionCode& ec)
 {
+    LOG(StorageAPI, "IDBFactory::deleteDatabase");
     HistogramSupport::histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
     if (name.isNull()) {
         ec = TypeError;
@@ -163,12 +160,12 @@ PassRefPtr<IDBOpenDBRequest> IDBFactory::deleteDatabase(ScriptExecutionContext* 
         return 0;
     }
 
-    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, 0, 0, IDBDatabaseMetadata::DefaultIntVersion);
+    RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(context, 0, 0, 0, IndexedDB::VersionNullness::Null);
     m_backend->deleteDatabase(name, request, context->securityOrigin(), context, getIndexedDBDatabasePath(context));
     return request;
 }
 
-short IDBFactory::cmp(ScriptExecutionContext* context, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionCode& ec)
+short IDBFactory::cmp(ScriptExecutionContext* context, const Deprecated::ScriptValue& firstValue, const Deprecated::ScriptValue& secondValue, ExceptionCode& ec)
 {
     DOMRequestState requestState(context);
     RefPtr<IDBKey> first = scriptValueToIDBKey(&requestState, firstValue);

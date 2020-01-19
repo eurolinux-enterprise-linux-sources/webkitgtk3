@@ -24,9 +24,9 @@
  */
 
 [
-    Conditional=SVG
+    Conditional=SVG,
 ] interface SVGElementInstanceList {
     readonly attribute unsigned long length;
 
-    SVGElementInstance item(in [Optional=DefaultIsUndefined] unsigned long index);
+    SVGElementInstance item([Default=Undefined] optional unsigned long index);
 };

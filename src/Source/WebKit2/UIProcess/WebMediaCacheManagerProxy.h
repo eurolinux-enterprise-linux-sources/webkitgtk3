@@ -28,7 +28,6 @@
 
 #include "APIObject.h"
 #include "GenericCallback.h"
-#include "ImmutableArray.h"
 #include "MessageReceiver.h"
 #include "WebContextSupplement.h"
 #include <wtf/PassRefPtr.h>
@@ -42,10 +41,8 @@ class WebProcessProxy;
 
 typedef GenericCallback<WKArrayRef> ArrayCallback;
 
-class WebMediaCacheManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebMediaCacheManagerProxy : public API::ObjectImpl<API::Object::Type::MediaCacheManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeMediaCacheManager;
-
     static const char* supplementName();
 
     static PassRefPtr<WebMediaCacheManagerProxy> create(WebContext*);
@@ -55,27 +52,25 @@ public:
     void clearCacheForHostname(const String&);
     void clearCacheForAllHostnames();
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebMediaCacheManagerProxy(WebContext*);
 
-    virtual Type type() const { return APIType; }
-
     void didGetHostnamesWithMediaCache(const Vector<String>&, uint64_t callbackID);
 
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual bool shouldTerminate(WebProcessProxy*) const OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual bool shouldTerminate(WebProcessProxy*) const override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
-    HashMap<uint64_t, RefPtr<ArrayCallback> > m_arrayCallbacks;
+    HashMap<uint64_t, RefPtr<ArrayCallback>> m_arrayCallbacks;
 };
 
 } // namespace WebKit

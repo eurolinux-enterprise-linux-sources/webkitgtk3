@@ -25,8 +25,7 @@
 #ifndef CachedResourceClient_h
 #define CachedResourceClient_h
 
-#include <wtf/FastAllocBase.h>
-#include <wtf/Forward.h>
+#include <wtf/FastMalloc.h>
 
 namespace WebCore {
 class CachedResource;

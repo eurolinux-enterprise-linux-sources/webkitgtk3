@@ -26,18 +26,17 @@
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
-#if PLATFORM(MAC)
+#if PLATFORM(IOS)
+#include "NativeImagePtr.h"
+#include <CoreGraphics/CoreGraphics.h>
+#include <wtf/RetainPtr.h>
+#elif PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 OBJC_CLASS NSImage;
 #elif PLATFORM(WIN)
 typedef struct HICON__* HICON;
-#elif PLATFORM(QT)
-#include <QIcon>
 #elif PLATFORM(GTK)
 typedef struct _GdkPixbuf GdkPixbuf;
-#elif PLATFORM(CHROMIUM)
-#include "Image.h"
-#include "PlatformIcon.h"
 #endif
 
 namespace WebCore {
@@ -55,29 +54,29 @@ public:
 
 #if PLATFORM(WIN)
     static PassRefPtr<Icon> create(HICON hIcon) { return adoptRef(new Icon(hIcon)); }
-#elif PLATFORM(CHROMIUM)
-    static PassRefPtr<Icon> create(PassRefPtr<PlatformIcon> icon) { return adoptRef(new Icon(icon)); }
+#endif
+
+#if PLATFORM(IOS)
+    // FIXME: Make this work for non-iOS ports and remove the PLATFORM(IOS)-guard.
+    static PassRefPtr<Icon> createIconForImage(NativeImagePtr);
 #endif
 
 private:
-#if PLATFORM(MAC)
+#if PLATFORM(IOS)
+    Icon(CGImageRef);
+    RetainPtr<CGImageRef> m_cgImage;
+#elif PLATFORM(MAC)
     Icon(NSImage*);
     RetainPtr<NSImage> m_nsImage;
 #elif PLATFORM(WIN)
     Icon(HICON);
     HICON m_hIcon;
-#elif PLATFORM(QT)
-    Icon();
-    QIcon m_icon;
 #elif PLATFORM(GTK)
     Icon();
     GdkPixbuf* m_icon;
 #elif PLATFORM(EFL)
     Icon();
     Evas_Object* m_icon;
-#elif PLATFORM(CHROMIUM)
-    Icon(PassRefPtr<PlatformIcon>);
-    RefPtr<PlatformIcon> m_icon;
 #endif
 };
 

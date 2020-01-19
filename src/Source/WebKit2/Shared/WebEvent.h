@@ -36,7 +36,7 @@
 #include <WebCore/IntSize.h>
 #include <wtf/text/WTFString.h>
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -61,13 +61,6 @@ public:
         KeyUp,
         RawKeyDown,
         Char,
-
-#if ENABLE(GESTURE_EVENTS)
-        // WebGestureEvent
-        GestureScrollBegin,
-        GestureScrollEnd,
-        GestureSingleTap,
-#endif
 
 #if ENABLE(TOUCH_EVENTS)
         // WebTouchEvent
@@ -103,8 +96,8 @@ protected:
 
     WebEvent(Type, Modifiers, double timestamp);
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebEvent&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebEvent&);
 
 private:
     uint32_t m_type; // Type
@@ -134,8 +127,8 @@ public:
     float deltaZ() const { return m_deltaZ; }
     int32_t clickCount() const { return m_clickCount; }
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebMouseEvent&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebMouseEvent&);
 
 private:
     static bool isMouseEventType(Type);
@@ -190,8 +183,8 @@ public:
     const WebCore::FloatSize& unacceleratedScrollingDelta() const { return m_unacceleratedScrollingDelta; }
 #endif
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebWheelEvent&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebWheelEvent&);
 
 private:
     static bool isWheelEventType(Type);
@@ -228,8 +221,8 @@ public:
     bool isKeypad() const { return m_isKeypad; }
     bool isSystemKey() const { return m_isSystemKey; }
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebKeyboardEvent&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebKeyboardEvent&);
 
     static bool isKeyboardEventType(Type);
 
@@ -245,35 +238,73 @@ private:
     bool m_isSystemKey;
 };
 
-
-#if ENABLE(GESTURE_EVENTS)
-// FIXME: Move this class to its own header file.
-class WebGestureEvent : public WebEvent {
+#if ENABLE(TOUCH_EVENTS)
+#if PLATFORM(IOS)
+class WebPlatformTouchPoint {
 public:
-    WebGestureEvent() { }
-    WebGestureEvent(Type, const WebCore::IntPoint& position, const WebCore::IntPoint& globalPosition, Modifiers, double timestamp);
-    WebGestureEvent(Type, const WebCore::IntPoint& position, const WebCore::IntPoint& globalPosition, Modifiers, double timestamp, const WebCore::IntSize& area, const WebCore::FloatPoint& delta);
+    enum TouchPointState {
+        TouchReleased,
+        TouchPressed,
+        TouchMoved,
+        TouchStationary,
+        TouchCancelled
+    };
 
-    const WebCore::IntPoint position() const { return m_position; }
-    const WebCore::IntPoint globalPosition() const { return m_globalPosition; }
-    const WebCore::IntSize area() const { return m_area; }
-    const WebCore::FloatPoint delta() const { return m_delta; }
+    WebPlatformTouchPoint() { }
+    WebPlatformTouchPoint(unsigned identifier, WebCore::IntPoint location, TouchPointState phase)
+        : m_identifier(identifier)
+        , m_location(location)
+        , m_phase(phase)
+    {
+    }
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebGestureEvent&);
+    unsigned identifier() const { return m_identifier; }
+    WebCore::IntPoint location() const { return m_location; }
+    TouchPointState phase() const { return static_cast<TouchPointState>(m_phase); }
+
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebPlatformTouchPoint&);
 
 private:
-    static bool isGestureEventType(Type);
-
-    WebCore::IntPoint m_position;
-    WebCore::IntPoint m_globalPosition;
-    WebCore::IntSize m_area;
-    WebCore::FloatPoint m_delta;
+    unsigned m_identifier;
+    WebCore::IntPoint m_location;
+    uint32_t m_phase;
 };
-#endif // ENABLE(GESTURE_EVENTS)
 
+class WebTouchEvent : public WebEvent {
+public:
+    WebTouchEvent() { }
+    WebTouchEvent(WebEvent::Type type, Modifiers modifiers, double timestamp, const Vector<WebPlatformTouchPoint>& touchPoints, WebCore::IntPoint position, bool isGesture, float gestureScale, float gestureRotation)
+        : WebEvent(type, modifiers, timestamp)
+        , m_touchPoints(touchPoints)
+        , m_position(position)
+        , m_isGesture(isGesture)
+        , m_gestureScale(gestureScale)
+        , m_gestureRotation(gestureRotation)
+    {
+        ASSERT(type == TouchStart || type == TouchMove || type == TouchEnd || type == TouchCancel);
+    }
 
-#if ENABLE(TOUCH_EVENTS)
+    const Vector<WebPlatformTouchPoint>& touchPoints() const { return m_touchPoints; }
+
+    WebCore::IntPoint position() const { return m_position; }
+
+    bool isGesture() const { return m_isGesture; }
+    float gestureScale() const { return m_gestureScale; }
+    float gestureRotation() const { return m_gestureRotation; }
+
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebTouchEvent&);
+    
+private:
+    Vector<WebPlatformTouchPoint> m_touchPoints;
+    
+    WebCore::IntPoint m_position;
+    bool m_isGesture;
+    float m_gestureScale;
+    float m_gestureRotation;
+};
+#else
 // FIXME: Move this class to its own header file.
 // FIXME: Having "Platform" in the name makes it sound like this event is platform-specific or low-
 // level in some way. That doesn't seem to be the case.
@@ -304,8 +335,8 @@ public:
 
     void setState(TouchPointState state) { m_state = state; }
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebPlatformTouchPoint&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebPlatformTouchPoint&);
 
 private:
     uint32_t m_id;
@@ -327,8 +358,8 @@ public:
 
     const Vector<WebPlatformTouchPoint>& touchPoints() const { return m_touchPoints; }
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebTouchEvent&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebTouchEvent&);
   
 private:
     static bool isTouchEventType(Type);
@@ -336,6 +367,7 @@ private:
     Vector<WebPlatformTouchPoint> m_touchPoints;
 };
 
+#endif // PLATFORM(IOS)
 #endif // ENABLE(TOUCH_EVENTS)
 
 } // namespace WebKit

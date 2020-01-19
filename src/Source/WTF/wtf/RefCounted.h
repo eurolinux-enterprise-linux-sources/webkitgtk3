@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,11 +22,9 @@
 #define RefCounted_h
 
 #include <wtf/Assertions.h>
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
-#include <wtf/ThreadRestrictionVerifier.h>
-#include <wtf/UnusedParam.h>
 
 namespace WTF {
 
@@ -44,18 +42,6 @@ public:
     void ref()
     {
 #if CHECK_REF_COUNTED_LIFECYCLE
-        // Start thread verification as soon as the ref count gets to 2. This
-        // heuristic reflects the fact that items are often created on one thread
-        // and then given to another thread to be used.
-        // FIXME: Make this restriction tigher. Especially as we move to more
-        // common methods for sharing items across threads like CrossThreadCopier.h
-        // We should be able to add a "detachFromThread" method to make this explicit.
-        if (m_refCount == 1)
-            m_verifier.setShared(true);
-        // If this assert fires, it either indicates a thread safety issue or
-        // that the verification needs to change. See ThreadRestrictionVerifier for
-        // the different modes.
-        ASSERT(m_verifier.isSafeToUse());
         ASSERT(!m_deletionHasBegun);
         ASSERT(!m_adoptionIsRequired);
 #endif
@@ -65,41 +51,14 @@ public:
     bool hasOneRef() const
     {
 #if CHECK_REF_COUNTED_LIFECYCLE
-        ASSERT(m_verifier.isSafeToUse());
         ASSERT(!m_deletionHasBegun);
 #endif
         return m_refCount == 1;
     }
 
-    int refCount() const
+    unsigned refCount() const
     {
-#if CHECK_REF_COUNTED_LIFECYCLE
-        ASSERT(m_verifier.isSafeToUse());
-#endif
         return m_refCount;
-    }
-
-    void setMutexForVerifier(Mutex&);
-
-#if HAVE(DISPATCH_H)
-    void setDispatchQueueForVerifier(dispatch_queue_t);
-#endif
-
-    // Turns off verification. Use of this method is discouraged (instead extend
-    // ThreadRestrictionVerifier to verify your case).
-    // NB. It is necessary to call this in the constructor of many objects in
-    // JavaScriptCore, because JavaScriptCore objects may be used from multiple
-    // threads even if the reference counting is done in a racy manner. This is
-    // because a JSC instance may be used from multiple threads so long as all
-    // accesses into that instance are protected by a per-instance lock. It would
-    // be absolutely wrong to prohibit this pattern, and it would be a disastrous
-    // regression to require that the objects within that instance use a thread-
-    // safe version of reference counting.
-    void turnOffVerifier()
-    {
-#if CHECK_REF_COUNTED_LIFECYCLE
-        m_verifier.turnOffVerification();
-#endif
     }
 
     void relaxAdoptionRequirement()
@@ -109,12 +68,6 @@ public:
         ASSERT(m_adoptionIsRequired);
         m_adoptionIsRequired = false;
 #endif
-    }
-
-    // Helper for generating JIT code. Please do not use for non-JIT purposes.
-    const int* addressOfCount() const
-    {
-        return &m_refCount;
     }
 
 protected:
@@ -139,26 +92,19 @@ protected:
     bool derefBase()
     {
 #if CHECK_REF_COUNTED_LIFECYCLE
-        ASSERT(m_verifier.isSafeToUse());
         ASSERT(!m_deletionHasBegun);
         ASSERT(!m_adoptionIsRequired);
 #endif
 
-        ASSERT(m_refCount > 0);
-        if (m_refCount == 1) {
+        ASSERT(m_refCount);
+        unsigned tempRefCount = m_refCount - 1;
+        if (!tempRefCount) {
 #if CHECK_REF_COUNTED_LIFECYCLE
             m_deletionHasBegun = true;
 #endif
             return true;
         }
-
-        --m_refCount;
-#if CHECK_REF_COUNTED_LIFECYCLE
-        // Stop thread verification when the ref goes to 1 because it
-        // is safe to be passed to another thread at this point.
-        if (m_refCount == 1)
-            m_verifier.setShared(false);
-#endif
+        m_refCount = tempRefCount;
         return false;
     }
 
@@ -175,11 +121,10 @@ private:
     friend void adopted(RefCountedBase*);
 #endif
 
-    int m_refCount;
+    unsigned m_refCount;
 #if CHECK_REF_COUNTED_LIFECYCLE
     bool m_deletionHasBegun;
     bool m_adoptionIsRequired;
-    ThreadRestrictionVerifier m_verifier;
 #endif
 };
 
@@ -209,45 +154,8 @@ protected:
     }
 };
 
-template<typename T> class RefCountedCustomAllocated : public RefCountedBase {
-    WTF_MAKE_NONCOPYABLE(RefCountedCustomAllocated);
-
-public:
-    void deref()
-    {
-        if (derefBase())
-            delete static_cast<T*>(this);
-    }
-
-protected:
-    ~RefCountedCustomAllocated()
-    {
-    }
-};
-
-#if CHECK_REF_COUNTED_LIFECYCLE
-inline void RefCountedBase::setMutexForVerifier(Mutex& mutex)
-{
-    m_verifier.setMutexMode(mutex);
-}
-#else
-inline void RefCountedBase::setMutexForVerifier(Mutex&) { }
-#endif
-
-#if HAVE(DISPATCH_H)
-#if CHECK_REF_COUNTED_LIFECYCLE
-inline void RefCountedBase::setDispatchQueueForVerifier(dispatch_queue_t queue)
-{
-    m_verifier.setDispatchQueueMode(queue);
-}
-#else
-inline void RefCountedBase::setDispatchQueueForVerifier(dispatch_queue_t) { }
-#endif
-#endif // HAVE(DISPATCH_H)
-
 } // namespace WTF
 
 using WTF::RefCounted;
-using WTF::RefCountedCustomAllocated;
 
 #endif // RefCounted_h

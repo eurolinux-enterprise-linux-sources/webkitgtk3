@@ -35,7 +35,7 @@
 #include "ActiveDOMObject.h"
 #include "EventNames.h"
 #include "EventTarget.h"
-#include "KURL.h"
+#include "URL.h"
 #include "NotificationClient.h"
 #include "SharedBuffer.h"
 #include "TextDirection.h"
@@ -63,16 +63,15 @@ class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class Notification : public RefCounted<Notification>, public ActiveDOMObject, public EventTarget {
+class Notification final : public RefCounted<Notification>, public ActiveDOMObject, public EventTargetWithInlineData {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     Notification();
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    static PassRefPtr<Notification> create(const KURL&, ScriptExecutionContext*, ExceptionCode&, PassRefPtr<NotificationCenter> provider);
     static PassRefPtr<Notification> create(const String& title, const String& body, const String& iconURI, ScriptExecutionContext*, ExceptionCode&, PassRefPtr<NotificationCenter> provider);
 #endif
 #if ENABLE(NOTIFICATIONS)
-    static PassRefPtr<Notification> create(ScriptExecutionContext*, const String& title, const Dictionary& options);
+    static PassRefPtr<Notification> create(ScriptExecutionContext&, const String& title, const Dictionary& options);
 #endif
     
     virtual ~Notification();
@@ -83,16 +82,8 @@ public:
 #endif
     void close();
 
-    bool isHTML() const { return m_isHTML; }
-    void setHTML(bool isHTML) { m_isHTML = isHTML; }
-    
-#if ENABLE(LEGACY_NOTIFICATIONS)
-    KURL url() const { return m_notificationURL; }
-    void setURL(KURL url) { m_notificationURL = url; }
-#endif
-
-    KURL iconURL() const { return m_icon; }
-    void setIconURL(const KURL& url) { m_icon = url; }
+    URL iconURL() const { return m_icon; }
+    void setIconURL(const URL& url) { m_icon = url; }
 
     String title() const { return m_title; }
     String body() const { return m_body; }
@@ -131,11 +122,8 @@ public:
     using RefCounted<Notification>::deref;
 
     // EventTarget interface
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const { return ActiveDOMObject::scriptExecutionContext(); }
-
-    // ActiveDOMObject interface
-    virtual void contextDestroyed();
+    virtual EventTargetInterface eventTargetInterface() const override { return NotificationEventTargetInterfaceType; }
+    virtual ScriptExecutionContext* scriptExecutionContext() const override { return ActiveDOMObject::scriptExecutionContext(); }
 
     void stopLoadingIcon();
 
@@ -145,45 +133,39 @@ public:
     void finalize();
 
 #if ENABLE(NOTIFICATIONS)
-    static const String& permission(ScriptExecutionContext*);
-    static const String& permissionString(NotificationClient::Permission);
-    static void requestPermission(ScriptExecutionContext*, PassRefPtr<NotificationPermissionCallback>);
+    static const String permission(ScriptExecutionContext*);
+    static const String permissionString(NotificationClient::Permission);
+    static void requestPermission(ScriptExecutionContext*, PassRefPtr<NotificationPermissionCallback> = 0);
 #endif
 
 private:
 #if ENABLE(LEGACY_NOTIFICATIONS)
-    Notification(const KURL&, ScriptExecutionContext*, ExceptionCode&, PassRefPtr<NotificationCenter>);
     Notification(const String& title, const String& body, const String& iconURI, ScriptExecutionContext*, ExceptionCode&, PassRefPtr<NotificationCenter>);
 #endif
 #if ENABLE(NOTIFICATIONS)
-    Notification(ScriptExecutionContext*, const String& title);
+    Notification(ScriptExecutionContext&, const String& title);
 #endif
 
     void setBody(const String& body) { m_body = body; }
 
+    // ActiveDOMObject interface
+    virtual void contextDestroyed() override;
+
     // EventTarget interface
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    virtual void refEventTarget() override { ref(); }
+    virtual void derefEventTarget() override { deref(); }
 
     void startLoadingIcon();
     void finishLoadingIcon();
 
 #if ENABLE(NOTIFICATIONS)
-    void taskTimerFired(Timer<Notification>*);
+    void taskTimerFired(Timer<Notification>&);
 #endif
-    
-    bool m_isHTML;
 
     // Text notifications.
-    KURL m_icon;
+    URL m_icon;
     String m_title;
     String m_body;
-#if ENABLE(LEGACY_NOTIFICATIONS)
-    KURL m_notificationURL;
-#endif
-
     String m_direction;
     String m_lang;
     String m_tag;
@@ -197,11 +179,9 @@ private:
     NotificationState m_state;
 
     RefPtr<NotificationCenter> m_notificationCenter;
-    
-    EventTargetData m_eventTargetData;
 
 #if ENABLE(NOTIFICATIONS)
-    OwnPtr<Timer<Notification> > m_taskTimer;
+    OwnPtr<Timer<Notification>> m_taskTimer;
 #endif
 };
 

@@ -30,7 +30,6 @@
 
 #include "ExecutableAllocator.h"
 #include "JITCompilationEffort.h"
-#include "JSGlobalData.h"
 #include "stdint.h"
 #include <string.h>
 #include <wtf/Assertions.h>
@@ -130,23 +129,6 @@ namespace JSC {
             return AssemblerLabel(m_index);
         }
 
-        PassRefPtr<ExecutableMemoryHandle> executableCopy(JSGlobalData& globalData, void* ownerUID, JITCompilationEffort effort)
-        {
-            if (!m_index)
-                return 0;
-
-            RefPtr<ExecutableMemoryHandle> result = globalData.executableAllocator.allocate(globalData, m_index, ownerUID, effort);
-
-            if (!result)
-                return 0;
-
-            ExecutableAllocator::makeWritable(result->start(), result->sizeInBytes());
-
-            memcpy(result->start(), m_buffer, m_index);
-            
-            return result.release();
-        }
-
         unsigned debugOffset() { return m_index; }
 
     protected:
@@ -168,7 +150,7 @@ namespace JSC {
         }
 
     private:
-        Vector<char, inlineCapacity> m_storage;
+        Vector<char, inlineCapacity, UnsafeVectorOverflow> m_storage;
         char* m_buffer;
         int m_capacity;
         int m_index;

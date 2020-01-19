@@ -31,14 +31,13 @@ class RenderLayer;
 class RenderSVGResourceContainer : public RenderSVGHiddenContainer,
                                    public RenderSVGResource {
 public:
-    RenderSVGResourceContainer(SVGStyledElement*);
     virtual ~RenderSVGResourceContainer();
 
-    virtual void layout();
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void layout() override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override final;
 
-    virtual bool isSVGResourceContainer() const { return true; }
-    virtual RenderSVGResourceContainer* toRenderSVGResourceContainer() { return this; }
+    virtual bool isSVGResourceContainer() const override final { return true; }
+    virtual RenderSVGResourceContainer* toRenderSVGResourceContainer() override final { return this; }
 
     static bool shouldTransformOnTextPainting(RenderObject*, AffineTransform&);
     static AffineTransform transformOnNonScalingStroke(RenderObject*, const AffineTransform& resourceTransform);
@@ -48,6 +47,8 @@ public:
     void removeClientRenderLayer(RenderLayer*);
 
 protected:
+    RenderSVGResourceContainer(SVGElement&, PassRef<RenderStyle>);
+
     enum InvalidationMode {
         LayoutAndBoundariesInvalidation,
         BoundariesInvalidation,
@@ -58,7 +59,7 @@ protected:
     // Used from the invalidateClient/invalidateClients methods from classes, inheriting from us.
     void markAllClientsForInvalidation(InvalidationMode);
     void markAllClientLayersForInvalidation();
-    void markClientForInvalidation(RenderObject*, InvalidationMode);
+    void markClientForInvalidation(RenderObject&, InvalidationMode);
 
 private:
     friend class SVGResourcesCache;
@@ -66,7 +67,7 @@ private:
     void removeClient(RenderObject*);
 
 private:
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() override final;
     void registerResource();
 
     AtomicString m_id;
@@ -76,19 +77,19 @@ private:
     HashSet<RenderLayer*> m_clientLayers;
 };
 
-inline RenderSVGResourceContainer* getRenderSVGResourceContainerById(Document* document, const AtomicString& id)
+inline RenderSVGResourceContainer* getRenderSVGResourceContainerById(Document& document, const AtomicString& id)
 {
     if (id.isEmpty())
         return 0;
 
-    if (RenderSVGResourceContainer* renderResource = document->accessSVGExtensions()->resourceById(id))
+    if (RenderSVGResourceContainer* renderResource = document.accessSVGExtensions()->resourceById(id))
         return renderResource;
 
     return 0;
 }
 
 template<typename Renderer>
-Renderer* getRenderSVGResourceById(Document* document, const AtomicString& id)
+Renderer* getRenderSVGResourceById(Document& document, const AtomicString& id)
 {
     if (RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(document, id))
         return container->cast<Renderer>();

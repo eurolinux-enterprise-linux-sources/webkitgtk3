@@ -42,6 +42,7 @@ namespace WebCore {
 
 class AbstractSQLTransaction;
 class DatabaseBackend;
+class OriginLock;
 class SQLError;
 class SQLiteTransaction;
 class SQLStatementBackend;
@@ -67,6 +68,10 @@ public:
     void lockAcquired();
     void performNextStep();
 
+#if PLATFORM(IOS)
+    bool shouldPerformWhilePaused() const;
+#endif
+
     DatabaseBackend* database() { return m_database.get(); }
     bool isReadOnly() { return m_readOnly; }
     void notifyDatabaseThreadIsShuttingDown();
@@ -76,19 +81,19 @@ private:
         PassRefPtr<SQLTransactionWrapper>, bool readOnly);
 
     // APIs called from the frontend published via AbstractSQLTransactionBackend:
-    virtual void requestTransitToState(SQLTransactionState) OVERRIDE;
-    virtual PassRefPtr<SQLError> transactionError() OVERRIDE;
-    virtual AbstractSQLStatement* currentStatement() OVERRIDE;
-    virtual void setShouldRetryCurrentStatement(bool) OVERRIDE;
+    virtual void requestTransitToState(SQLTransactionState) override;
+    virtual PassRefPtr<SQLError> transactionError() override;
+    virtual AbstractSQLStatement* currentStatement() override;
+    virtual void setShouldRetryCurrentStatement(bool) override;
     virtual void executeSQL(PassOwnPtr<AbstractSQLStatement>, const String& statement,
-        const Vector<SQLValue>& arguments, int permissions) OVERRIDE;
+        const Vector<SQLValue>& arguments, int permissions) override;
 
     void doCleanup();
 
     void enqueueStatementBackend(PassRefPtr<SQLStatementBackend>);
 
     // State Machine functions:
-    virtual StateFunction stateFunctionFor(SQLTransactionState) OVERRIDE;
+    virtual StateFunction stateFunctionFor(SQLTransactionState) override;
     void computeNextStateAndCleanupIfNeeded();
 
     // State functions:
@@ -108,6 +113,9 @@ private:
 
     void getNextStatement();
 
+    void acquireOriginLock();
+    void releaseOriginLockIfNeeded();
+
     RefPtr<AbstractSQLTransaction> m_frontend; // Has a reference cycle, and will break in doCleanup().
     RefPtr<SQLStatementBackend> m_currentStatementBackend;
 
@@ -125,9 +133,10 @@ private:
     bool m_hasVersionMismatch;
 
     Mutex m_statementMutex;
-    Deque<RefPtr<SQLStatementBackend> > m_statementQueue;
+    Deque<RefPtr<SQLStatementBackend>> m_statementQueue;
 
     OwnPtr<SQLiteTransaction> m_sqliteTransaction;
+    RefPtr<OriginLock> m_originLock;
 };
 
 } // namespace WebCore

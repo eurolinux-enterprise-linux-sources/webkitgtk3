@@ -44,10 +44,8 @@ class WebSecurityOrigin;
 
 typedef GenericCallback<WKArrayRef> ArrayCallback;
 
-class WebResourceCacheManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebResourceCacheManagerProxy : public API::ObjectImpl<API::Object::Type::CacheManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeCacheManager;
-
     static const char* supplementName();
 
     static PassRefPtr<WebResourceCacheManagerProxy> create(WebContext*);
@@ -57,28 +55,26 @@ public:
     void clearCacheForOrigin(WebSecurityOrigin*, ResourceCachesToClear);
     void clearCacheForAllOrigins(ResourceCachesToClear);
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebResourceCacheManagerProxy(WebContext*);
 
-    virtual Type type() const { return APIType; }
-
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual bool shouldTerminate(WebProcessProxy*) const OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual bool shouldTerminate(WebProcessProxy*) const override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
     // Message handlers.
     void didGetCacheOrigins(const Vector<SecurityOriginData>& originIdentifiers, uint64_t callbackID);
 
-    HashMap<uint64_t, RefPtr<ArrayCallback> > m_arrayCallbacks;
+    HashMap<uint64_t, RefPtr<ArrayCallback>> m_arrayCallbacks;
 };
 
 } // namespace WebKit

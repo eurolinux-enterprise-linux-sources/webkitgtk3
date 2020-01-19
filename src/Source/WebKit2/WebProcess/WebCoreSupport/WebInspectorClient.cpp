@@ -33,6 +33,10 @@
 #include <WebCore/InspectorController.h>
 #include <WebCore/Page.h>
 
+#if ENABLE(REMOTE_INSPECTOR)
+#include "WebProcess.h"
+#endif
+
 using namespace WebCore;
 
 namespace WebKit {
@@ -52,9 +56,8 @@ WebCore::InspectorFrontendChannel* WebInspectorClient::openInspectorFrontend(Ins
 
 void WebInspectorClient::closeInspectorFrontend()
 {
-    if (m_page->inspector()) {
+    if (m_page->inspector())
         m_page->inspector()->didClose();
-    }
 }
 
 void WebInspectorClient::bringFrontendToFront()
@@ -68,14 +71,24 @@ void WebInspectorClient::didResizeMainFrame(Frame*)
         m_page->inspector()->updateDockingAvailability();
 }
 
+#if ENABLE(REMOTE_INSPECTOR)
+pid_t WebInspectorClient::parentProcessIdentifier() const
+{
+    return WebProcess::shared().presenterApplicationPid();
+}
+#endif
+
 void WebInspectorClient::highlight()
 {
     if (!m_highlightOverlay) {
         RefPtr<PageOverlay> highlightOverlay = PageOverlay::create(this);
         m_highlightOverlay = highlightOverlay.get();
         m_page->installPageOverlay(highlightOverlay.release(), true);
-    } else
         m_highlightOverlay->setNeedsDisplay();
+    } else {
+        m_highlightOverlay->stopFadeOutAnimation();
+        m_highlightOverlay->setNeedsDisplay();
+    }
 }
 
 void WebInspectorClient::hideHighlight()
@@ -104,6 +117,14 @@ bool WebInspectorClient::sendMessageToFrontend(const String& message)
     return false;
 }
 
+bool WebInspectorClient::supportsFrameInstrumentation()
+{
+#if USE(COORDINATED_GRAPHICS)
+    return true;
+#endif
+    return false;
+}
+
 void WebInspectorClient::pageOverlayDestroyed(PageOverlay*)
 {
 }
@@ -124,7 +145,7 @@ void WebInspectorClient::didMoveToWebPage(PageOverlay*, WebPage*)
 
 void WebInspectorClient::drawRect(PageOverlay*, WebCore::GraphicsContext& context, const WebCore::IntRect& /*dirtyRect*/)
 {
-    m_page->corePage()->inspectorController()->drawHighlight(context);
+    m_page->corePage()->inspectorController().drawHighlight(context);
 }
 
 bool WebInspectorClient::mouseEvent(PageOverlay*, const WebMouseEvent&)

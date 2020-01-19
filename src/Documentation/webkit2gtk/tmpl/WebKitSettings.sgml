@@ -68,6 +68,11 @@ WebKitSettings
 
 </para>
 
+<!-- ##### ARG WebKitSettings:enable-accelerated-2d-canvas ##### -->
+<para>
+
+</para>
+
 <!-- ##### ARG WebKitSettings:enable-caret-browsing ##### -->
 <para>
 
@@ -118,6 +123,16 @@ WebKitSettings
 
 </para>
 
+<!-- ##### ARG WebKitSettings:enable-media-stream ##### -->
+<para>
+
+</para>
+
+<!-- ##### ARG WebKitSettings:enable-mediasource ##### -->
+<para>
+
+</para>
+
 <!-- ##### ARG WebKitSettings:enable-offline-web-application-cache ##### -->
 <para>
 
@@ -153,6 +168,11 @@ WebKitSettings
 
 </para>
 
+<!-- ##### ARG WebKitSettings:enable-spatial-navigation ##### -->
+<para>
+
+</para>
+
 <!-- ##### ARG WebKitSettings:enable-tabs-to-links ##### -->
 <para>
 
@@ -164,6 +184,11 @@ WebKitSettings
 </para>
 
 <!-- ##### ARG WebKitSettings:enable-webgl ##### -->
+<para>
+
+</para>
+
+<!-- ##### ARG WebKitSettings:enable-write-console-messages-to-stdout ##### -->
 <para>
 
 </para>
@@ -1038,6 +1063,96 @@ WebKitSettings
 
 
 <!-- ##### FUNCTION webkit_settings_set_enable_smooth_scrolling ##### -->
+<para>
+
+</para>
+
+@settings: 
+@enabled: 
+
+
+<!-- ##### FUNCTION webkit_settings_get_enable_accelerated_2d_canvas ##### -->
+<para>
+
+</para>
+
+@settings: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_settings_set_enable_accelerated_2d_canvas ##### -->
+<para>
+
+</para>
+
+@settings: 
+@enabled: 
+
+
+<!-- ##### FUNCTION webkit_settings_get_enable_write_console_messages_to_stdout ##### -->
+<para>
+
+</para>
+
+@settings: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_settings_set_enable_write_console_messages_to_stdout ##### -->
+<para>
+
+</para>
+
+@settings: 
+@enabled: 
+
+
+<!-- ##### FUNCTION webkit_settings_get_enable_media_stream ##### -->
+<para>
+
+</para>
+
+@settings: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_settings_set_enable_media_stream ##### -->
+<para>
+
+</para>
+
+@settings: 
+@enabled: 
+
+
+<!-- ##### FUNCTION webkit_settings_get_enable_spatial_navigation ##### -->
+<para>
+
+</para>
+
+@settings: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_settings_set_enable_spatial_navigation ##### -->
+<para>
+
+</para>
+
+@settings: 
+@enabled: 
+
+
+<!-- ##### FUNCTION webkit_settings_get_enable_mediasource ##### -->
+<para>
+
+</para>
+
+@settings: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_settings_set_enable_mediasource ##### -->
 <para>
 
 </para>

@@ -36,14 +36,8 @@
 #include "HTMLInputElement.h"
 #include "InputTypeNames.h"
 #include <wtf/Assertions.h>
-#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
-
-PassOwnPtr<InputType> PasswordInputType::create(HTMLInputElement* element)
-{
-    return adoptPtr(new PasswordInputType(element));
-}
 
 const AtomicString& PasswordInputType::formControlType() const
 {
@@ -93,20 +87,6 @@ bool PasswordInputType::shouldRespectSpeechAttribute()
 bool PasswordInputType::isPasswordField() const
 {
     return true;
-}
-
-void PasswordInputType::handleFocusEvent(Node* oldFocusedNode, FocusDirection direction)
-{
-    BaseTextInputType::handleFocusEvent(oldFocusedNode, direction);
-    if (element()->document()->frame())
-        element()->document()->setUseSecureKeyboardEntryWhenActive(true);
-}
-
-void PasswordInputType::handleBlurEvent()
-{
-    if (element()->document()->frame())
-        element()->document()->setUseSecureKeyboardEntryWhenActive(false);
-    BaseTextInputType::handleBlurEvent();
 }
 
 } // namespace WebCore

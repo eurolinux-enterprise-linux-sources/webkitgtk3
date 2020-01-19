@@ -33,14 +33,20 @@
 #include "Page.h"
 #include "RenderView.h"
 #include "Settings.h"
+#include <wtf/StackStats.h>
 
 namespace WebCore {
 
 using namespace HTMLNames;
     
-RenderIFrame::RenderIFrame(Element* element)
-    : RenderFrameBase(element)
+RenderIFrame::RenderIFrame(HTMLIFrameElement& element, PassRef<RenderStyle> style)
+    : RenderFrameBase(element, std::move(style))
 {
+}
+
+HTMLIFrameElement& RenderIFrame::iframeElement() const
+{
+    return toHTMLIFrameElement(RenderFrameBase::frameOwnerElement());
 }
 
 bool RenderIFrame::shouldComputeSizeAsReplaced() const
@@ -80,43 +86,37 @@ LayoutUnit RenderIFrame::maxPreferredLogicalWidth() const
 
 bool RenderIFrame::isSeamless() const
 {
-    return node() && node()->hasTagName(iframeTag) && static_cast<HTMLIFrameElement*>(node())->shouldDisplaySeamlessly();
+    return iframeElement().shouldDisplaySeamlessly();
 }
 
 bool RenderIFrame::requiresLayer() const
 {
-    return RenderFrameBase::requiresLayer() || style()->resize() != RESIZE_NONE;
+    return RenderFrameBase::requiresLayer() || style().resize() != RESIZE_NONE;
 }
 
 RenderView* RenderIFrame::contentRootRenderer() const
 {
-    // FIXME: Is this always a valid cast? What about plugins?
-    ASSERT(!widget() || widget()->isFrameView());
-    FrameView* childFrameView = static_cast<FrameView*>(widget());
-    return childFrameView ? static_cast<RenderView*>(childFrameView->frame()->contentRenderer()) : 0;
+    FrameView* childFrameView = childView();
+    return childFrameView ? childFrameView->frame().contentRenderer() : 0;
 }
 
 bool RenderIFrame::flattenFrame() const
 {
-    if (!node() || !node()->hasTagName(iframeTag))
-        return false;
-
-    HTMLIFrameElement* element = static_cast<HTMLIFrameElement*>(node());
-    Frame* frame = element->document()->frame();
+    Frame* frame = iframeElement().document().frame();
 
     if (isSeamless())
         return false; // Seamless iframes are already "flat", don't try to flatten them.
 
-    bool enabled = frame && frame->settings() && frame->settings()->frameFlatteningEnabled();
+    bool enabled = frame && frame->settings().frameFlatteningEnabled();
 
     if (!enabled || !frame->page())
         return false;
 
-    if (style()->width().isFixed() && style()->height().isFixed()) {
+    if (style().width().isFixed() && style().height().isFixed()) {
         // Do not flatten iframes with scrolling="no".
-        if (element->scrollingMode() == ScrollbarAlwaysOff)
+        if (iframeElement().scrollingMode() == ScrollbarAlwaysOff)
             return false;
-        if (style()->width().value() <= 0 || style()->height().value() <= 0)
+        if (style().width().value() <= 0 || style().height().value() <= 0)
             return false;
     }
 
@@ -137,7 +137,7 @@ void RenderIFrame::layoutSeamlessly()
     // Laying out our kids is normally responsible for adjusting our height, so we set it here.
     // Replaced elements normally do not respect padding, but seamless elements should: we'll add
     // both padding and border to the child's logical height here.
-    FrameView* childFrameView = static_cast<FrameView*>(widget());
+    FrameView* childFrameView = childView();
     if (childFrameView) // Widget should never be null during layout(), but just in case.
         setLogicalHeight(childFrameView->contentsHeight() + borderTop() + borderBottom() + paddingTop() + paddingBottom());
     updateLogicalHeight();
@@ -145,7 +145,7 @@ void RenderIFrame::layoutSeamlessly()
     updateWidgetPosition(); // Notify the Widget of our final height.
 
     // Assert that the child document did a complete layout.
-    RenderView* childRoot = childFrameView ? static_cast<RenderView*>(childFrameView->frame()->contentRenderer()) : 0;
+    RenderView* childRoot = childFrameView ? childFrameView->frame().contentRenderer() : 0;
     ASSERT(!childFrameView || !childFrameView->layoutPending());
     ASSERT_UNUSED(childRoot, !childRoot || !childRoot->needsLayout());
 }
@@ -164,14 +164,14 @@ void RenderIFrame::layout()
         updateLogicalHeight();
 
         if (flattenFrame())
-            layoutWithFlattening(style()->width().isFixed(), style()->height().isFixed());
+            layoutWithFlattening(style().width().isFixed(), style().height().isFixed());
     }
 
-    m_overflow.clear();
+    clearOverflow();
     addVisualEffectOverflow();
     updateLayerTransform();
 
-    setNeedsLayout(false);
+    clearNeedsLayout();
 }
 
 }

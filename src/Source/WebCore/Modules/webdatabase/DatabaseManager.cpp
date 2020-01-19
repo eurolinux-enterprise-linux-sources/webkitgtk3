@@ -36,23 +36,32 @@
 #include "DatabaseBackendSync.h"
 #include "DatabaseCallback.h"
 #include "DatabaseContext.h"
+#include "DatabaseStrategy.h"
 #include "DatabaseSync.h"
 #include "DatabaseTask.h"
 #include "ExceptionCode.h"
 #include "InspectorDatabaseInstrumentation.h"
 #include "Logging.h"
+#include "PlatformStrategies.h"
 #include "ScriptController.h"
 #include "ScriptExecutionContext.h"
 #include "SecurityOrigin.h"
 
-#if USE(PLATFORM_STRATEGIES)
-#include "DatabaseStrategy.h"
-#include "PlatformStrategies.h"
-#else
-#include "DatabaseServer.h"
-#endif
-
 namespace WebCore {
+
+DatabaseManager::ProposedDatabase::ProposedDatabase(DatabaseManager& manager,
+    SecurityOrigin* origin, const String& name, const String& displayName, unsigned long estimatedSize)
+    : m_manager(manager)
+    , m_origin(origin->isolatedCopy())
+    , m_details(name.isolatedCopy(), displayName.isolatedCopy(), estimatedSize, 0, 0, 0)
+{
+    m_manager.addProposedDatabase(this);
+}
+
+DatabaseManager::ProposedDatabase::~ProposedDatabase()
+{
+    m_manager.removeProposedDatabase(this);
+}
 
 DatabaseManager& DatabaseManager::manager()
 {
@@ -66,18 +75,14 @@ DatabaseManager& DatabaseManager::manager()
 }
 
 DatabaseManager::DatabaseManager()
-    : m_client(0)
+    : m_server(platformStrategies()->databaseStrategy()->getDatabaseServer())
+    , m_client(0)
     , m_databaseIsAvailable(true)
 #if !ASSERT_DISABLED
     , m_databaseContextRegisteredCount(0)
     , m_databaseContextInstanceCount(0)
 #endif
 {
-#if USE(PLATFORM_STRATEGIES)
-    m_server = platformStrategies()->databaseStrategy()->getDatabaseServer();
-#else
-    m_server = new DatabaseServer;
-#endif
     ASSERT(m_server); // We should always have a server to work with.
 }
 
@@ -137,7 +142,7 @@ private:
 
 PassRefPtr<DatabaseContext> DatabaseManager::existingDatabaseContextFor(ScriptExecutionContext* context)
 {
-    MutexLocker locker(m_contextMapLock);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     ASSERT(m_databaseContextRegisteredCount >= 0);
     ASSERT(m_databaseContextInstanceCount >= 0);
@@ -168,7 +173,8 @@ PassRefPtr<DatabaseContext> DatabaseManager::databaseContextFor(ScriptExecutionC
 
 void DatabaseManager::registerDatabaseContext(DatabaseContext* databaseContext)
 {
-    MutexLocker locker(m_contextMapLock);
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     ScriptExecutionContext* context = databaseContext->scriptExecutionContext();
     m_contextMap.set(context, databaseContext);
 #if !ASSERT_DISABLED
@@ -178,7 +184,8 @@ void DatabaseManager::registerDatabaseContext(DatabaseContext* databaseContext)
 
 void DatabaseManager::unregisterDatabaseContext(DatabaseContext* databaseContext)
 {
-    MutexLocker locker(m_contextMapLock);
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     ScriptExecutionContext* context = databaseContext->scriptExecutionContext();
     ASSERT(m_contextMap.get(context));
 #if !ASSERT_DISABLED
@@ -190,13 +197,15 @@ void DatabaseManager::unregisterDatabaseContext(DatabaseContext* databaseContext
 #if !ASSERT_DISABLED
 void DatabaseManager::didConstructDatabaseContext()
 {
-    MutexLocker lock(m_contextMapLock);
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     m_databaseContextInstanceCount++;
 }
 
 void DatabaseManager::didDestructDatabaseContext()
 {
-    MutexLocker lock(m_contextMapLock);
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     m_databaseContextInstanceCount--;
     ASSERT(m_databaseContextRegisteredCount <= m_databaseContextInstanceCount);
 }
@@ -257,9 +266,10 @@ PassRefPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ScriptExecu
             // Notify the client that we've exceeded the database quota.
             // The client may want to increase the quota, and we'll give it
             // one more try after if that is the case.
-            databaseContext->databaseExceededQuota(name,
-                DatabaseDetails(name.isolatedCopy(), displayName.isolatedCopy(), estimatedSize, 0));
-
+            {
+                ProposedDatabase proposedDb(*this, context->securityOrigin(), name, displayName, estimatedSize);
+                databaseContext->databaseExceededQuota(name, proposedDb.details());
+            }
             error = DatabaseError::None;
 
             backend = m_server->openDatabase(backendContext, type, name, expectedVersion,
@@ -285,6 +295,20 @@ PassRefPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ScriptExecu
     }
 
     return backend.release();
+}
+
+void DatabaseManager::addProposedDatabase(ProposedDatabase* proposedDb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    m_proposedDatabases.add(proposedDb);
+}
+
+void DatabaseManager::removeProposedDatabase(ProposedDatabase* proposedDb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    m_proposedDatabases.remove(proposedDb);
 }
 
 PassRefPtr<Database> DatabaseManager::openDatabase(ScriptExecutionContext* context,
@@ -360,16 +384,24 @@ void DatabaseManager::stopDatabases(ScriptExecutionContext* context, DatabaseTas
 
 String DatabaseManager::fullPathForDatabase(SecurityOrigin* origin, const String& name, bool createIfDoesNotExist)
 {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        for (auto* proposedDatabase : m_proposedDatabases) {
+            if (proposedDatabase->details().name() == name && proposedDatabase->origin()->equal(origin))
+                return String();
+        }
+    }
+    
     return m_server->fullPathForDatabase(origin, name, createIfDoesNotExist);
 }
 
-#if !PLATFORM(CHROMIUM)
 bool DatabaseManager::hasEntryForOrigin(SecurityOrigin* origin)
 {
     return m_server->hasEntryForOrigin(origin);
 }
 
-void DatabaseManager::origins(Vector<RefPtr<SecurityOrigin> >& result)
+void DatabaseManager::origins(Vector<RefPtr<SecurityOrigin>>& result)
 {
     m_server->origins(result);
 }
@@ -381,6 +413,18 @@ bool DatabaseManager::databaseNamesForOrigin(SecurityOrigin* origin, Vector<Stri
 
 DatabaseDetails DatabaseManager::detailsForNameAndOrigin(const String& name, SecurityOrigin* origin)
 {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        
+        for (auto* proposedDatabase : m_proposedDatabases) {
+            if (proposedDatabase->details().name() == name && proposedDatabase->origin()->equal(origin)) {
+                ASSERT(proposedDatabase->details().threadID() == std::this_thread::get_id() || isMainThread());
+                
+                return proposedDatabase->details();
+            }
+        }
+    }
+    
     return m_server->detailsForNameAndOrigin(name, origin);
 }
 
@@ -414,13 +458,6 @@ bool DatabaseManager::deleteDatabase(SecurityOrigin* origin, const String& name)
     return m_server->deleteDatabase(origin, name);
 }
 
-#else // PLATFORM(CHROMIUM)
-void DatabaseManager::closeDatabasesImmediately(const String& originIdentifier, const String& name)
-{
-    m_server->closeDatabasesImmediately(originIdentifier, name);
-}
-#endif // PLATFORM(CHROMIUM)
-
 void DatabaseManager::interruptAllDatabasesForContext(ScriptExecutionContext* context)
 {
     RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
@@ -428,14 +465,9 @@ void DatabaseManager::interruptAllDatabasesForContext(ScriptExecutionContext* co
         m_server->interruptAllDatabasesForContext(databaseContext->backend().get());
 }
 
-unsigned long long DatabaseManager::getMaxSizeForDatabase(const DatabaseBackendBase* database)
-{
-    return m_server->getMaxSizeForDatabase(database);
-}
-
 void DatabaseManager::logErrorMessage(ScriptExecutionContext* context, const String& message)
 {
-    context->addConsoleMessage(OtherMessageSource, ErrorMessageLevel, message);
+    context->addConsoleMessage(StorageMessageSource, ErrorMessageLevel, message);
 }
 
 } // namespace WebCore

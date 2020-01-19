@@ -35,8 +35,6 @@
 
 namespace WebCore {
 
-using namespace std;
-
 // These values are at the discretion of the user agent.
 static const unsigned defaultPreflightCacheTimeoutSeconds = 5;
 static const unsigned maxPreflightCacheTimeoutSeconds = 600; // Should be short enough to minimize the risk of using a poisoned cache after switching to a secure network.
@@ -108,7 +106,7 @@ bool CrossOriginPreflightResultCacheItem::parse(const ResourceResponse& response
     } else
         expiryDelta = defaultPreflightCacheTimeoutSeconds;
 
-    m_absoluteExpiryTime = currentTime() + expiryDelta;
+    m_absoluteExpiryTime = monotonicallyIncreasingTime() + expiryDelta;
     return true;
 }
 
@@ -136,7 +134,7 @@ bool CrossOriginPreflightResultCacheItem::allowsCrossOriginHeaders(const HTTPHea
 bool CrossOriginPreflightResultCacheItem::allowsRequest(StoredCredentials includeCredentials, const String& method, const HTTPHeaderMap& requestHeaders) const
 {
     String ignoredExplanation;
-    if (m_absoluteExpiryTime < currentTime())
+    if (m_absoluteExpiryTime < monotonicallyIncreasingTime())
         return false;
     if (includeCredentials == AllowStoredCredentials && m_credentials == DoNotAllowStoredCredentials)
         return false;
@@ -154,16 +152,16 @@ CrossOriginPreflightResultCache& CrossOriginPreflightResultCache::shared()
     return cache;
 }
 
-void CrossOriginPreflightResultCache::appendEntry(const String& origin, const KURL& url, PassOwnPtr<CrossOriginPreflightResultCacheItem> preflightResult)
+void CrossOriginPreflightResultCache::appendEntry(const String& origin, const URL& url, PassOwnPtr<CrossOriginPreflightResultCacheItem> preflightResult)
 {
     ASSERT(isMainThread());
-    m_preflightHashMap.set(make_pair(origin, url), preflightResult);
+    m_preflightHashMap.set(std::make_pair(origin, url), preflightResult);
 }
 
-bool CrossOriginPreflightResultCache::canSkipPreflight(const String& origin, const KURL& url, StoredCredentials includeCredentials, const String& method, const HTTPHeaderMap& requestHeaders)
+bool CrossOriginPreflightResultCache::canSkipPreflight(const String& origin, const URL& url, StoredCredentials includeCredentials, const String& method, const HTTPHeaderMap& requestHeaders)
 {
     ASSERT(isMainThread());
-    CrossOriginPreflightResultHashMap::iterator cacheIt = m_preflightHashMap.find(make_pair(origin, url));
+    CrossOriginPreflightResultHashMap::iterator cacheIt = m_preflightHashMap.find(std::make_pair(origin, url));
     if (cacheIt == m_preflightHashMap.end())
         return false;
 

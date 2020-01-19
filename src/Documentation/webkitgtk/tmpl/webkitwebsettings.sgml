@@ -83,11 +83,6 @@ WebKitWebSettings
 
 </para>
 
-<!-- ##### ARG WebKitWebSettings:enable-css-shaders ##### -->
-<para>
-
-</para>
-
 <!-- ##### ARG WebKitWebSettings:enable-default-context-menu ##### -->
 <para>
 
@@ -149,6 +144,11 @@ WebKitWebSettings
 </para>
 
 <!-- ##### ARG WebKitWebSettings:enable-media-stream ##### -->
+<para>
+
+</para>
+
+<!-- ##### ARG WebKitWebSettings:enable-mediasource ##### -->
 <para>
 
 </para>

@@ -26,16 +26,19 @@
 #ifndef PluginProcessManager_h
 #define PluginProcessManager_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "PluginModuleInfo.h"
 #include "PluginProcess.h"
+#include "PluginProcessAttributes.h"
 #include "WebProcessProxyMessages.h"
 #include <wtf/Forward.h>
+#include <wtf/HashSet.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentEncoder;
 }
 
@@ -48,10 +51,13 @@ class WebPluginSiteDataManager;
 
 class PluginProcessManager {
     WTF_MAKE_NONCOPYABLE(PluginProcessManager);
+    friend class NeverDestroyed<PluginProcessManager>;
 public:
     static PluginProcessManager& shared();
 
-    void getPluginProcessConnection(const PluginInfoStore&, const String& pluginPath, PluginProcess::Type, PassRefPtr<Messages::WebProcessProxy::GetPluginProcessConnection::DelayedReply>);
+    uint64_t pluginProcessToken(const PluginModuleInfo&, PluginProcessType, PluginProcessSandboxPolicy);
+
+    void getPluginProcessConnection(uint64_t pluginProcessToken, PassRefPtr<Messages::WebProcessProxy::GetPluginProcessConnection::DelayedReply>);
     void removePluginProcessProxy(PluginProcessProxy*);
 
     void getSitesWithData(const PluginModuleInfo&, WebPluginSiteDataManager*, uint64_t callbackID);
@@ -64,14 +70,16 @@ public:
 private:
     PluginProcessManager();
 
-    PluginProcessProxy* getOrCreatePluginProcess(const PluginModuleInfo&, PluginProcess::Type);
-    PluginProcessProxy* pluginProcessWithPath(const String& pluginPath, PluginProcess::Type);
+    PluginProcessProxy* getOrCreatePluginProcess(uint64_t pluginProcessToken);
 
-    Vector<RefPtr<PluginProcessProxy> > m_pluginProcesses;
+    Vector<std::pair<PluginProcessAttributes, uint64_t>> m_pluginProcessTokens;
+    HashSet<uint64_t> m_knownTokens;
+
+    Vector<RefPtr<PluginProcessProxy>> m_pluginProcesses;
 };
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginProcessManager_h

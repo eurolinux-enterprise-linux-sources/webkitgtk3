@@ -40,7 +40,6 @@
 #include "Profile.h"
 #include "ProfileGenerator.h"
 #include "ProfileNode.h"
-#include <stdio.h>
 
 namespace JSC {
 
@@ -63,9 +62,12 @@ void LegacyProfiler::startProfiling(ExecState* exec, const String& title)
 {
     ASSERT_ARG(title, !title.isNull());
 
+    if (!exec)
+        return;
+
     // Check if we currently have a Profile for this global ExecState and title.
     // If so return early and don't create a new Profile.
-    JSGlobalObject* origin = exec ? exec->lexicalGlobalObject() : 0;
+    JSGlobalObject* origin = exec->lexicalGlobalObject();
 
     for (size_t i = 0; i < m_currentProfiles.size(); ++i) {
         ProfileGenerator* profileGenerator = m_currentProfiles[i].get();
@@ -73,14 +75,17 @@ void LegacyProfiler::startProfiling(ExecState* exec, const String& title)
             return;
     }
 
-    exec->globalData().m_enabledProfiler = this;
+    exec->vm().setEnabledProfiler(this);
     RefPtr<ProfileGenerator> profileGenerator = ProfileGenerator::create(exec, title, ++ProfilesUID);
     m_currentProfiles.append(profileGenerator);
 }
 
 PassRefPtr<Profile> LegacyProfiler::stopProfiling(ExecState* exec, const String& title)
 {
-    JSGlobalObject* origin = exec ? exec->lexicalGlobalObject() : 0;
+    if (!exec)
+        return 0;
+
+    JSGlobalObject* origin = exec->lexicalGlobalObject();
     for (ptrdiff_t i = m_currentProfiles.size() - 1; i >= 0; --i) {
         ProfileGenerator* profileGenerator = m_currentProfiles[i].get();
         if (profileGenerator->origin() == origin && (title.isNull() || profileGenerator->title() == title)) {
@@ -89,7 +94,7 @@ PassRefPtr<Profile> LegacyProfiler::stopProfiling(ExecState* exec, const String&
 
             m_currentProfiles.remove(i);
             if (!m_currentProfiles.size())
-                exec->globalData().m_enabledProfiler = 0;
+                exec->vm().setEnabledProfiler(nullptr);
             
             return returnProfile;
         }
@@ -106,12 +111,12 @@ void LegacyProfiler::stopProfiling(JSGlobalObject* origin)
             profileGenerator->stopProfiling();
             m_currentProfiles.remove(i);
             if (!m_currentProfiles.size())
-                origin->globalData().m_enabledProfiler = 0;
+                origin->vm().setEnabledProfiler(nullptr);
         }
     }
 }
 
-static inline void dispatchFunctionToProfiles(ExecState* callerOrHandlerCallFrame, const Vector<RefPtr<ProfileGenerator> >& profiles, ProfileGenerator::ProfileFunction function, const CallIdentifier& callIdentifier, unsigned currentProfileTargetGroup)
+static inline void dispatchFunctionToProfiles(ExecState* callerOrHandlerCallFrame, const Vector<RefPtr<ProfileGenerator>>& profiles, ProfileGenerator::ProfileFunction function, const CallIdentifier& callIdentifier, unsigned currentProfileTargetGroup)
 {
     for (size_t i = 0; i < profiles.size(); ++i) {
         if (profiles[i]->profileGroup() == currentProfileTargetGroup || !profiles[i]->origin())
@@ -162,7 +167,7 @@ CallIdentifier LegacyProfiler::createCallIdentifier(ExecState* exec, JSValue fun
         return CallIdentifier(GlobalCodeExecution, defaultSourceURL, defaultLineNumber);
     if (!functionValue.isObject())
         return CallIdentifier("(unknown)", defaultSourceURL, defaultLineNumber);
-    if (asObject(functionValue)->inherits(&JSFunction::s_info) || asObject(functionValue)->inherits(&InternalFunction::s_info))
+    if (asObject(functionValue)->inherits(JSFunction::info()) || asObject(functionValue)->inherits(InternalFunction::info()))
         return createCallIdentifierFromFunctionImp(exec, asObject(functionValue), defaultSourceURL, defaultLineNumber);
     return CallIdentifier(makeString("(", asObject(functionValue)->methodTable()->className(asObject(functionValue)), " object)"), defaultSourceURL, defaultLineNumber);
 }

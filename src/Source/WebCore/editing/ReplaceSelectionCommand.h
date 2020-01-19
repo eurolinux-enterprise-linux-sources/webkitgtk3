@@ -47,13 +47,13 @@ public:
 
     typedef unsigned CommandOptions;
 
-    static PassRefPtr<ReplaceSelectionCommand> create(Document* document, PassRefPtr<DocumentFragment> fragment, CommandOptions options, EditAction action = EditActionPaste)
+    static PassRefPtr<ReplaceSelectionCommand> create(Document& document, PassRefPtr<DocumentFragment> fragment, CommandOptions options, EditAction action = EditActionPaste)
     {
         return adoptRef(new ReplaceSelectionCommand(document, fragment, options, action));
     }
 
 private:
-    ReplaceSelectionCommand(Document*, PassRefPtr<DocumentFragment>, CommandOptions, EditAction);
+    ReplaceSelectionCommand(Document&, PassRefPtr<DocumentFragment>, CommandOptions, EditAction);
 
     virtual void doApply();
     virtual EditAction editingAction() const;
@@ -63,6 +63,7 @@ private:
         void respondToNodeInsertion(Node*);
         void willRemoveNodePreservingChildren(Node*);
         void willRemoveNode(Node*);
+        void didReplaceNode(Node*, Node* newNode);
 
         Node* firstNodeInserted() const { return m_firstNodeInserted.get(); }
         Node* lastLeafInserted() const { return m_lastNodeInserted->lastDescendant(); }
@@ -87,6 +88,8 @@ private:
     void removeUnrenderedTextNodesAtEnds(InsertedNodes&);
     
     void removeRedundantStylesAndKeepStyleSpanInline(InsertedNodes&);
+    void makeInsertedContentRoundTrippableWithHTMLTreeBuilder(InsertedNodes&);
+    void moveNodeOutOfAncestor(PassRefPtr<Node>, PassRefPtr<Node> ancestor);
     void handleStyleSpans(InsertedNodes&);
     void handlePasteAsQuotationNode();
     

@@ -25,26 +25,31 @@
 #ifndef StyledElement_h
 #define StyledElement_h
 
+#include "CSSPrimitiveValue.h"
+#include "CSSPropertyNames.h"
+#include "CSSValueKeywords.h"
 #include "Element.h"
-#include "StylePropertySet.h"
 
 namespace WebCore {
 
 class Attribute;
+class MutableStyleProperties;
+class PropertySetCSSStyleDeclaration;
+class StyleProperties;
+
 struct PresentationAttributeCacheKey;
 
 class StyledElement : public Element {
 public:
     virtual ~StyledElement();
 
-    virtual const StylePropertySet* additionalPresentationAttributeStyle() { return 0; }
+    virtual const StyleProperties* additionalPresentationAttributeStyle() { return 0; }
     void invalidateStyleAttribute();
 
-    const StylePropertySet* inlineStyle() const { return elementData() ? elementData()->m_inlineStyle.get() : 0; }
-    StylePropertySet* ensureMutableInlineStyle();
+    const StyleProperties* inlineStyle() const { return elementData() ? elementData()->m_inlineStyle.get() : 0; }
     
-    // Unlike StylePropertySet setters, these implement invalidation.
-    bool setInlineStyleProperty(CSSPropertyID, int identifier, bool important = false);
+    bool setInlineStyleProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
+    bool setInlineStyleProperty(CSSPropertyID, CSSPropertyID identifier, bool important = false);
     bool setInlineStyleProperty(CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes, bool important = false);
     bool setInlineStyleProperty(CSSPropertyID, const String& value, bool important = false);
     bool removeInlineStyleProperty(CSSPropertyID);
@@ -52,34 +57,34 @@ public:
 
     void synchronizeStyleAttributeInternal() const;
     
-    virtual CSSStyleDeclaration* style() OVERRIDE;
+    virtual CSSStyleDeclaration* style() override final;
 
-    const StylePropertySet* presentationAttributeStyle();
-
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) { }
+    const StyleProperties* presentationAttributeStyle();
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStyleProperties&) { }
 
 protected:
-    StyledElement(const QualifiedName& name, Document* document, ConstructionType type)
+    StyledElement(const QualifiedName& name, Document& document, ConstructionType type)
         : Element(name, document, type)
     {
     }
 
-    virtual void attributeChanged(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void attributeChanged(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue, AttributeModificationReason = ModifiedDirectly) override;
 
     virtual bool isPresentationAttribute(const QualifiedName&) const { return false; }
 
-    void addPropertyToPresentationAttributeStyle(StylePropertySet*, CSSPropertyID, int identifier);
-    void addPropertyToPresentationAttributeStyle(StylePropertySet*, CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes);
-    void addPropertyToPresentationAttributeStyle(StylePropertySet*, CSSPropertyID, const String& value);
+    void addPropertyToPresentationAttributeStyle(MutableStyleProperties&, CSSPropertyID, CSSValueID identifier);
+    void addPropertyToPresentationAttributeStyle(MutableStyleProperties&, CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes);
+    void addPropertyToPresentationAttributeStyle(MutableStyleProperties&, CSSPropertyID, const String& value);
 
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    virtual void addSubresourceAttributeURLs(ListHashSet<URL>&) const override;
 
 private:
-    void styleAttributeChanged(const AtomicString& newStyleString);
+    void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
 
     void inlineStyleChanged();
     PropertySetCSSStyleDeclaration* inlineStyleCSSOMWrapper();
     void setInlineStyleFromString(const AtomicString&);
+    MutableStyleProperties& ensureMutableInlineStyle();
 
     void makePresentationAttributeCacheKey(PresentationAttributeCacheKey&) const;
     void rebuildPresentationAttributeStyle();
@@ -88,17 +93,21 @@ private:
 inline void StyledElement::invalidateStyleAttribute()
 {
     ASSERT(elementData());
-    elementData()->m_styleAttributeIsDirty = true;
+    elementData()->setStyleAttributeIsDirty(true);
 }
 
-inline const StylePropertySet* StyledElement::presentationAttributeStyle()
+inline const StyleProperties* StyledElement::presentationAttributeStyle()
 {
     if (!elementData())
         return 0;
-    if (elementData()->m_presentationAttributeStyleIsDirty)
+    if (elementData()->presentationAttributeStyleIsDirty())
         rebuildPresentationAttributeStyle();
     return elementData()->presentationAttributeStyle();
 }
+
+inline bool isStyledElement(const Node& node) { return node.isStyledElement(); }
+
+NODE_TYPE_CASTS(StyledElement)
 
 } //namespace
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2009, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2013, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Cameron Zwarich <cwzwarich@uwaterloo.ca>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,11 +42,12 @@ namespace JSC {
 #define FOR_EACH_CORE_OPCODE_ID_WITH_EXTENSION(macro, extension__) \
     macro(op_enter, 1) \
     macro(op_create_activation, 2) \
+    macro(op_touch_entry, 1) \
     macro(op_init_lazy_reg, 2) \
     macro(op_create_arguments, 2) \
     macro(op_create_this, 4) \
     macro(op_get_callee, 3) \
-    macro(op_convert_this, 3) \
+    macro(op_to_this, 3) \
     \
     macro(op_new_object, 4) \
     macro(op_new_array, 5) \
@@ -54,6 +55,7 @@ namespace JSC {
     macro(op_new_array_buffer, 5) \
     macro(op_new_regexp, 3) \
     macro(op_mov, 3) \
+    macro(op_captured_mov, 4) \
     \
     macro(op_not, 3) \
     macro(op_eq, 4) \
@@ -67,11 +69,9 @@ namespace JSC {
     macro(op_greater, 4) \
     macro(op_greatereq, 4) \
     \
-    macro(op_pre_inc, 2) \
-    macro(op_pre_dec, 2) \
-    macro(op_post_inc, 3) \
-    macro(op_post_dec, 3) \
-    macro(op_to_jsnumber, 3) \
+    macro(op_inc, 2) \
+    macro(op_dec, 2) \
+    macro(op_to_number, 3) \
     macro(op_negate, 3) \
     macro(op_add, 5) \
     macro(op_mul, 5) \
@@ -82,6 +82,7 @@ namespace JSC {
     macro(op_lshift, 4) \
     macro(op_rshift, 4) \
     macro(op_urshift, 4) \
+    macro(op_unsigned, 3) \
     macro(op_bitand, 5) \
     macro(op_bitxor, 5) \
     macro(op_bitor, 5) \
@@ -97,31 +98,8 @@ namespace JSC {
     macro(op_is_function, 3) \
     macro(op_in, 4) \
     \
-    macro(op_resolve, 5) /* has value profiling */  \
-    macro(op_resolve_global_property, 5) /* has value profiling */  \
-    macro(op_resolve_global_var, 5) /* has value profiling */  \
-    macro(op_resolve_scoped_var, 5) /* has value profiling */  \
-    macro(op_resolve_scoped_var_on_top_scope, 5) /* has value profiling */  \
-    macro(op_resolve_scoped_var_with_top_scope_check, 5) /* has value profiling */  \
-    \
-    macro(op_resolve_base_to_global, 7) /* has value profiling */ \
-    macro(op_resolve_base_to_global_dynamic, 7) /* has value profiling */ \
-    macro(op_resolve_base_to_scope, 7) /* has value profiling */ \
-    macro(op_resolve_base_to_scope_with_top_scope_check, 7) /* has value profiling */ \
-    macro(op_resolve_base, 7) /* has value profiling */ \
-    \
-    macro(op_ensure_property_exists, 3) \
-    \
-    macro(op_resolve_with_base, 7) /* has value profiling */ \
-    \
-    macro(op_resolve_with_this, 6) /* has value profiling */ \
-    \
-    macro(op_put_to_base, 5) \
-    macro(op_put_to_base_variable, 5) \
-    \
     macro(op_init_global_const_nop, 5) \
     macro(op_init_global_const, 5) \
-    macro(op_init_global_const_check, 5) \
     macro(op_get_by_id, 9) /* has value profiling */ \
     macro(op_get_by_id_out_of_line, 9) /* has value profiling */ \
     macro(op_get_by_id_self, 9) /* has value profiling */ \
@@ -151,6 +129,7 @@ namespace JSC {
     macro(op_get_argument_by_val, 6) /* must be the same size as op_get_by_val */ \
     macro(op_get_by_pname, 7) \
     macro(op_put_by_val, 5) \
+    macro(op_put_by_val_direct, 5) \
     macro(op_del_by_val, 4) \
     macro(op_put_by_index, 4) \
     macro(op_put_getter_setter, 5) \
@@ -169,36 +148,34 @@ namespace JSC {
     macro(op_jnlesseq, 4) \
     macro(op_jngreater, 4) \
     macro(op_jngreatereq, 4) \
-    macro(op_jmp_scopes, 3) \
-    macro(op_loop, 2) \
-    macro(op_loop_if_true, 3) \
-    macro(op_loop_if_false, 3) \
-    macro(op_loop_if_less, 4) \
-    macro(op_loop_if_lesseq, 4) \
-    macro(op_loop_if_greater, 4) \
-    macro(op_loop_if_greatereq, 4) \
+    \
     macro(op_loop_hint, 1) \
+    \
     macro(op_switch_imm, 4) \
     macro(op_switch_char, 4) \
     macro(op_switch_string, 4) \
     \
     macro(op_new_func, 4) \
+    macro(op_new_captured_func, 4) \
     macro(op_new_func_exp, 3) \
-    macro(op_call, 6) \
-    macro(op_call_eval, 6) \
-    macro(op_call_varargs, 5) \
+    macro(op_call, 8) /* has value profiling */ \
+    macro(op_call_eval, 8) /* has value profiling */ \
+    macro(op_call_varargs, 8) /* has value profiling */ \
     macro(op_tear_off_activation, 2) \
     macro(op_tear_off_arguments, 3) \
     macro(op_ret, 2) \
-    macro(op_call_put_result, 3) /* has value profiling */ \
     macro(op_ret_object_or_this, 3) \
     \
-    macro(op_construct, 6) \
+    macro(op_construct, 8) \
     macro(op_strcat, 4) \
     macro(op_to_primitive, 3) \
     \
     macro(op_get_pnames, 6) \
     macro(op_next_pname, 7) \
+    \
+    macro(op_resolve_scope, 6) \
+    macro(op_get_from_scope, 8) /* has value profiling */ \
+    macro(op_put_to_scope, 7) \
     \
     macro(op_push_with_scope, 2) \
     macro(op_pop_scope, 1) \
@@ -208,7 +185,7 @@ namespace JSC {
     macro(op_throw, 2) \
     macro(op_throw_static_error, 3) \
     \
-    macro(op_debug, 5) \
+    macro(op_debug, 3) \
     macro(op_profile_will_call, 2) \
     macro(op_profile_did_call, 2) \
     \

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,50 +28,52 @@
 #include "SerializedScriptValue.h"
 
 #include "Blob.h"
+#include "CryptoKeyAES.h"
+#include "CryptoKeyDataOctetSequence.h"
+#include "CryptoKeyDataRSAComponents.h"
+#include "CryptoKeyHMAC.h"
+#include "CryptoKeyRSA.h"
+#include "ExceptionCode.h"
 #include "File.h"
 #include "FileList.h"
 #include "ImageData.h"
-#include "JSArrayBuffer.h"
-#include "JSArrayBufferView.h"
 #include "JSBlob.h"
-#include "JSDataView.h"
+#include "JSCryptoKey.h"
 #include "JSDOMGlobalObject.h"
 #include "JSFile.h"
 #include "JSFileList.h"
-#include "JSFloat32Array.h"
-#include "JSFloat64Array.h"
 #include "JSImageData.h"
-#include "JSInt16Array.h"
-#include "JSInt32Array.h"
-#include "JSInt8Array.h"
 #include "JSMessagePort.h"
 #include "JSNavigator.h"
-#include "JSUint16Array.h"
-#include "JSUint32Array.h"
-#include "JSUint8Array.h"
-#include "JSUint8ClampedArray.h"
 #include "NotImplemented.h"
-#include "ScriptValue.h"
 #include "SharedBuffer.h"
+#include "WebCoreJSClientData.h"
 #include <limits>
 #include <JavaScriptCore/APICast.h>
 #include <JavaScriptCore/APIShims.h>
+#include <runtime/ArrayBuffer.h>
 #include <runtime/BooleanObject.h>
 #include <runtime/DateInstance.h>
 #include <runtime/Error.h>
 #include <runtime/ExceptionHelpers.h>
+#include <runtime/JSArrayBuffer.h>
+#include <runtime/JSArrayBufferView.h>
+#include <runtime/JSDataView.h>
+#include <runtime/JSMap.h>
+#include <runtime/JSSet.h>
+#include <runtime/JSTypedArrays.h>
+#include <runtime/MapData.h>
 #include <runtime/ObjectConstructor.h>
 #include <runtime/Operations.h>
 #include <runtime/PropertyNameArray.h>
 #include <runtime/RegExp.h>
 #include <runtime/RegExpObject.h>
-#include <wtf/ArrayBuffer.h>
+#include <runtime/TypedArrayInlines.h>
+#include <runtime/TypedArrays.h>
 #include <wtf/HashTraits.h>
-#include <wtf/Uint8ClampedArray.h>
 #include <wtf/Vector.h>
 
 using namespace JSC;
-using namespace std;
 
 #if CPU(BIG_ENDIAN) || CPU(MIDDLE_ENDIAN) || CPU(NEEDS_ALIGNED_ACCESS)
 #define ASSUME_LITTLE_ENDIAN 0
@@ -84,7 +86,8 @@ namespace WebCore {
 static const unsigned maximumFilterRecursion = 40000;
 
 enum WalkerState { StateUnknown, ArrayStartState, ArrayStartVisitMember, ArrayEndVisitMember,
-    ObjectStartState, ObjectStartVisitMember, ObjectEndVisitMember };
+    ObjectStartState, ObjectStartVisitMember, ObjectEndVisitMember,
+    MapDataStartVisitEntry, MapDataEndVisitKey, MapDataEndVisitValue };
 
 // These can't be reordered, and any new types must be added to the end of the list
 enum SerializationTag {
@@ -116,6 +119,12 @@ enum SerializationTag {
     StringObjectTag = 26,
     EmptyStringObjectTag = 27,
     NumberObjectTag = 28,
+    SetObjectTag = 29,
+    MapObjectTag = 30,
+    NonMapPropertiesTag = 31,
+#if ENABLE(SUBTLE_CRYPTO)
+    CryptoKeyTag = 32,
+#endif
     ErrorTag = 255
 };
 
@@ -155,7 +164,73 @@ static unsigned typedArrayElementSize(ArrayBufferViewSubtag tag)
 
 }
 
-/* CurrentVersion tracks the serialization version so that persistant stores
+#if ENABLE(SUBTLE_CRYPTO)
+
+enum class CryptoKeyClassSubtag {
+    HMAC = 0,
+    AES = 1,
+    RSA = 2
+};
+const uint8_t cryptoKeyClassSubtagMaximumValue = 2;
+
+enum class CryptoKeyAsymmetricTypeSubtag {
+    Public = 0,
+    Private = 1
+};
+const uint8_t cryptoKeyAsymmetricTypeSubtagMaximumValue = 1;
+
+enum class CryptoKeyUsageTag {
+    Encrypt = 0,
+    Decrypt = 1,
+    Sign = 2,
+    Verify = 3,
+    DeriveKey = 4,
+    DeriveBits = 5,
+    WrapKey = 6,
+    UnwrapKey = 7
+};
+const uint8_t cryptoKeyUsageTagMaximumValue = 7;
+
+enum class CryptoAlgorithmIdentifierTag {
+    RSAES_PKCS1_v1_5 = 0,
+    RSASSA_PKCS1_v1_5 = 1,
+    RSA_PSS = 2,
+    RSA_OAEP = 3,
+    ECDSA = 4,
+    ECDH = 5,
+    AES_CTR = 6,
+    AES_CBC = 7,
+    AES_CMAC = 8,
+    AES_GCM = 9,
+    AES_CFB = 10,
+    AES_KW = 11,
+    HMAC = 12,
+    DH = 13,
+    SHA_1 = 14,
+    SHA_224 = 15,
+    SHA_256 = 16,
+    SHA_384 = 17,
+    SHA_512 = 18,
+    CONCAT = 19,
+    HKDF_CTR = 20,
+    PBKDF2 = 21,
+};
+const uint8_t cryptoAlgorithmIdentifierTagMaximumValue = 21;
+
+static unsigned countUsages(CryptoKeyUsage usages)
+{
+    // Fast bit count algorithm for sparse bit maps.
+    unsigned count = 0;
+    while (usages) {
+        usages = usages & (usages - 1);
+        ++count;
+    }
+    return count;
+}
+
+#endif
+
+/* CurrentVersion tracks the serialization version so that persistent stores
  * are able to correctly bail out in the case of encountering newer formats.
  *
  * Initial version was 1.
@@ -163,8 +238,9 @@ static unsigned typedArrayElementSize(ArrayBufferViewSubtag tag)
  * Version 3. added the FalseObjectTag, TrueObjectTag, NumberObjectTag, StringObjectTag
  * and EmptyStringObjectTag for serialization of Boolean, Number and String objects.
  * Version 4. added support for serializing non-index properties of arrays.
+ * Version 5. added support for Map and Set types.
  */
-static const unsigned CurrentVersion = 4;
+static const unsigned CurrentVersion = 5;
 static const unsigned TerminatorTag = 0xFFFFFFFF;
 static const unsigned StringPoolTag = 0xFFFFFFFE;
 static const unsigned NonIndexPropertiesTag = 0xFFFFFFFD;
@@ -178,13 +254,19 @@ static const unsigned NonIndexPropertiesTag = 0xFFFFFFFD;
  * in the constant pool.
  *
  * SerializedValue :- <CurrentVersion:uint32_t> Value
- * Value :- Array | Object | Terminal
+ * Value :- Array | Object | Map | Set | Terminal
  *
  * Array :-
  *     ArrayTag <length:uint32_t>(<index:uint32_t><value:Value>)* TerminatorTag
  *
  * Object :-
  *     ObjectTag (<name:StringData><value:Value>)* TerminatorTag
+ *
+ * Map :- MapObjectTag MapData
+ *
+ * Set :- SetObjectTag MapData
+ *
+ * MapData :- (<key:Value><value:Value>) NonMapPropertiesTag (<name:StringData><value:Value>)* TerminatorTag
  *
  * Terminal :-
  *      UndefinedTag
@@ -209,8 +291,9 @@ static const unsigned NonIndexPropertiesTag = 0xFFFFFFFD;
  *    | ObjectReference
  *    | MessagePortReferenceTag <value:uint32_t>
  *    | ArrayBuffer
- *    | ArrayBufferViewTag ArrayBufferViewSubtag <byteOffset:uint32_t> <byteLenght:uint32_t> (ArrayBuffer | ObjectReference)
+ *    | ArrayBufferViewTag ArrayBufferViewSubtag <byteOffset:uint32_t> <byteLength:uint32_t> (ArrayBuffer | ObjectReference)
  *    | ArrayBufferTransferTag <value:uint32_t>
+ *    | CryptoKeyTag <extractable:int32_t> <usagesCount:uint32_t> <usages:byte{usagesCount}> CryptoKeyClassSubtag (CryptoKeyHMAC | CryptoKeyAES | CryptoKeyRSA)
  *
  * String :-
  *      EmptyStringTag
@@ -247,16 +330,37 @@ static const unsigned NonIndexPropertiesTag = 0xFFFFFFFD;
  *
  * ArrayBuffer :-
  *    ArrayBufferTag <length:uint32_t> <contents:byte{length}>
+ *
+ * CryptoKeyHMAC :-
+ *    <keySize:uint32_t> <keyData:byte{keySize}> CryptoAlgorithmIdentifierTag // Algorithm tag inner hash function.
+ *
+ * CryptoKeyAES :-
+ *    CryptoAlgorithmIdentifierTag <keySize:uint32_t> <keyData:byte{keySize}>
+ *
+ * CryptoKeyRSA :-
+ *    CryptoAlgorithmIdentifierTag <isRestrictedToHash:int32_t> CryptoAlgorithmIdentifierTag? CryptoKeyAsymmetricTypeSubtag CryptoKeyRSAPublicComponents CryptoKeyRSAPrivateComponents?
+ *
+ * CryptoKeyRSAPublicComponents :-
+ *    <modulusSize:uint32_t> <modulus:byte{modulusSize}> <exponentSize:uint32_t> <exponent:byte{exponentSize}>
+ *
+ * CryptoKeyRSAPrivateComponents :-
+ *    <privateExponentSize:uint32_t> <privateExponent:byte{privateExponentSize}> <primeCount:uint32_t> FirstPrimeInfo? PrimeInfo{primeCount - 1}
+ *
+ * // CRT data could be computed from prime factors. It is only serialized to reuse a code path that's needed for JWK.
+ * FirstPrimeInfo :-
+ *    <factorSize:uint32_t> <factor:byte{factorSize}> <crtExponentSize:uint32_t> <crtExponent:byte{crtExponentSize}>
+ *
+ * PrimeInfo :-
+ *    <factorSize:uint32_t> <factor:byte{factorSize}> <crtExponentSize:uint32_t> <crtExponent:byte{crtExponentSize}> <crtCoefficientSize:uint32_t> <crtCoefficient:byte{crtCoefficientSize}>
  */
 
-typedef pair<JSC::JSValue, SerializationReturnCode> DeserializationResult;
+typedef std::pair<JSC::JSValue, SerializationReturnCode> DeserializationResult;
 
 class CloneBase {
 protected:
     CloneBase(ExecState* exec)
         : m_exec(exec)
         , m_failed(false)
-        , m_timeoutChecker(exec->globalData().timeoutChecker)
     {
     }
 
@@ -265,24 +369,9 @@ protected:
         return m_exec->hadException();
     }
 
-    unsigned ticksUntilNextCheck()
-    {
-        return m_timeoutChecker.ticksUntilNextCheck();
-    }
-
-    bool didTimeOut()
-    {
-        return m_timeoutChecker.didTimeOut(m_exec);
-    }
-
     void throwStackOverflow()
     {
-        throwError(m_exec, createStackOverflowError(m_exec));
-    }
-
-    void throwInterruptedException()
-    {
-        throwError(m_exec, createInterruptedExecutionException(&m_exec->globalData()));
+        m_exec->vm().throwException(m_exec, createStackOverflowError(m_exec));
     }
 
     NO_RETURN_DUE_TO_ASSERT
@@ -294,7 +383,6 @@ protected:
 
     ExecState* m_exec;
     bool m_failed;
-    TimeoutChecker m_timeoutChecker;
     MarkedArgumentBuffer m_gcBuffer;
 };
 
@@ -320,7 +408,7 @@ template <> void writeLittleEndian<uint8_t>(Vector<uint8_t>& buffer, uint8_t val
 
 template <typename T> static bool writeLittleEndian(Vector<uint8_t>& buffer, const T* values, uint32_t length)
 {
-    if (length > numeric_limits<uint32_t>::max() / sizeof(T))
+    if (length > std::numeric_limits<uint32_t>::max() / sizeof(T))
         return false;
 
 #if ASSUME_LITTLE_ENDIAN
@@ -334,6 +422,12 @@ template <typename T> static bool writeLittleEndian(Vector<uint8_t>& buffer, con
         }
     }
 #endif
+    return true;
+}
+
+template <> bool writeLittleEndian<uint8_t>(Vector<uint8_t>& buffer, const uint8_t* values, uint32_t length)
+{
+    buffer.append(values, length);
     return true;
 }
 
@@ -356,7 +450,7 @@ public:
         }
         writeLittleEndian<uint8_t>(out, StringTag);
         writeLittleEndian(out, s.length());
-        return writeLittleEndian(out, s.impl()->characters(), s.length());
+        return writeLittleEndian(out, s.impl()->deprecatedCharacters(), s.length());
     }
 
     static void serializeUndefined(Vector<uint8_t>& out)
@@ -418,7 +512,22 @@ private:
         if (!value.isObject())
             return false;
         JSObject* object = asObject(value);
-        return isJSArray(object) || object->inherits(&JSArray::s_info);
+        return isJSArray(object) || object->inherits(JSArray::info());
+    }
+
+    bool isMap(JSValue value)
+    {
+        if (!value.isObject())
+            return false;
+        JSObject* object = asObject(value);
+        return object->inherits(JSMap::info());
+    }
+    bool isSet(JSValue value)
+    {
+        if (!value.isObject())
+            return false;
+        JSObject* object = asObject(value);
+        return object->inherits(JSSet::info());
     }
 
     bool checkForDuplicate(JSObject* object)
@@ -467,6 +576,24 @@ private:
         unsigned length = array->length();
         write(ArrayTag);
         write(length);
+        return true;
+    }
+
+    bool startSet(JSSet* set)
+    {
+        if (!startObjectInternal(set))
+            return false;
+
+        write(SetObjectTag);
+        return true;
+    }
+
+    bool startMap(JSMap* map)
+    {
+        if (!startObjectInternal(map))
+            return false;
+
+        write(MapObjectTag);
         return true;
     }
 
@@ -534,25 +661,25 @@ private:
     bool dumpArrayBufferView(JSObject* obj, SerializationReturnCode& code)
     {
         write(ArrayBufferViewTag);
-        if (obj->inherits(&JSDataView::s_info))
+        if (obj->inherits(JSDataView::info()))
             write(DataViewTag);
-        else if (obj->inherits(&JSUint8ClampedArray::s_info))
+        else if (obj->inherits(JSUint8ClampedArray::info()))
             write(Uint8ClampedArrayTag);
-        else if (obj->inherits(&JSInt8Array::s_info))
+        else if (obj->inherits(JSInt8Array::info()))
             write(Int8ArrayTag);
-        else if (obj->inherits(&JSUint8Array::s_info))
+        else if (obj->inherits(JSUint8Array::info()))
             write(Uint8ArrayTag);
-        else if (obj->inherits(&JSInt16Array::s_info))
+        else if (obj->inherits(JSInt16Array::info()))
             write(Int16ArrayTag);
-        else if (obj->inherits(&JSUint16Array::s_info))
+        else if (obj->inherits(JSUint16Array::info()))
             write(Uint16ArrayTag);
-        else if (obj->inherits(&JSInt32Array::s_info))
+        else if (obj->inherits(JSInt32Array::info()))
             write(Int32ArrayTag);
-        else if (obj->inherits(&JSUint32Array::s_info))
+        else if (obj->inherits(JSUint32Array::info()))
             write(Uint32ArrayTag);
-        else if (obj->inherits(&JSFloat32Array::s_info))
+        else if (obj->inherits(JSFloat32Array::info()))
             write(Float32ArrayTag);
-        else if (obj->inherits(&JSFloat64Array::s_info))
+        else if (obj->inherits(JSFloat64Array::info()))
             write(Float64ArrayTag);
         else
             return false;
@@ -588,7 +715,7 @@ private:
             return true;
         }
 
-        if (value.isObject() && asObject(value)->inherits(&DateInstance::s_info)) {
+        if (value.isObject() && asObject(value)->inherits(DateInstance::info())) {
             write(DateTag);
             write(asDateInstance(value)->internalNumber());
             return true;
@@ -599,20 +726,20 @@ private:
 
         if (value.isObject()) {
             JSObject* obj = asObject(value);
-            if (obj->inherits(&BooleanObject::s_info)) {
+            if (obj->inherits(BooleanObject::info())) {
                 if (!startObjectInternal(obj)) // handle duplicates
                     return true;
                 write(asBooleanObject(value)->internalValue().toBoolean(m_exec) ? TrueObjectTag : FalseObjectTag);
                 return true;
             }
-            if (obj->inherits(&StringObject::s_info)) {
+            if (obj->inherits(StringObject::info())) {
                 if (!startObjectInternal(obj)) // handle duplicates
                     return true;
                 String str = asString(asStringObject(value)->internalValue())->value(m_exec);
                 dumpStringObject(str);
                 return true;
             }
-            if (obj->inherits(&NumberObject::s_info)) {
+            if (obj->inherits(NumberObject::info())) {
                 if (!startObjectInternal(obj)) // handle duplicates
                     return true;
                 write(NumberObjectTag);
@@ -620,13 +747,12 @@ private:
                 write(obj->internalValue().asNumber());
                 return true;
             }
-            if (obj->inherits(&JSFile::s_info)) {
+            if (File* file = toFile(obj)) {
                 write(FileTag);
-                write(toFile(obj));
+                write(file);
                 return true;
             }
-            if (obj->inherits(&JSFileList::s_info)) {
-                FileList* list = toFileList(obj);
+            if (FileList* list = toFileList(obj)) {
                 write(FileListTag);
                 unsigned length = list->length();
                 write(length);
@@ -634,17 +760,15 @@ private:
                     write(list->item(i));
                 return true;
             }
-            if (obj->inherits(&JSBlob::s_info)) {
+            if (Blob* blob = toBlob(obj)) {
                 write(BlobTag);
-                Blob* blob = toBlob(obj);
                 m_blobURLs.append(blob->url());
                 write(blob->url());
                 write(blob->type());
                 write(blob->size());
                 return true;
             }
-            if (obj->inherits(&JSImageData::s_info)) {
-                ImageData* data = toImageData(obj);
+            if (ImageData* data = toImageData(obj)) {
                 write(ImageDataTag);
                 write(data->width());
                 write(data->height());
@@ -652,7 +776,7 @@ private:
                 write(data->data()->data(), data->data()->length());
                 return true;
             }
-            if (obj->inherits(&RegExpObject::s_info)) {
+            if (obj->inherits(RegExpObject::info())) {
                 RegExpObject* regExp = asRegExpObject(obj);
                 char flags[3];
                 int flagCount = 0;
@@ -667,7 +791,7 @@ private:
                 write(String(flags, flagCount));
                 return true;
             }
-            if (obj->inherits(&JSMessagePort::s_info)) {
+            if (obj->inherits(JSMessagePort::info())) {
                 ObjectPool::iterator index = m_transferredMessagePorts.find(obj);
                 if (index != m_transferredMessagePorts.end()) {
                     write(MessagePortReferenceTag);
@@ -678,8 +802,7 @@ private:
                 code = ValidationError;
                 return true;
             }
-            if (obj->inherits(&JSArrayBuffer::s_info)) {
-                RefPtr<ArrayBuffer> arrayBuffer = toArrayBuffer(obj);
+            if (ArrayBuffer* arrayBuffer = toArrayBuffer(obj)) {
                 if (arrayBuffer->isNeutered()) {
                     code = ValidationError;
                     return true;
@@ -694,16 +817,23 @@ private:
                     return true;
                 write(ArrayBufferTag);
                 write(arrayBuffer->byteLength());
-                write(static_cast<const uint8_t *>(arrayBuffer->data()), arrayBuffer->byteLength());
+                write(static_cast<const uint8_t*>(arrayBuffer->data()), arrayBuffer->byteLength());
                 return true;
             }
-            if (obj->inherits(&JSArrayBufferView::s_info)) {
+            if (obj->inherits(JSArrayBufferView::info())) {
                 if (checkForDuplicate(obj))
                     return true;
                 bool success = dumpArrayBufferView(obj, code);
                 recordObject(obj);
                 return success;
             }
+#if ENABLE(SUBTLE_CRYPTO)
+            if (CryptoKey* key = toCryptoKey(obj)) {
+                write(CryptoKeyTag);
+                write(key);
+                return true;
+            }
+#endif
 
             return false;
         }
@@ -721,6 +851,28 @@ private:
     {
         writeLittleEndian<uint8_t>(m_buffer, static_cast<uint8_t>(tag));
     }
+
+#if ENABLE(SUBTLE_CRYPTO)
+    void write(CryptoKeyClassSubtag tag)
+    {
+        writeLittleEndian<uint8_t>(m_buffer, static_cast<uint8_t>(tag));
+    }
+
+    void write(CryptoKeyAsymmetricTypeSubtag tag)
+    {
+        writeLittleEndian<uint8_t>(m_buffer, static_cast<uint8_t>(tag));
+    }
+
+    void write(CryptoKeyUsageTag tag)
+    {
+        writeLittleEndian<uint8_t>(m_buffer, static_cast<uint8_t>(tag));
+    }
+
+    void write(CryptoAlgorithmIdentifierTag tag)
+    {
+        writeLittleEndian<uint8_t>(m_buffer, static_cast<uint8_t>(tag));
+    }
+#endif
 
     void write(uint8_t c)
     {
@@ -796,13 +948,13 @@ private:
         }
 
         // Guard against overflow
-        if (str.length() > (numeric_limits<uint32_t>::max() - sizeof(uint32_t)) / sizeof(UChar)) {
+        if (str.length() > (std::numeric_limits<uint32_t>::max() - sizeof(uint32_t)) / sizeof(UChar)) {
             fail();
             return;
         }
 
         writeLittleEndian<uint32_t>(m_buffer, str.length());
-        if (!writeLittleEndian<uint16_t>(m_buffer, reinterpret_cast<const uint16_t*>(str.characters()), str.length()))
+        if (!writeLittleEndian<uint16_t>(m_buffer, reinterpret_cast<const uint16_t*>(str.deprecatedCharacters()), str.length()))
             fail();
     }
 
@@ -814,6 +966,13 @@ private:
             write(Identifier(m_exec, str));
     }
 
+    void write(const Vector<uint8_t>& vector)
+    {
+        uint32_t size = vector.size();
+        write(size);
+        writeLittleEndian(m_buffer, vector.data(), size);
+    }
+
     void write(const File* file)
     {
         m_blobURLs.append(file->url());
@@ -821,6 +980,166 @@ private:
         write(file->url());
         write(file->type());
     }
+
+#if ENABLE(SUBTLE_CRYPTO)
+    void write(CryptoAlgorithmIdentifier algorithm)
+    {
+        switch (algorithm) {
+        case CryptoAlgorithmIdentifier::RSAES_PKCS1_v1_5:
+            write(CryptoAlgorithmIdentifierTag::RSAES_PKCS1_v1_5);
+            break;
+        case CryptoAlgorithmIdentifier::RSASSA_PKCS1_v1_5:
+            write(CryptoAlgorithmIdentifierTag::RSASSA_PKCS1_v1_5);
+            break;
+        case CryptoAlgorithmIdentifier::RSA_PSS:
+            write(CryptoAlgorithmIdentifierTag::RSA_PSS);
+            break;
+        case CryptoAlgorithmIdentifier::RSA_OAEP:
+            write(CryptoAlgorithmIdentifierTag::RSA_OAEP);
+            break;
+        case CryptoAlgorithmIdentifier::ECDSA:
+            write(CryptoAlgorithmIdentifierTag::ECDSA);
+            break;
+        case CryptoAlgorithmIdentifier::ECDH:
+            write(CryptoAlgorithmIdentifierTag::ECDH);
+            break;
+        case CryptoAlgorithmIdentifier::AES_CTR:
+            write(CryptoAlgorithmIdentifierTag::AES_CTR);
+            break;
+        case CryptoAlgorithmIdentifier::AES_CBC:
+            write(CryptoAlgorithmIdentifierTag::AES_CBC);
+            break;
+        case CryptoAlgorithmIdentifier::AES_CMAC:
+            write(CryptoAlgorithmIdentifierTag::AES_CMAC);
+            break;
+        case CryptoAlgorithmIdentifier::AES_GCM:
+            write(CryptoAlgorithmIdentifierTag::AES_GCM);
+            break;
+        case CryptoAlgorithmIdentifier::AES_CFB:
+            write(CryptoAlgorithmIdentifierTag::AES_CFB);
+            break;
+        case CryptoAlgorithmIdentifier::AES_KW:
+            write(CryptoAlgorithmIdentifierTag::AES_KW);
+            break;
+        case CryptoAlgorithmIdentifier::HMAC:
+            write(CryptoAlgorithmIdentifierTag::HMAC);
+            break;
+        case CryptoAlgorithmIdentifier::DH:
+            write(CryptoAlgorithmIdentifierTag::DH);
+            break;
+        case CryptoAlgorithmIdentifier::SHA_1:
+            write(CryptoAlgorithmIdentifierTag::SHA_1);
+            break;
+        case CryptoAlgorithmIdentifier::SHA_224:
+            write(CryptoAlgorithmIdentifierTag::SHA_224);
+            break;
+        case CryptoAlgorithmIdentifier::SHA_256:
+            write(CryptoAlgorithmIdentifierTag::SHA_256);
+            break;
+        case CryptoAlgorithmIdentifier::SHA_384:
+            write(CryptoAlgorithmIdentifierTag::SHA_384);
+            break;
+        case CryptoAlgorithmIdentifier::SHA_512:
+            write(CryptoAlgorithmIdentifierTag::SHA_512);
+            break;
+        case CryptoAlgorithmIdentifier::CONCAT:
+            write(CryptoAlgorithmIdentifierTag::CONCAT);
+            break;
+        case CryptoAlgorithmIdentifier::HKDF_CTR:
+            write(CryptoAlgorithmIdentifierTag::HKDF_CTR);
+            break;
+        case CryptoAlgorithmIdentifier::PBKDF2:
+            write(CryptoAlgorithmIdentifierTag::PBKDF2);
+            break;
+        }
+    }
+
+    void write(CryptoKeyDataRSAComponents::Type type)
+    {
+        switch (type) {
+        case CryptoKeyDataRSAComponents::Type::Public:
+            write(CryptoKeyAsymmetricTypeSubtag::Public);
+            return;
+        case CryptoKeyDataRSAComponents::Type::Private:
+            write(CryptoKeyAsymmetricTypeSubtag::Private);
+            return;
+        }
+    }
+
+    void write(const CryptoKeyDataRSAComponents& key)
+    {
+        write(key.type());
+        write(key.modulus());
+        write(key.exponent());
+        if (key.type() == CryptoKeyDataRSAComponents::Type::Public)
+            return;
+
+        write(key.privateExponent());
+
+        unsigned primeCount = key.hasAdditionalPrivateKeyParameters() ? key.otherPrimeInfos().size() + 2 : 0;
+        write(primeCount);
+        if (!primeCount)
+            return;
+
+        write(key.firstPrimeInfo().primeFactor);
+        write(key.firstPrimeInfo().factorCRTExponent);
+        write(key.secondPrimeInfo().primeFactor);
+        write(key.secondPrimeInfo().factorCRTExponent);
+        write(key.secondPrimeInfo().factorCRTCoefficient);
+        for (unsigned i = 2; i < primeCount; ++i) {
+            write(key.otherPrimeInfos()[i].primeFactor);
+            write(key.otherPrimeInfos()[i].factorCRTExponent);
+            write(key.otherPrimeInfos()[i].factorCRTCoefficient);
+        }
+    }
+
+    void write(const CryptoKey* key)
+    {
+        write(key->extractable());
+
+        CryptoKeyUsage usages = key->usagesBitmap();
+        write(countUsages(usages));
+        if (usages & CryptoKeyUsageEncrypt)
+            write(CryptoKeyUsageTag::Encrypt);
+        if (usages & CryptoKeyUsageDecrypt)
+            write(CryptoKeyUsageTag::Decrypt);
+        if (usages & CryptoKeyUsageSign)
+            write(CryptoKeyUsageTag::Sign);
+        if (usages & CryptoKeyUsageVerify)
+            write(CryptoKeyUsageTag::Verify);
+        if (usages & CryptoKeyUsageDeriveKey)
+            write(CryptoKeyUsageTag::DeriveKey);
+        if (usages & CryptoKeyUsageDeriveBits)
+            write(CryptoKeyUsageTag::DeriveBits);
+        if (usages & CryptoKeyUsageWrapKey)
+            write(CryptoKeyUsageTag::WrapKey);
+        if (usages & CryptoKeyUsageUnwrapKey)
+            write(CryptoKeyUsageTag::UnwrapKey);
+
+        switch (key->keyClass()) {
+        case CryptoKeyClass::HMAC:
+            write(CryptoKeyClassSubtag::HMAC);
+            write(toCryptoKeyHMAC(key)->key());
+            write(toCryptoKeyHMAC(key)->hashAlgorithmIdentifier());
+            break;
+        case CryptoKeyClass::AES:
+            write(CryptoKeyClassSubtag::AES);
+            write(key->algorithmIdentifier());
+            write(toCryptoKeyAES(key)->key());
+            break;
+        case CryptoKeyClass::RSA:
+            write(CryptoKeyClassSubtag::RSA);
+            write(key->algorithmIdentifier());
+            CryptoAlgorithmIdentifier hash;
+            bool isRestrictedToHash = toCryptoKeyRSA(key)->isRestrictedToHash(hash);
+            write(isRestrictedToHash);
+            if (isRestrictedToHash)
+                write(hash);
+            write(toCryptoKeyDataRSAComponents(*key->exportData()));
+            break;
+        }
+    }
+#endif
 
     void write(const uint8_t* data, unsigned length)
     {
@@ -843,10 +1162,12 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
     Vector<uint32_t, 16> lengthStack;
     Vector<PropertyNameArray, 16> propertyStack;
     Vector<JSObject*, 32> inputObjectStack;
+    Vector<MapData*, 4> mapDataStack;
+    Vector<MapData::const_iterator, 4> iteratorStack;
+    Vector<JSValue, 4> iteratorValueStack;
     Vector<WalkerState, 16> stateStack;
     WalkerState state = StateUnknown;
     JSValue inValue = in;
-    unsigned tickCount = ticksUntilNextCheck();
     while (1) {
         switch (state) {
             arrayStartState:
@@ -862,16 +1183,10 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
                 inputObjectStack.append(inArray);
                 indexStack.append(0);
                 lengthStack.append(length);
-                // fallthrough
             }
             arrayStartVisitMember:
+            FALLTHROUGH;
             case ArrayStartVisitMember: {
-                if (!--tickCount) {
-                    if (didTimeOut())
-                        return InterruptedExecutionError;
-                    tickCount = ticksUntilNextCheck();
-                }
-
                 JSObject* array = inputObjectStack.last();
                 uint32_t index = indexStack.last();
                 if (index == lengthStack.last()) {
@@ -924,22 +1239,16 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
                 // objects have been handled. If we reach this point and
                 // the input is not an Object object then we should throw
                 // a DataCloneError.
-                if (inObject->classInfo() != &JSFinalObject::s_info)
+                if (inObject->classInfo() != JSFinalObject::info())
                     return DataCloneError;
                 inputObjectStack.append(inObject);
                 indexStack.append(0);
                 propertyStack.append(PropertyNameArray(m_exec));
                 inObject->methodTable()->getOwnPropertyNames(inObject, m_exec, propertyStack.last(), ExcludeDontEnumProperties);
-                // fallthrough
             }
             objectStartVisitMember:
+            FALLTHROUGH;
             case ObjectStartVisitMember: {
-                if (!--tickCount) {
-                    if (didTimeOut())
-                        return InterruptedExecutionError;
-                    tickCount = ticksUntilNextCheck();
-                }
-
                 JSObject* object = inputObjectStack.last();
                 uint32_t index = indexStack.last();
                 PropertyNameArray& properties = propertyStack.last();
@@ -971,7 +1280,7 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
                 }
                 if (terminalCode != SuccessfullyCompleted)
                     return terminalCode;
-                // fallthrough
+                FALLTHROUGH;
             }
             case ObjectEndVisitMember: {
                 if (shouldTerminate())
@@ -980,6 +1289,67 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
                 indexStack.last()++;
                 goto objectStartVisitMember;
             }
+            mapStartState: {
+                ASSERT(inValue.isObject());
+                if (inputObjectStack.size() > maximumFilterRecursion)
+                    return StackOverflowError;
+                JSMap* inMap = jsCast<JSMap*>(inValue);
+                if (!startMap(inMap))
+                    break;
+                MapData* mapData = inMap->mapData();
+                m_gcBuffer.append(mapData);
+                mapDataStack.append(mapData);
+                iteratorStack.append(mapData->begin());
+                inputObjectStack.append(inMap);
+                goto mapDataStartVisitEntry;
+            }
+            setStartState: {
+                ASSERT(inValue.isObject());
+                if (inputObjectStack.size() > maximumFilterRecursion)
+                    return StackOverflowError;
+                JSSet* inSet = jsCast<JSSet*>(inValue);
+                if (!startSet(inSet))
+                    break;
+                MapData* mapData = inSet->mapData();
+                m_gcBuffer.append(mapData);
+                mapDataStack.append(mapData);
+                iteratorStack.append(mapData->begin());
+                inputObjectStack.append(inSet);
+                goto mapDataStartVisitEntry;
+            }
+            mapDataStartVisitEntry:
+            case MapDataStartVisitEntry: {
+                MapData::const_iterator& ptr = iteratorStack.last();
+                MapData* mapData = mapDataStack.last();
+                if (ptr == mapData->end()) {
+                    iteratorStack.removeLast();
+                    mapDataStack.removeLast();
+                    JSObject* object = inputObjectStack.last();
+                    ASSERT(jsDynamicCast<JSSet*>(object) || jsDynamicCast<JSMap*>(object));
+                    propertyStack.append(PropertyNameArray(m_exec));
+                    object->methodTable()->getOwnPropertyNames(object, m_exec, propertyStack.last(), ExcludeDontEnumProperties);
+                    write(NonMapPropertiesTag);
+                    indexStack.append(0);
+                    goto objectStartVisitMember;
+                }
+                inValue = ptr.key();
+                m_gcBuffer.append(ptr.value());
+                iteratorValueStack.append(ptr.value());
+                stateStack.append(MapDataEndVisitKey);
+                goto stateUnknown;
+            }
+            case MapDataEndVisitKey: {
+                inValue = iteratorValueStack.last();
+                iteratorValueStack.removeLast();
+                stateStack.append(MapDataEndVisitValue);
+                goto stateUnknown;
+            }
+            case MapDataEndVisitValue: {
+                if (iteratorStack.last() != mapDataStack.last()->end())
+                    ++iteratorStack.last();
+                goto mapDataStartVisitEntry;
+            }
+
             stateUnknown:
             case StateUnknown: {
                 SerializationReturnCode terminalCode = SuccessfullyCompleted;
@@ -991,6 +1361,10 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
 
                 if (isArray(inValue))
                     goto arrayStartState;
+                if (isMap(inValue))
+                    goto mapStartState;
+                if (isSet(inValue))
+                    goto setStartState;
                 goto objectStartState;
             }
         }
@@ -999,12 +1373,6 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
 
         state = stateStack.last();
         stateStack.removeLast();
-
-        if (!--tickCount) {
-            if (didTimeOut())
-                return InterruptedExecutionError;
-            tickCount = ticksUntilNextCheck();
-        }
     }
     if (m_failed)
         return UnspecifiedError;
@@ -1012,12 +1380,14 @@ SerializationReturnCode CloneSerializer::serialize(JSValue in)
     return SuccessfullyCompleted;
 }
 
-typedef Vector<WTF::ArrayBufferContents> ArrayBufferContentsArray;
+typedef Vector<JSC::ArrayBufferContents> ArrayBufferContentsArray;
 
 class CloneDeserializer : CloneBase {
 public:
     static String deserializeString(const Vector<uint8_t>& buffer)
     {
+        if (buffer.isEmpty())
+            return String();
         const uint8_t* ptr = buffer.begin();
         const uint8_t* end = buffer.end();
         uint32_t version;
@@ -1040,10 +1410,10 @@ public:
                                              const Vector<uint8_t>& buffer)
     {
         if (!buffer.size())
-            return make_pair(jsNull(), UnspecifiedError);
+            return std::make_pair(jsNull(), UnspecifiedError);
         CloneDeserializer deserializer(exec, globalObject, messagePorts, arrayBufferContentsArray, buffer);
         if (!deserializer.isValid())
-            return make_pair(JSValue(), ValidationError);
+            return std::make_pair(JSValue(), ValidationError);
         return deserializer.deserialize();
     }
 
@@ -1091,7 +1461,7 @@ private:
                       const Vector<uint8_t>& buffer)
         : CloneBase(exec)
         , m_globalObject(globalObject)
-        , m_isDOMGlobalObject(globalObject->inherits(&JSDOMGlobalObject::s_info))
+        , m_isDOMGlobalObject(globalObject->inherits(JSDOMGlobalObject::info()))
         , m_ptr(buffer.data())
         , m_end(buffer.data() + buffer.size())
         , m_version(0xFFFFFFFF)
@@ -1107,7 +1477,7 @@ private:
 
     void throwValidationError()
     {
-        throwError(m_exec, createTypeError(m_exec, "Unable to deserialize data."));
+        m_exec->vm().throwException(m_exec, createTypeError(m_exec, "Unable to deserialize data."));
     }
 
     bool isValid() const { return m_version <= CurrentVersion; }
@@ -1214,7 +1584,7 @@ private:
 
     static bool readString(const uint8_t*& ptr, const uint8_t* end, String& str, unsigned length)
     {
-        if (length >= numeric_limits<int32_t>::max() / sizeof(UChar))
+        if (length >= std::numeric_limits<int32_t>::max() / sizeof(UChar))
             return false;
 
         unsigned size = length * sizeof(UChar);
@@ -1314,7 +1684,7 @@ private:
         if (!readStringData(type))
             return 0;
         if (m_isDOMGlobalObject)
-            file = File::create(path->string(), KURL(KURL(), url->string()), type->string());
+            file = File::create(path->string(), URL(URL(), url->string()), type->string());
         return true;
     }
 
@@ -1342,7 +1712,7 @@ private:
         if (!read(byteLength))
             return false;
         JSObject* arrayBufferObj = asObject(readTerminal());
-        if (!arrayBufferObj || !arrayBufferObj->inherits(&JSArrayBuffer::s_info))
+        if (!arrayBufferObj || !arrayBufferObj->inherits(JSArrayBuffer::info()))
             return false;
 
         unsigned elementSize = typedArrayElementSize(arrayBufferViewSubtag);
@@ -1389,6 +1759,307 @@ private:
         }
     }
 
+    bool read(Vector<uint8_t>& result)
+    {
+        ASSERT(result.isEmpty());
+        uint32_t size;
+        if (!read(size))
+            return false;
+        if (m_ptr + size > m_end)
+            return false;
+        result.append(m_ptr, size);
+        m_ptr += size;
+        return true;
+    }
+
+#if ENABLE(SUBTLE_CRYPTO)
+    bool read(CryptoAlgorithmIdentifier& result)
+    {
+        uint8_t algorithmTag;
+        if (!read(algorithmTag))
+            return false;
+        if (algorithmTag > cryptoAlgorithmIdentifierTagMaximumValue)
+            return false;
+        switch (static_cast<CryptoAlgorithmIdentifierTag>(algorithmTag)) {
+        case CryptoAlgorithmIdentifierTag::RSAES_PKCS1_v1_5:
+            result = CryptoAlgorithmIdentifier::RSAES_PKCS1_v1_5;
+            break;
+        case CryptoAlgorithmIdentifierTag::RSASSA_PKCS1_v1_5:
+            result = CryptoAlgorithmIdentifier::RSASSA_PKCS1_v1_5;
+            break;
+        case CryptoAlgorithmIdentifierTag::RSA_PSS:
+            result = CryptoAlgorithmIdentifier::RSA_PSS;
+            break;
+        case CryptoAlgorithmIdentifierTag::RSA_OAEP:
+            result = CryptoAlgorithmIdentifier::RSA_OAEP;
+            break;
+        case CryptoAlgorithmIdentifierTag::ECDSA:
+            result = CryptoAlgorithmIdentifier::ECDSA;
+            break;
+        case CryptoAlgorithmIdentifierTag::ECDH:
+            result = CryptoAlgorithmIdentifier::ECDH;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_CTR:
+            result = CryptoAlgorithmIdentifier::AES_CTR;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_CBC:
+            result = CryptoAlgorithmIdentifier::AES_CBC;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_CMAC:
+            result = CryptoAlgorithmIdentifier::AES_CMAC;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_GCM:
+            result = CryptoAlgorithmIdentifier::AES_GCM;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_CFB:
+            result = CryptoAlgorithmIdentifier::AES_CFB;
+            break;
+        case CryptoAlgorithmIdentifierTag::AES_KW:
+            result = CryptoAlgorithmIdentifier::AES_KW;
+            break;
+        case CryptoAlgorithmIdentifierTag::HMAC:
+            result = CryptoAlgorithmIdentifier::HMAC;
+            break;
+        case CryptoAlgorithmIdentifierTag::DH:
+            result = CryptoAlgorithmIdentifier::DH;
+            break;
+        case CryptoAlgorithmIdentifierTag::SHA_1:
+            result = CryptoAlgorithmIdentifier::SHA_1;
+            break;
+        case CryptoAlgorithmIdentifierTag::SHA_224:
+            result = CryptoAlgorithmIdentifier::SHA_224;
+            break;
+        case CryptoAlgorithmIdentifierTag::SHA_256:
+            result = CryptoAlgorithmIdentifier::SHA_256;
+            break;
+        case CryptoAlgorithmIdentifierTag::SHA_384:
+            result = CryptoAlgorithmIdentifier::SHA_384;
+            break;
+        case CryptoAlgorithmIdentifierTag::SHA_512:
+            result = CryptoAlgorithmIdentifier::SHA_512;
+            break;
+        case CryptoAlgorithmIdentifierTag::CONCAT:
+            result = CryptoAlgorithmIdentifier::CONCAT;
+            break;
+        case CryptoAlgorithmIdentifierTag::HKDF_CTR:
+            result = CryptoAlgorithmIdentifier::HKDF_CTR;
+            break;
+        case CryptoAlgorithmIdentifierTag::PBKDF2:
+            result = CryptoAlgorithmIdentifier::PBKDF2;
+            break;
+        }
+        return true;
+    }
+
+    bool read(CryptoKeyClassSubtag& result)
+    {
+        uint8_t tag;
+        if (!read(tag))
+            return false;
+        if (tag > cryptoKeyClassSubtagMaximumValue)
+            return false;
+        result = static_cast<CryptoKeyClassSubtag>(tag);
+        return true;
+    }
+
+    bool read(CryptoKeyUsageTag& result)
+    {
+        uint8_t tag;
+        if (!read(tag))
+            return false;
+        if (tag > cryptoKeyUsageTagMaximumValue)
+            return false;
+        result = static_cast<CryptoKeyUsageTag>(tag);
+        return true;
+    }
+
+    bool read(CryptoKeyAsymmetricTypeSubtag& result)
+    {
+        uint8_t tag;
+        if (!read(tag))
+            return false;
+        if (tag > cryptoKeyAsymmetricTypeSubtagMaximumValue)
+            return false;
+        result = static_cast<CryptoKeyAsymmetricTypeSubtag>(tag);
+        return true;
+    }
+
+    bool readHMACKey(bool extractable, CryptoKeyUsage usages, RefPtr<CryptoKey>& result)
+    {
+        Vector<uint8_t> keyData;
+        if (!read(keyData))
+            return false;
+        CryptoAlgorithmIdentifier hash;
+        if (!read(hash))
+            return false;
+        result = CryptoKeyHMAC::create(keyData, hash, extractable, usages);
+        return true;
+    }
+
+    bool readAESKey(bool extractable, CryptoKeyUsage usages, RefPtr<CryptoKey>& result)
+    {
+        CryptoAlgorithmIdentifier algorithm;
+        if (!read(algorithm))
+            return false;
+        if (!CryptoKeyAES::isValidAESAlgorithm(algorithm))
+            return false;
+        Vector<uint8_t> keyData;
+        if (!read(keyData))
+            return false;
+        result = CryptoKeyAES::create(algorithm, keyData, extractable, usages);
+        return true;
+    }
+
+    bool readRSAKey(bool extractable, CryptoKeyUsage usages, RefPtr<CryptoKey>& result)
+    {
+        CryptoAlgorithmIdentifier algorithm;
+        if (!read(algorithm))
+            return false;
+
+        int32_t isRestrictedToHash;
+        CryptoAlgorithmIdentifier hash;
+        if (!read(isRestrictedToHash))
+            return false;
+        if (isRestrictedToHash && !read(hash))
+            return false;
+
+        CryptoKeyAsymmetricTypeSubtag type;
+        if (!read(type))
+            return false;
+
+        Vector<uint8_t> modulus;
+        if (!read(modulus))
+            return false;
+        Vector<uint8_t> exponent;
+        if (!read(exponent))
+            return false;
+
+        if (type == CryptoKeyAsymmetricTypeSubtag::Public) {
+            auto keyData = CryptoKeyDataRSAComponents::createPublic(modulus, exponent);
+            auto key = CryptoKeyRSA::create(algorithm, *keyData, extractable, usages);
+            if (isRestrictedToHash)
+                key->restrictToHash(hash);
+            result = std::move(key);
+            return true;
+        }
+
+        Vector<uint8_t> privateExponent;
+        if (!read(privateExponent))
+            return false;
+
+        uint32_t primeCount;
+        if (!read(primeCount))
+            return false;
+
+        if (!primeCount) {
+            auto keyData = CryptoKeyDataRSAComponents::createPrivate(modulus, exponent, privateExponent);
+            auto key = CryptoKeyRSA::create(algorithm, *keyData, extractable, usages);
+            if (isRestrictedToHash)
+                key->restrictToHash(hash);
+            result = std::move(key);
+            return true;
+        }
+
+        if (primeCount < 2)
+            return false;
+
+        CryptoKeyDataRSAComponents::PrimeInfo firstPrimeInfo;
+        CryptoKeyDataRSAComponents::PrimeInfo secondPrimeInfo;
+        Vector<CryptoKeyDataRSAComponents::PrimeInfo> otherPrimeInfos(primeCount - 2);
+
+        if (!read(firstPrimeInfo.primeFactor))
+            return false;
+        if (!read(firstPrimeInfo.factorCRTExponent))
+            return false;
+        if (!read(secondPrimeInfo.primeFactor))
+            return false;
+        if (!read(secondPrimeInfo.factorCRTExponent))
+            return false;
+        if (!read(secondPrimeInfo.factorCRTCoefficient))
+            return false;
+        for (unsigned i = 2; i < primeCount; ++i) {
+            if (!read(otherPrimeInfos[i].primeFactor))
+                return false;
+            if (!read(otherPrimeInfos[i].factorCRTExponent))
+                return false;
+            if (!read(otherPrimeInfos[i].factorCRTCoefficient))
+                return false;
+        }
+
+        auto keyData = CryptoKeyDataRSAComponents::createPrivateWithAdditionalData(modulus, exponent, privateExponent, firstPrimeInfo, secondPrimeInfo, otherPrimeInfos);
+        auto key = CryptoKeyRSA::create(algorithm, *keyData, extractable, usages);
+        if (isRestrictedToHash)
+            key->restrictToHash(hash);
+        result = std::move(key);
+        return true;
+    }
+
+    bool readCryptoKey(JSValue& cryptoKey)
+    {
+        int32_t extractable;
+        if (!read(extractable))
+            return false;
+
+        uint32_t usagesCount;
+        if (!read(usagesCount))
+            return false;
+
+        CryptoKeyUsage usages = 0;
+        for (uint32_t i = 0; i < usagesCount; ++i) {
+            CryptoKeyUsageTag usage;
+            if (!read(usage))
+                return false;
+            switch (usage) {
+            case CryptoKeyUsageTag::Encrypt:
+                usages |= CryptoKeyUsageEncrypt;
+                break;
+            case CryptoKeyUsageTag::Decrypt:
+                usages |= CryptoKeyUsageDecrypt;
+                break;
+            case CryptoKeyUsageTag::Sign:
+                usages |= CryptoKeyUsageSign;
+                break;
+            case CryptoKeyUsageTag::Verify:
+                usages |= CryptoKeyUsageVerify;
+                break;
+            case CryptoKeyUsageTag::DeriveKey:
+                usages |= CryptoKeyUsageDeriveKey;
+                break;
+            case CryptoKeyUsageTag::DeriveBits:
+                usages |= CryptoKeyUsageDeriveBits;
+                break;
+            case CryptoKeyUsageTag::WrapKey:
+                usages |= CryptoKeyUsageWrapKey;
+                break;
+            case CryptoKeyUsageTag::UnwrapKey:
+                usages |= CryptoKeyUsageUnwrapKey;
+                break;
+            }
+        }
+
+        CryptoKeyClassSubtag cryptoKeyClass;
+        if (!read(cryptoKeyClass))
+            return false;
+        RefPtr<CryptoKey> result;
+        switch (cryptoKeyClass) {
+        case CryptoKeyClassSubtag::HMAC:
+            if (!readHMACKey(extractable, usages, result))
+                return false;
+            break;
+        case CryptoKeyClassSubtag::AES:
+            if (!readAESKey(extractable, usages, result))
+                return false;
+            break;
+        case CryptoKeyClassSubtag::RSA:
+            if (!readRSAKey(extractable, usages, result))
+                return false;
+            break;
+        }
+        cryptoKey = getJSValue(result.get());
+        return true;
+    }
+#endif
+
     template<class T>
     JSValue getJSValue(T* nativeObj)
     {
@@ -1418,14 +2089,14 @@ private:
         case TrueTag:
             return jsBoolean(true);
         case FalseObjectTag: {
-            BooleanObject* obj = BooleanObject::create(m_exec->globalData(), m_globalObject->booleanObjectStructure());
-            obj->setInternalValue(m_exec->globalData(), jsBoolean(false));
+            BooleanObject* obj = BooleanObject::create(m_exec->vm(), m_globalObject->booleanObjectStructure());
+            obj->setInternalValue(m_exec->vm(), jsBoolean(false));
             m_gcBuffer.append(obj);
             return obj;
         }
         case TrueObjectTag: {
-            BooleanObject* obj = BooleanObject::create(m_exec->globalData(), m_globalObject->booleanObjectStructure());
-            obj->setInternalValue(m_exec->globalData(), jsBoolean(true));
+            BooleanObject* obj = BooleanObject::create(m_exec->vm(), m_globalObject->booleanObjectStructure());
+            obj->setInternalValue(m_exec->vm(), jsBoolean(true));
              m_gcBuffer.append(obj);
             return obj;
         }
@@ -1447,7 +2118,7 @@ private:
             double d;
             if (!read(d))
                 return JSValue();
-            return DateInstance::create(m_exec, m_globalObject->dateStructure(), d);
+            return DateInstance::create(m_exec->vm(), m_globalObject->dateStructure(), d);
         }
         case FileTag: {
             RefPtr<File> file;
@@ -1508,7 +2179,7 @@ private:
                 return JSValue();
             if (!m_isDOMGlobalObject)
                 return jsNull();
-            return getJSValue(Blob::create(KURL(KURL(), url->string()), type->string(), size).get());
+            return getJSValue(Blob::create(URL(URL(), url->string()), type->string(), size).get());
         }
         case StringTag: {
             CachedStringRef cachedString;
@@ -1517,17 +2188,18 @@ private:
             return cachedString->jsString(m_exec);
         }
         case EmptyStringTag:
-            return jsEmptyString(&m_exec->globalData());
+            return jsEmptyString(&m_exec->vm());
         case StringObjectTag: {
             CachedStringRef cachedString;
             if (!readStringData(cachedString))
                 return JSValue();
-            StringObject* obj = constructString(m_exec, m_globalObject, cachedString->jsString(m_exec));
+            StringObject* obj = constructString(m_exec->vm(), m_globalObject, cachedString->jsString(m_exec));
             m_gcBuffer.append(obj);
             return obj;
         }
         case EmptyStringObjectTag: {
-            StringObject* obj = constructString(m_exec, m_globalObject, jsEmptyString(&m_exec->globalData()));
+            VM& vm = m_exec->vm();
+            StringObject* obj = constructString(vm, m_globalObject, jsEmptyString(&vm));
             m_gcBuffer.append(obj);
             return obj;
         }
@@ -1540,8 +2212,9 @@ private:
                 return JSValue();
             RegExpFlags reFlags = regExpFlags(flags->string());
             ASSERT(reFlags != InvalidFlags);
-            RegExp* regExp = RegExp::create(m_exec->globalData(), pattern->string(), reFlags);
-            return RegExpObject::create(m_exec, m_exec->lexicalGlobalObject(), m_globalObject->regExpStructure(), regExp); 
+            VM& vm = m_exec->vm();
+            RegExp* regExp = RegExp::create(vm, pattern->string(), reFlags);
+            return RegExpObject::create(vm, m_globalObject->regExpStructure(), regExp);
         }
         case ObjectReferenceTag: {
             unsigned index = 0;
@@ -1592,10 +2265,29 @@ private:
             m_gcBuffer.append(arrayBufferView);
             return arrayBufferView;
         }
+#if ENABLE(SUBTLE_CRYPTO)
+        case CryptoKeyTag: {
+            JSValue cryptoKey;
+            if (!readCryptoKey(cryptoKey)) {
+                fail();
+                return JSValue();
+            }
+            m_gcBuffer.append(cryptoKey);
+            return cryptoKey;
+        }
+#endif
         default:
             m_ptr--; // Push the tag back
             return JSValue();
         }
+    }
+
+    bool consumeMapDataTerminationIfPossible()
+    {
+        if (readTag() == NonMapPropertiesTag)
+            return true;
+        m_ptr--;
+        return false;
     }
 
     JSGlobalObject* m_globalObject;
@@ -1614,11 +2306,12 @@ DeserializationResult CloneDeserializer::deserialize()
     Vector<uint32_t, 16> indexStack;
     Vector<Identifier, 16> propertyNameStack;
     Vector<JSObject*, 32> outputObjectStack;
+    Vector<JSValue, 4> keyStack;
+    Vector<MapData*, 4> mapDataStack;
     Vector<WalkerState, 16> stateStack;
     WalkerState state = StateUnknown;
     JSValue outValue;
 
-    unsigned tickCount = ticksUntilNextCheck();
     while (1) {
         switch (state) {
         arrayStartState:
@@ -1631,16 +2324,10 @@ DeserializationResult CloneDeserializer::deserialize()
             JSArray* outArray = constructEmptyArray(m_exec, 0, m_globalObject, length);
             m_gcBuffer.append(outArray);
             outputObjectStack.append(outArray);
-            // fallthrough
         }
         arrayStartVisitMember:
+        FALLTHROUGH;
         case ArrayStartVisitMember: {
-            if (!--tickCount) {
-                if (didTimeOut())
-                    return make_pair(JSValue(), InterruptedExecutionError);
-                tickCount = ticksUntilNextCheck();
-            }
-
             uint32_t index;
             if (!read(index)) {
                 fail();
@@ -1674,20 +2361,14 @@ DeserializationResult CloneDeserializer::deserialize()
         objectStartState:
         case ObjectStartState: {
             if (outputObjectStack.size() > maximumFilterRecursion)
-                return make_pair(JSValue(), StackOverflowError);
+                return std::make_pair(JSValue(), StackOverflowError);
             JSObject* outObject = constructEmptyObject(m_exec, m_globalObject->objectPrototype());
             m_gcBuffer.append(outObject);
             outputObjectStack.append(outObject);
-            // fallthrough
         }
         objectStartVisitMember:
+        FALLTHROUGH;
         case ObjectStartVisitMember: {
-            if (!--tickCount) {
-                if (didTimeOut())
-                    return make_pair(JSValue(), InterruptedExecutionError);
-                tickCount = ticksUntilNextCheck();
-            }
-
             CachedStringRef cachedString;
             bool wasTerminator = false;
             if (!readStringData(cachedString, wasTerminator)) {
@@ -1713,6 +2394,47 @@ DeserializationResult CloneDeserializer::deserialize()
             propertyNameStack.removeLast();
             goto objectStartVisitMember;
         }
+        mapObjectStartState: {
+            if (outputObjectStack.size() > maximumFilterRecursion)
+                return std::make_pair(JSValue(), StackOverflowError);
+            JSMap* map = JSMap::create(m_exec->vm(), m_globalObject->mapStructure());
+            m_gcBuffer.append(map);
+            outputObjectStack.append(map);
+            MapData* mapData = map->mapData();
+            mapDataStack.append(mapData);
+            goto mapDataStartVisitEntry;
+        }
+        setObjectStartState: {
+            if (outputObjectStack.size() > maximumFilterRecursion)
+                return std::make_pair(JSValue(), StackOverflowError);
+            JSSet* set = JSSet::create(m_exec->vm(), m_globalObject->setStructure());
+            m_gcBuffer.append(set);
+            outputObjectStack.append(set);
+            MapData* mapData = set->mapData();
+            mapDataStack.append(mapData);
+            goto mapDataStartVisitEntry;
+        }
+        mapDataStartVisitEntry:
+        case MapDataStartVisitEntry: {
+            if (consumeMapDataTerminationIfPossible()) {
+                mapDataStack.removeLast();
+                goto objectStartVisitMember;
+            }
+            stateStack.append(MapDataEndVisitKey);
+            goto stateUnknown;
+        }
+
+        case MapDataEndVisitKey: {
+            keyStack.append(outValue);
+            stateStack.append(MapDataEndVisitValue);
+            goto stateUnknown;
+        }
+
+        case MapDataEndVisitValue: {
+            mapDataStack.last()->set(m_exec, keyStack.last(), outValue);
+            keyStack.removeLast();
+            goto mapDataStartVisitEntry;
+        }
         stateUnknown:
         case StateUnknown:
             if (JSValue terminal = readTerminal()) {
@@ -1724,6 +2446,10 @@ DeserializationResult CloneDeserializer::deserialize()
                 goto arrayStartState;
             if (tag == ObjectTag)
                 goto objectStartState;
+            if (tag == MapObjectTag)
+                goto mapObjectStartState;
+            if (tag == SetObjectTag)
+                goto setObjectStartState;
             goto error;
         }
         if (stateStack.isEmpty())
@@ -1731,22 +2457,23 @@ DeserializationResult CloneDeserializer::deserialize()
 
         state = stateStack.last();
         stateStack.removeLast();
-
-        if (!--tickCount) {
-            if (didTimeOut())
-                return make_pair(JSValue(), InterruptedExecutionError);
-            tickCount = ticksUntilNextCheck();
-        }
     }
     ASSERT(outValue);
     ASSERT(!m_failed);
-    return make_pair(outValue, SuccessfullyCompleted);
+    return std::make_pair(outValue, SuccessfullyCompleted);
 error:
     fail();
-    return make_pair(JSValue(), ValidationError);
+    return std::make_pair(JSValue(), ValidationError);
 }
 
-
+void SerializedScriptValue::addBlobURL(const String& string)
+{
+    m_blobURLs.append(Vector<uint16_t>());
+    m_blobURLs.last().reserveCapacity(string.length());
+    for (size_t i = 0; i < string.length(); i++)
+        m_blobURLs.last().append(string.characterAt(i));
+    m_blobURLs.last().resize(m_blobURLs.last().size());
+}
 
 SerializedScriptValue::~SerializedScriptValue()
 {
@@ -1765,18 +2492,20 @@ SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>& buffer)
 SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>& buffer, Vector<String>& blobURLs)
 {
     m_data.swap(buffer);
-    m_blobURLs.swap(blobURLs);
+    for (auto& string : blobURLs)
+        addBlobURL(string);
 }
 
 SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>& buffer, Vector<String>& blobURLs, PassOwnPtr<ArrayBufferContentsArray> arrayBufferContentsArray)
     : m_arrayBufferContentsArray(arrayBufferContentsArray)
 {
     m_data.swap(buffer);
-    m_blobURLs.swap(blobURLs);
+    for (auto& string : blobURLs)
+        addBlobURL(string);
 }
 
 PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValue::transferArrayBuffers(
-    ArrayBufferArray& arrayBuffers, SerializationReturnCode& code)
+    ExecState* exec, ArrayBufferArray& arrayBuffers, SerializationReturnCode& code)
 {
     for (size_t i = 0; i < arrayBuffers.size(); i++) {
         if (arrayBuffers[i]->isNeutered()) {
@@ -1786,16 +2515,16 @@ PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValu
     }
 
     OwnPtr<ArrayBufferContentsArray> contents = adoptPtr(new ArrayBufferContentsArray(arrayBuffers.size()));
+    Vector<Ref<DOMWrapperWorld>> worlds;
+    static_cast<WebCoreJSClientData*>(exec->vm().clientData)->getAllWorlds(worlds);
 
-    HashSet<WTF::ArrayBuffer*> visited;
-    for (size_t i = 0; i < arrayBuffers.size(); i++) {
-        Vector<RefPtr<ArrayBufferView> > neuteredViews;
-
-        if (visited.contains(arrayBuffers[i].get()))
+    HashSet<JSC::ArrayBuffer*> visited;
+    for (size_t arrayBufferIndex = 0; arrayBufferIndex < arrayBuffers.size(); arrayBufferIndex++) {
+        if (visited.contains(arrayBuffers[arrayBufferIndex].get()))
             continue;
-        visited.add(arrayBuffers[i].get());
+        visited.add(arrayBuffers[arrayBufferIndex].get());
 
-        bool result = arrayBuffers[i]->transfer(contents->at(i), neuteredViews);
+        bool result = arrayBuffers[arrayBufferIndex]->transfer(contents->at(arrayBufferIndex));
         if (!result) {
             code = ValidationError;
             return nullptr;
@@ -1816,7 +2545,7 @@ PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(ExecState* exec,
     OwnPtr<ArrayBufferContentsArray> arrayBufferContentsArray;
 
     if (arrayBuffers && serializationDidCompleteSuccessfully(code))
-        arrayBufferContentsArray = transferArrayBuffers(*arrayBuffers, code);
+        arrayBufferContentsArray = transferArrayBuffers(exec, *arrayBuffers, code);
 
     if (throwExceptions == Throwing)
         maybeThrowExceptionIfSerializationFailed(exec, code);
@@ -1900,10 +2629,10 @@ JSValue SerializedScriptValue::deserialize(ExecState* exec, JSGlobalObject* glob
 }
 
 #if ENABLE(INSPECTOR)
-ScriptValue SerializedScriptValue::deserializeForInspector(ScriptState* scriptState)
+Deprecated::ScriptValue SerializedScriptValue::deserializeForInspector(JSC::ExecState* scriptState)
 {
     JSValue value = deserialize(scriptState, scriptState->lexicalGlobalObject(), 0);
-    return ScriptValue(scriptState->globalData(), value);
+    return Deprecated::ScriptValue(scriptState->vm(), value);
 }
 #endif
 
@@ -1947,6 +2676,23 @@ PassRefPtr<SerializedScriptValue> SerializedScriptValue::booleanValue(bool value
     return adoptRef(new SerializedScriptValue(buffer));
 }
 
+PassRefPtr<SerializedScriptValue> SerializedScriptValue::serialize(const Deprecated::ScriptValue& value, JSC::ExecState* scriptState, SerializationErrorMode throwExceptions)
+{
+    return SerializedScriptValue::create(scriptState, value.jsValue(), nullptr, nullptr, throwExceptions);
+}
+
+PassRefPtr<SerializedScriptValue> SerializedScriptValue::serialize(const Deprecated::ScriptValue& value, JSC::ExecState* scriptState, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, bool& didThrow)
+{
+    RefPtr<SerializedScriptValue> serializedValue = SerializedScriptValue::create(scriptState, value.jsValue(), messagePorts, arrayBuffers);
+    didThrow = scriptState->hadException();
+    return serializedValue.release();
+}
+
+Deprecated::ScriptValue SerializedScriptValue::deserialize(JSC::ExecState* scriptState, SerializedScriptValue* value, SerializationErrorMode throwExceptions)
+{
+    return Deprecated::ScriptValue(scriptState->vm(), value->deserialize(scriptState, scriptState->lexicalGlobalObject(), 0, throwExceptions));
+}
+
 void SerializedScriptValue::maybeThrowExceptionIfSerializationFailed(ExecState* exec, SerializationReturnCode code)
 {
     if (code == SuccessfullyCompleted)
@@ -1954,13 +2700,10 @@ void SerializedScriptValue::maybeThrowExceptionIfSerializationFailed(ExecState* 
     
     switch (code) {
     case StackOverflowError:
-        throwError(exec, createStackOverflowError(exec));
-        break;
-    case InterruptedExecutionError:
-        throwError(exec, createInterruptedExecutionException(&exec->globalData()));
+        exec->vm().throwException(exec, createStackOverflowError(exec));
         break;
     case ValidationError:
-        throwError(exec, createTypeError(exec, "Unable to deserialize data."));
+        exec->vm().throwException(exec, createTypeError(exec, "Unable to deserialize data."));
         break;
     case DataCloneError:
         setDOMException(exec, DATA_CLONE_ERR);

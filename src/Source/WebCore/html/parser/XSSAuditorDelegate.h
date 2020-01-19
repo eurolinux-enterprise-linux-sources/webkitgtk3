@@ -26,47 +26,46 @@
 #ifndef XSSAuditorDelegate_h
 #define XSSAuditorDelegate_h
 
-#include "KURL.h"
+#include "URL.h"
+#include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
-#include <wtf/text/WTFString.h>
+#include <wtf/Vector.h>
+#include <wtf/text/TextPosition.h>
 
 namespace WebCore {
 
 class Document;
+class FormData;
 
 class XSSInfo {
 public:
-    static PassOwnPtr<XSSInfo> create(const KURL& reportURL, const String& originalURL, const String& originalHTTPBody, bool didBlockEntirePage)
+    XSSInfo(bool didBlockEntirePage, bool didSendXSSProtectionHeader, bool didSendCSPHeader)
+        : m_didBlockEntirePage(didBlockEntirePage)
+        , m_didSendXSSProtectionHeader(didSendXSSProtectionHeader)
+        , m_didSendCSPHeader(didSendCSPHeader)
     {
-        return adoptPtr(new XSSInfo(reportURL, originalURL, originalHTTPBody, didBlockEntirePage));
     }
 
-    bool isSafeToSendToAnotherThread() const;
-
-    KURL m_reportURL;
-    String m_originalURL;
-    String m_originalHTTPBody;
     bool m_didBlockEntirePage;
-
-private:
-    XSSInfo(const KURL& reportURL, const String& originalURL, const String& originalHTTPBody, bool didBlockEntirePage)
-        : m_reportURL(reportURL)
-        , m_originalURL(originalURL)
-        , m_originalHTTPBody(originalHTTPBody)
-        , m_didBlockEntirePage(didBlockEntirePage)
-    { }
+    bool m_didSendXSSProtectionHeader;
+    bool m_didSendCSPHeader;
+    TextPosition m_textPosition;
 };
 
 class XSSAuditorDelegate {
     WTF_MAKE_NONCOPYABLE(XSSAuditorDelegate);
 public:
-    explicit XSSAuditorDelegate(Document*);
+    explicit XSSAuditorDelegate(Document&);
 
     void didBlockScript(const XSSInfo&);
+    void setReportURL(const URL& url) { m_reportURL = url; }
 
 private:
-    Document* m_document;
-    bool m_didNotifyClient;
+    PassRefPtr<FormData> generateViolationReport();
+
+    Document& m_document;
+    bool m_didSendNotifications;
+    URL m_reportURL;
 };
 
 }

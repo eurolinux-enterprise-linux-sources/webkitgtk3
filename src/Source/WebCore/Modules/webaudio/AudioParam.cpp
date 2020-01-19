@@ -136,8 +136,8 @@ void AudioParam::calculateFinalValues(float* values, unsigned numberOfValues, bo
 
     // Now sum all of the audio-rate connections together (unity-gain summing junction).
     // Note that connections would normally be mono, but we mix down to mono if necessary.
-    AudioBus summingBus(1, numberOfValues, false);
-    summingBus.setChannelMemory(0, values, numberOfValues);
+    RefPtr<AudioBus> summingBus = AudioBus::create(1, numberOfValues, false);
+    summingBus->setChannelMemory(0, values, numberOfValues);
 
     for (unsigned i = 0; i < numberOfRenderingConnections(); ++i) {
         AudioNodeOutput* output = renderingOutput(i);
@@ -147,7 +147,7 @@ void AudioParam::calculateFinalValues(float* values, unsigned numberOfValues, bo
         AudioBus* connectionBus = output->pull(0, AudioNode::ProcessingSizeInFrames);
 
         // Sum, with unity-gain.
-        summingBus.sumFrom(*connectionBus);
+        summingBus->sumFrom(*connectionBus);
     }
 }
 
@@ -172,11 +172,10 @@ void AudioParam::connect(AudioNodeOutput* output)
     if (!output)
         return;
 
-    if (m_outputs.contains(output))
+    if (!m_outputs.add(output).isNewEntry)
         return;
 
     output->addParam(this);
-    m_outputs.add(output);
     changedOutputs();
 }
 
@@ -188,8 +187,7 @@ void AudioParam::disconnect(AudioNodeOutput* output)
     if (!output)
         return;
 
-    if (m_outputs.contains(output)) {
-        m_outputs.remove(output);
+    if (m_outputs.remove(output)) {
         changedOutputs();
         output->removeParam(this);
     }

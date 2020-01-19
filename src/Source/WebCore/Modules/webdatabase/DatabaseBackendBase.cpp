@@ -40,20 +40,18 @@
 #include "DatabaseTracker.h"
 #include "ExceptionCode.h"
 #include "Logging.h"
+#include "SQLiteDatabaseTracker.h"
 #include "SQLiteStatement.h"
 #include "SQLiteTransaction.h"
 #include "SecurityOrigin.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringHash.h>
-
-#if PLATFORM(CHROMIUM)
-#include "DatabaseObserver.h" // For error reporting.
-#endif
 
 // Registering "opened" databases with the DatabaseTracker
 // =======================================================
@@ -87,7 +85,26 @@
 namespace WebCore {
 
 static const char versionKey[] = "WebKitDatabaseVersionKey";
-static const char infoTableName[] = "__WebKitDatabaseInfoTable__";
+static const char unqualifiedInfoTableName[] = "__WebKitDatabaseInfoTable__";
+
+const char* DatabaseBackendBase::databaseInfoTableName()
+{
+    return unqualifiedInfoTableName;
+}
+
+static const char* fullyQualifiedInfoTableName()
+{
+    static const char qualifier[] = "main.";
+    static char qualifiedName[sizeof(qualifier) + sizeof(unqualifiedInfoTableName) - 1];
+
+    static std::once_flag onceFlag;
+    std::call_once(onceFlag, []{
+        strcpy(qualifiedName, qualifier);
+        strcpy(qualifiedName + strlen(qualifier), unqualifiedInfoTableName);
+    });
+
+    return qualifiedName;
+}
 
 static String formatErrorMessage(const char* message, int sqliteErrorCode, const char* sqliteErrorMessage)
 {
@@ -140,18 +157,25 @@ static bool setTextValueInDatabase(SQLiteDatabase& db, const String& query, cons
 }
 
 // FIXME: move all guid-related functions to a DatabaseVersionTracker class.
-static Mutex& guidMutex()
+static std::mutex& guidMutex()
 {
-    AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
-    return mutex;
+    static std::once_flag onceFlag;
+    static std::mutex* mutex;
+
+    std::call_once(onceFlag, []{
+        mutex = std::make_unique<std::mutex>().release();
+    });
+
+    return *mutex;
 }
 
 typedef HashMap<DatabaseGuid, String> GuidVersionMap;
 static GuidVersionMap& guidToVersionMap()
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
-    DEFINE_STATIC_LOCAL(GuidVersionMap, map, ());
+    ASSERT(!guidMutex().try_lock());
+
+    static NeverDestroyed<GuidVersionMap> map;
     return map;
 }
 
@@ -159,7 +183,7 @@ static GuidVersionMap& guidToVersionMap()
 static inline void updateGuidVersionMap(DatabaseGuid guid, String newVersion)
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(!guidMutex().try_lock());
 
     // Note: It is not safe to put an empty string into the guidToVersionMap() map.
     // That's because the map is cross-thread, but empty strings are per-thread.
@@ -171,39 +195,42 @@ static inline void updateGuidVersionMap(DatabaseGuid guid, String newVersion)
     guidToVersionMap().set(guid, newVersion.isEmpty() ? String() : newVersion.isolatedCopy());
 }
 
-typedef HashMap<DatabaseGuid, HashSet<DatabaseBackendBase*>*> GuidDatabaseMap;
+typedef HashMap<DatabaseGuid, std::unique_ptr<HashSet<DatabaseBackendBase*>>> GuidDatabaseMap;
+
 static GuidDatabaseMap& guidToDatabaseMap()
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
-    DEFINE_STATIC_LOCAL(GuidDatabaseMap, map, ());
+    ASSERT(!guidMutex().try_lock());
+
+    static NeverDestroyed<GuidDatabaseMap> map;
     return map;
 }
 
 static DatabaseGuid guidForOriginAndName(const String& origin, const String& name)
 {
     // Ensure the the mutex is locked.
-    ASSERT(!guidMutex().tryLock());
+    ASSERT(!guidMutex().try_lock());
 
     String stringID = origin + "/" + name;
 
     typedef HashMap<String, int> IDGuidMap;
-    DEFINE_STATIC_LOCAL(IDGuidMap, stringIdentifierToGUIDMap, ());
-    DatabaseGuid guid = stringIdentifierToGUIDMap.get(stringID);
+    static NeverDestroyed<HashMap<String, int>> map;
+    DatabaseGuid guid = map.get().get(stringID);
     if (!guid) {
         static int currentNewGUID = 1;
         guid = currentNewGUID++;
-        stringIdentifierToGUIDMap.set(stringID, guid);
+        map.get().set(stringID, guid);
     }
 
     return guid;
 }
 
-// static
-const char* DatabaseBackendBase::databaseInfoTableName()
+#if !LOG_DISABLED || !ERROR_DISABLED
+String DatabaseBackendBase::databaseDebugName() const
 {
-    return infoTableName;
+    return m_contextThreadSecurityOrigin->toString() + "::" + m_name;
 }
+#endif
 
 DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseBackendContext> databaseContext, const String& name,
     const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseType databaseType)
@@ -212,27 +239,24 @@ DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseBackendContext> data
     , m_expectedVersion(expectedVersion.isolatedCopy())
     , m_displayName(displayName.isolatedCopy())
     , m_estimatedSize(estimatedSize)
-    , m_guid(0)
     , m_opened(false)
     , m_new(false)
     , m_isSyncDatabase(databaseType == DatabaseType::Sync)
 {
     m_contextThreadSecurityOrigin = m_databaseContext->securityOrigin()->isolatedCopy();
 
-    m_databaseAuthorizer = DatabaseAuthorizer::create(infoTableName);
+    m_databaseAuthorizer = DatabaseAuthorizer::create(unqualifiedInfoTableName);
 
     if (m_name.isNull())
-        m_name = "";
+        m_name = emptyString();
 
     {
-        MutexLocker locker(guidMutex());
-        m_guid = guidForOriginAndName(securityOrigin()->toString(), name);
-        HashSet<DatabaseBackendBase*>* hashSet = guidToDatabaseMap().get(m_guid);
-        if (!hashSet) {
-            hashSet = new HashSet<DatabaseBackendBase*>;
-            guidToDatabaseMap().set(m_guid, hashSet);
-        }
+        std::lock_guard<std::mutex> locker(guidMutex());
 
+        m_guid = guidForOriginAndName(securityOrigin()->toString(), name);
+        std::unique_ptr<HashSet<DatabaseBackendBase*>>& hashSet = guidToDatabaseMap().add(m_guid, nullptr).iterator->value;
+        if (!hashSet)
+            hashSet = std::make_unique<HashSet<DatabaseBackendBase*>>();
         hashSet->add(this);
     }
 
@@ -263,15 +287,15 @@ void DatabaseBackendBase::closeDatabase()
     // See comment at the top this file regarding calling removeOpenDatabase().
     DatabaseTracker::tracker().removeOpenDatabase(this);
     {
-        MutexLocker locker(guidMutex());
+        std::lock_guard<std::mutex> locker(guidMutex());
 
-        HashSet<DatabaseBackendBase*>* hashSet = guidToDatabaseMap().get(m_guid);
-        ASSERT(hashSet);
-        ASSERT(hashSet->contains(this));
-        hashSet->remove(this);
-        if (hashSet->isEmpty()) {
-            guidToDatabaseMap().remove(m_guid);
-            delete hashSet;
+        auto it = guidToDatabaseMap().find(m_guid);
+        ASSERT(it != guidToDatabaseMap().end());
+        ASSERT(it->value);
+        ASSERT(it->value->contains(this));
+        it->value->remove(this);
+        if (it->value->isEmpty()) {
+            guidToDatabaseMap().remove(it);
             guidToVersionMap().remove(m_guid);
         }
     }
@@ -294,12 +318,7 @@ public:
     }
     ~DoneCreatingDatabaseOnExitCaller()
     {
-#if !PLATFORM(CHROMIUM)
         DatabaseTracker::tracker().doneCreatingDatabase(m_database);
-#else
-        if (!m_openSucceeded)
-            DatabaseTracker::tracker().failedToOpenDatabase(m_database);
-#endif            
     }
 
     void setOpenSucceeded() { m_openSucceeded = true; }
@@ -318,8 +337,16 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
 
     const int maxSqliteBusyWaitTime = 30000;
 
+#if PLATFORM(IOS)
+    {
+        // Make sure we wait till the background removal of the empty database files finished before trying to open any database.
+        MutexLocker locker(DatabaseTracker::openDatabaseMutex());
+    }
+#endif
+
+    SQLiteTransactionInProgressAutoCounter transactionCounter;
+
     if (!m_sqliteDatabase.open(m_filename, true)) {
-        reportOpenDatabaseResult(1, INVALID_STATE_ERR, m_sqliteDatabase.lastError());
         errorMessage = formatErrorMessage("unable to open database", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
         return false;
     }
@@ -330,55 +357,35 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
 
     String currentVersion;
     {
-        MutexLocker locker(guidMutex());
+        std::lock_guard<std::mutex> locker(guidMutex());
 
-        GuidVersionMap::iterator entry = guidToVersionMap().find(m_guid);
+        auto entry = guidToVersionMap().find(m_guid);
         if (entry != guidToVersionMap().end()) {
             // Map null string to empty string (see updateGuidVersionMap()).
             currentVersion = entry->value.isNull() ? emptyString() : entry->value.isolatedCopy();
             LOG(StorageAPI, "Current cached version for guid %i is %s", m_guid, currentVersion.ascii().data());
-
-#if PLATFORM(CHROMIUM)
-            // Note: In multi-process browsers the cached value may be inaccurate, but
-            // we cannot read the actual version from the database without potentially
-            // inducing a form of deadlock, a busytimeout error when trying to
-            // access the database. So we'll use the cached value if we're unable to read
-            // the value from the database file without waiting.
-            // FIXME: Add an async openDatabase method to the DatabaseAPI.
-            const int noSqliteBusyWaitTime = 0;
-            m_sqliteDatabase.setBusyTimeout(noSqliteBusyWaitTime);
-            String versionFromDatabase;
-            if (getVersionFromDatabase(versionFromDatabase, false)) {
-                currentVersion = versionFromDatabase;
-                updateGuidVersionMap(m_guid, currentVersion);
-            }
-            m_sqliteDatabase.setBusyTimeout(maxSqliteBusyWaitTime);
-#endif
         } else {
             LOG(StorageAPI, "No cached version for guid %i", m_guid);
 
             SQLiteTransaction transaction(m_sqliteDatabase);
             transaction.begin();
             if (!transaction.inProgress()) {
-                reportOpenDatabaseResult(2, INVALID_STATE_ERR, m_sqliteDatabase.lastError());
                 errorMessage = formatErrorMessage("unable to open database, failed to start transaction", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
                 m_sqliteDatabase.close();
                 return false;
             }
 
-            String tableName(infoTableName);
+            String tableName(unqualifiedInfoTableName);
             if (!m_sqliteDatabase.tableExists(tableName)) {
                 m_new = true;
 
                 if (!m_sqliteDatabase.executeCommand("CREATE TABLE " + tableName + " (key TEXT NOT NULL ON CONFLICT FAIL UNIQUE ON CONFLICT REPLACE,value TEXT NOT NULL ON CONFLICT FAIL);")) {
-                    reportOpenDatabaseResult(3, INVALID_STATE_ERR, m_sqliteDatabase.lastError());
                     errorMessage = formatErrorMessage("unable to open database, failed to create 'info' table", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
                     transaction.rollback();
                     m_sqliteDatabase.close();
                     return false;
                 }
             } else if (!getVersionFromDatabase(currentVersion, false)) {
-                reportOpenDatabaseResult(4, INVALID_STATE_ERR, m_sqliteDatabase.lastError());
                 errorMessage = formatErrorMessage("unable to open database, failed to read current version", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
                 transaction.rollback();
                 m_sqliteDatabase.close();
@@ -390,7 +397,6 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
             } else if (!m_new || shouldSetVersionInNewDatabase) {
                 LOG(StorageAPI, "Setting version %s in database %s that was just created", m_expectedVersion.ascii().data(), databaseDebugName().ascii().data());
                 if (!setVersionInDatabase(m_expectedVersion, false)) {
-                    reportOpenDatabaseResult(5, INVALID_STATE_ERR, m_sqliteDatabase.lastError());
                     errorMessage = formatErrorMessage("unable to open database, failed to write current version", m_sqliteDatabase.lastError(), m_sqliteDatabase.lastErrorMsg());
                     transaction.rollback();
                     m_sqliteDatabase.close();
@@ -411,7 +417,6 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
     // If the expected version isn't the empty string, ensure that the current database version we have matches that version. Otherwise, set an exception.
     // If the expected version is the empty string, then we always return with whatever version of the database we have.
     if ((!m_new || shouldSetVersionInNewDatabase) && m_expectedVersion.length() && m_expectedVersion != currentVersion) {
-        reportOpenDatabaseResult(6, INVALID_STATE_ERR, 0);
         errorMessage = "unable to open database, version mismatch, '" + m_expectedVersion + "' does not match the currentVersion of '" + currentVersion + "'";
         m_sqliteDatabase.close();
         return false;
@@ -430,8 +435,6 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
 
     if (m_new && !shouldSetVersionInNewDatabase)
         m_expectedVersion = ""; // The caller provided a creationCallback which will set the expected version.
-
-    reportOpenDatabaseResult(0, -1, 0); // OK
     return true;
 }
 
@@ -465,12 +468,13 @@ String DatabaseBackendBase::fileName() const
 
 DatabaseDetails DatabaseBackendBase::details() const
 {
-    return DatabaseDetails(stringIdentifier(), displayName(), estimatedSize(), 0);
+    // This code path is only used for database quota delegate calls, so file dates are irrelevant and left uninitialized.
+    return DatabaseDetails(stringIdentifier(), displayName(), estimatedSize(), 0, 0, 0);
 }
 
 bool DatabaseBackendBase::getVersionFromDatabase(String& version, bool shouldCacheVersion)
 {
-    String query(String("SELECT value FROM ") + infoTableName +  " WHERE key = '" + versionKey + "';");
+    String query(String("SELECT value FROM ") + fullyQualifiedInfoTableName() +  " WHERE key = '" + versionKey + "';");
 
     m_databaseAuthorizer->disable();
 
@@ -490,7 +494,7 @@ bool DatabaseBackendBase::setVersionInDatabase(const String& version, bool shoul
 {
     // The INSERT will replace an existing entry for the database with the new version number, due to the UNIQUE ON CONFLICT REPLACE
     // clause in the CREATE statement (see Database::performOpenAndVerify()).
-    String query(String("INSERT INTO ") + infoTableName +  " (key, value) VALUES ('" + versionKey + "', ?);");
+    String query(String("INSERT INTO ") + fullyQualifiedInfoTableName() +  " (key, value) VALUES ('" + versionKey + "', ?);");
 
     m_databaseAuthorizer->disable();
 
@@ -513,28 +517,25 @@ void DatabaseBackendBase::setExpectedVersion(const String& version)
 
 String DatabaseBackendBase::getCachedVersion() const
 {
-    MutexLocker locker(guidMutex());
+    std::lock_guard<std::mutex> locker(guidMutex());
+
     return guidToVersionMap().get(m_guid).isolatedCopy();
 }
 
 void DatabaseBackendBase::setCachedVersion(const String& actualVersion)
 {
     // Update the in memory database version map.
-    MutexLocker locker(guidMutex());
+    std::lock_guard<std::mutex> locker(guidMutex());
+
     updateGuidVersionMap(m_guid, actualVersion);
 }
 
 bool DatabaseBackendBase::getActualVersionForTransaction(String &actualVersion)
 {
     ASSERT(m_sqliteDatabase.transactionInProgress());
-#if PLATFORM(CHROMIUM)
     // Note: In multi-process browsers the cached value may be inaccurate.
     // So we retrieve the value from the database and update the cached value here.
     return getVersionFromDatabase(actualVersion, true);
-#else
-    actualVersion = getCachedVersion();
-    return true;
-#endif
 }
 
 void DatabaseBackendBase::disableAuthorizer()
@@ -593,16 +594,17 @@ void DatabaseBackendBase::resetAuthorizer()
 
 unsigned long long DatabaseBackendBase::maximumSize() const
 {
-    return DatabaseManager::manager().getMaxSizeForDatabase(this);
+    return DatabaseTracker::tracker().getMaxSizeForDatabase(this);
 }
 
 void DatabaseBackendBase::incrementalVacuumIfNeeded()
 {
+    SQLiteTransactionInProgressAutoCounter transactionCounter;
+
     int64_t freeSpaceSize = m_sqliteDatabase.freeSpaceSize();
     int64_t totalSize = m_sqliteDatabase.totalSize();
     if (totalSize <= 10 * freeSpaceSize) {
         int result = m_sqliteDatabase.runIncrementalVacuumCommand();
-        reportVacuumDatabaseResult(result);
         if (result != SQLResultOk)
             m_frontend->logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
     }
@@ -618,41 +620,6 @@ bool DatabaseBackendBase::isInterrupted()
     MutexLocker locker(m_sqliteDatabase.databaseMutex());
     return m_sqliteDatabase.isInterrupted();
 }
-
-#if PLATFORM(CHROMIUM)
-// These are used to generate histograms of errors seen with websql.
-// See about:histograms in chromium.
-void DatabaseBackendBase::reportOpenDatabaseResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    DatabaseObserver::reportOpenDatabaseResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void DatabaseBackendBase::reportChangeVersionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    DatabaseObserver::reportChangeVersionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void DatabaseBackendBase::reportStartTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    DatabaseObserver::reportStartTransactionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void DatabaseBackendBase::reportCommitTransactionResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    DatabaseObserver::reportCommitTransactionResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void DatabaseBackendBase::reportExecuteStatementResult(int errorSite, int webSqlErrorCode, int sqliteErrorCode)
-{
-    DatabaseObserver::reportExecuteStatementResult(this, errorSite, webSqlErrorCode, sqliteErrorCode);
-}
-
-void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
-{
-    DatabaseObserver::reportVacuumDatabaseResult(this, sqliteErrorCode);
-}
-
-#endif // PLATFORM(CHROMIUM)
 
 } // namespace WebCore
 

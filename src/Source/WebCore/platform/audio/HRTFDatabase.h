@@ -30,9 +30,9 @@
 #define HRTFDatabase_h
 
 #include "HRTFElevation.h"
+#include <memory>
 #include <wtf/Forward.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/Vector.h>
 
@@ -43,7 +43,7 @@ class HRTFKernel;
 class HRTFDatabase {
     WTF_MAKE_NONCOPYABLE(HRTFDatabase);
 public:
-    static PassOwnPtr<HRTFDatabase> create(float sampleRate);
+    explicit HRTFDatabase(float sampleRate);
 
     // getKernelsFromAzimuthElevation() returns a left and right ear kernel, and an interpolated left and right frame delay for the given azimuth and elevation.
     // azimuthBlend must be in the range 0 -> 1.
@@ -59,11 +59,7 @@ public:
     // Number of elevations loaded from resource.
     static const unsigned NumberOfRawElevations;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-
 private:
-    explicit HRTFDatabase(float sampleRate);
-
     // Minimum and maximum elevation angles (inclusive) for a HRTFDatabase.
     static const int MinElevation;
     static const int MaxElevation;
@@ -78,7 +74,7 @@ private:
     // Returns the index for the correct HRTFElevation given the elevation angle.
     static unsigned indexFromElevationAngle(double);
 
-    Vector<OwnPtr<HRTFElevation> > m_elevations;                                            
+    Vector<std::unique_ptr<HRTFElevation>> m_elevations;
     float m_sampleRate;
 };
 

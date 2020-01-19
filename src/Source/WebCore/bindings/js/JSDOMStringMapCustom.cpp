@@ -40,10 +40,10 @@ bool JSDOMStringMap::canGetItemsForName(ExecState*, DOMStringMap* impl, Property
     return impl->contains(propertyNameToAtomicString(propertyName));
 }
 
-JSValue JSDOMStringMap::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+EncodedJSValue JSDOMStringMap::nameGetter(ExecState* exec, EncodedJSValue slotBase, EncodedJSValue, PropertyName propertyName)
 {
-    JSDOMStringMap* thisObj = jsCast<JSDOMStringMap*>(asObject(slotBase));
-    return jsStringWithCache(exec, thisObj->impl()->item(propertyNameToAtomicString(propertyName)));
+    JSDOMStringMap* thisObj = jsCast<JSDOMStringMap*>(JSValue::decode(slotBase));
+    return JSValue::encode(jsStringWithCache(exec, thisObj->impl().item(propertyNameToAtomicString(propertyName))));
 }
 
 void JSDOMStringMap::getOwnPropertyNames(JSObject* object, ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
@@ -81,7 +81,7 @@ bool JSDOMStringMap::putDelegate(ExecState* exec, PropertyName propertyName, JSV
     if (exec->hadException())
         return false;
     ExceptionCode ec = 0;
-    impl()->setItem(propertyNameToString(propertyName), stringValue, ec);
+    impl().setItem(propertyNameToString(propertyName), stringValue, ec);
     setDOMException(exec, ec);
     return !ec;
 }

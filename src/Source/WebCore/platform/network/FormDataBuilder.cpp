@@ -25,9 +25,8 @@
 #include "config.h"
 #include "FormDataBuilder.h"
 
+#include "Blob.h"
 #include "Document.h"
-#include "Frame.h"
-#include "FrameLoader.h"
 #include "TextEncoding.h"
 
 #include <limits>
@@ -59,9 +58,9 @@ static void appendQuotedString(Vector<char>& buffer, const CString& string)
     // Append a string as a quoted value, escaping quotes and line breaks.
     // FIXME: Is it correct to use percent escaping here? Other browsers do not encode these characters yet,
     // so we should test popular servers to find out if there is an encoding form they can handle.
-    unsigned length = string.length();
-    for (unsigned i = 0; i < length; ++i) {
-        unsigned char c = string.data()[i];
+    size_t length = string.length();
+    for (size_t i = 0; i < length; ++i) {
+        char c = string.data()[i];
 
         switch (c) {
         case  0x0a:
@@ -79,7 +78,7 @@ static void appendQuotedString(Vector<char>& buffer, const CString& string)
     }
 }
 
-TextEncoding FormDataBuilder::encodingFromAcceptCharset(const String& acceptCharset, Document* document)
+TextEncoding FormDataBuilder::encodingFromAcceptCharset(const String& acceptCharset, Document& document)
 {
     String normalizedAcceptCharset = acceptCharset;
     normalizedAcceptCharset.replace(',', ' ');
@@ -95,7 +94,7 @@ TextEncoding FormDataBuilder::encodingFromAcceptCharset(const String& acceptChar
             return encoding;
     }
 
-    return document->inputEncoding();
+    return document.inputEncoding();
 }
 
 Vector<char> FormDataBuilder::generateUniqueBoundaryString()
@@ -134,7 +133,7 @@ Vector<char> FormDataBuilder::generateUniqueBoundaryString()
         randomBytes.append(alphaNumericEncodingMap[randomness & 0x3F]);
     }
 
-    boundary.append(randomBytes);
+    boundary.appendVector(randomBytes);
     boundary.append(0); // Add a 0 at the end so we can use this as a C-style string.
     return boundary;
 }
@@ -166,12 +165,13 @@ void FormDataBuilder::addFilenameToMultiPartHeader(Vector<char>& buffer, const T
     // FIXME: This loses data irreversibly if the filename includes characters you can't encode
     // in the website's character set.
     append(buffer, "; filename=\"");
-    appendQuotedString(buffer, encoding.encode(filename.characters(), filename.length(), QuestionMarksForUnencodables));
+    appendQuotedString(buffer, encoding.encode(filename.deprecatedCharacters(), filename.length(), QuestionMarksForUnencodables));
     append(buffer, '"');
 }
 
 void FormDataBuilder::addContentTypeToMultiPartHeader(Vector<char>& buffer, const CString& mimeType)
 {
+    ASSERT(Blob::isNormalizedContentType(mimeType));
     append(buffer, "\r\nContent-Type: ");
     append(buffer, mimeType);
 }

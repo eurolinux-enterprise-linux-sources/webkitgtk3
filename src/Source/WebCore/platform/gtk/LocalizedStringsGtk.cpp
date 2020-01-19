@@ -29,17 +29,16 @@
  */
 
 #include "config.h"
-
 #include "LocalizedStrings.h"
-#include <wtf/gobject/GOwnPtr.h>
+
 #include "IntSize.h"
 #include "NotImplemented.h"
-#include <wtf/MathExtras.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/WTFString.h>
-
 #include <glib/gi18n-lib.h>
 #include <gtk/gtk.h>
+#include <wtf/MathExtras.h>
+#include <wtf/gobject/GUniquePtr.h>
+#include <wtf/text/CString.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -141,6 +140,16 @@ String contextMenuItemTagOpenAudioInNewWindow()
     return String::fromUTF8(_("Open _Audio in New Window"));
 }
 
+String contextMenuItemTagDownloadVideoToDisk()
+{
+    return String::fromUTF8(_("Download _Video"));
+}
+
+String contextMenuItemTagDownloadAudioToDisk()
+{
+    return String::fromUTF8(_("Download _Audio"));
+}
+
 String contextMenuItemTagCopyVideoLinkToClipboard()
 {
     return String::fromUTF8(_("Cop_y Video Link Location"));
@@ -154,6 +163,16 @@ String contextMenuItemTagCopyAudioLinkToClipboard()
 String contextMenuItemTagToggleMediaControls()
 {
     return String::fromUTF8(_("_Toggle Media Controls"));
+}
+
+String contextMenuItemTagShowMediaControls()
+{
+    return String::fromUTF8(_("_Show Media Controls"));
+}
+
+String contextMenuItemTagHideMediaControls()
+{
+    return String::fromUTF8(_("_Hide Media Controls"));
 }
 
 String contextMenuItemTagToggleMediaLoop()
@@ -412,6 +431,11 @@ String AXDefinitionText()
     return String::fromUTF8(_("definition"));
 }
 
+String AXDescriptionListText()
+{
+    return String::fromUTF8(_("description list"));
+}
+
 String AXDescriptionListTermText()
 {
     return String::fromUTF8(_("term"));
@@ -425,6 +449,11 @@ String AXDescriptionListDetailText()
 String AXFooterRoleDescriptionText()
 {
     return String::fromUTF8(_("footer"));
+}
+
+String AXSearchFieldCancelButtonText()
+{
+    return String::fromUTF8(_("cancel"));
 }
 
 String AXButtonActionVerb()
@@ -463,6 +492,11 @@ String AXMenuListPopupActionVerb()
 }
 
 String AXMenuListActionVerb()
+{
+    return String();
+}
+
+String AXListItemActionVerb()
 {
     return String();
 }
@@ -509,9 +543,8 @@ String unknownFileSizeText()
 
 String imageTitle(const String& filename, const IntSize& size)
 {
-    GOwnPtr<gchar> string(g_strdup_printf(C_("Title string for images", "%s  (%dx%d pixels)"),
-                                          filename.utf8().data(),
-                                          size.width(), size.height()));
+    GUniquePtr<gchar> string(g_strdup_printf(C_("Title string for images", "%s  (%dx%d pixels)"),
+        filename.utf8().data(), size.width(), size.height()));
 
     return String::fromUTF8(string.get());
 }
@@ -532,9 +565,9 @@ String mediaElementLiveBroadcastStateText()
 String localizedMediaControlElementString(const String& name)
 {
     if (name == "AudioElement")
-        return String::fromUTF8(_("audio element controller"));
+        return String::fromUTF8(_("audio playback"));
     if (name == "VideoElement")
-        return String::fromUTF8(_("video element controller"));
+        return String::fromUTF8(_("video playback"));
     if (name == "MuteButton")
         return String::fromUTF8(_("mute"));
     if (name == "UnMuteButton")
@@ -633,21 +666,21 @@ String localizedMediaTimeDescription(float time)
     seconds %= 60;
 
     if (days) {
-        GOwnPtr<gchar> string(g_strdup_printf("%d days %d hours %d minutes %d seconds", days, hours, minutes, seconds));
+        GUniquePtr<gchar> string(g_strdup_printf("%d days %d hours %d minutes %d seconds", days, hours, minutes, seconds));
         return String::fromUTF8(string.get());
     }
 
     if (hours) {
-        GOwnPtr<gchar> string(g_strdup_printf("%d hours %d minutes %d seconds", hours, minutes, seconds));
+        GUniquePtr<gchar> string(g_strdup_printf("%d hours %d minutes %d seconds", hours, minutes, seconds));
         return String::fromUTF8(string.get());
     }
 
     if (minutes) {
-        GOwnPtr<gchar> string(g_strdup_printf("%d minutes %d seconds", minutes, seconds));
+        GUniquePtr<gchar> string(g_strdup_printf("%d minutes %d seconds", minutes, seconds));
         return String::fromUTF8(string.get());
     }
 
-    GOwnPtr<gchar> string(g_strdup_printf("%d seconds", seconds));
+    GUniquePtr<gchar> string(g_strdup_printf("%d seconds", seconds));
     return String::fromUTF8(string.get());
 }
 #endif  // ENABLE(VIDEO)
@@ -760,17 +793,22 @@ String textTrackClosedCaptionsText()
 
 String textTrackSubtitlesText()
 {
-    return String::fromUTF8(C_("Subtitles", "Menu section heading for subtitles"));
+    return String::fromUTF8(C_("Menu section heading for subtitles", "Subtitles"));
 }
 
-String textTrackOffText()
+String textTrackOffMenuItemText()
 {
-    return String::fromUTF8(C_("Off", "Menu item label for the track that represents disabling closed captions"));
+    return String::fromUTF8(C_("Menu item label for the track that represents disabling closed captions", "Off"));
+}
+
+String textTrackAutomaticMenuItemText()
+{
+    return String::fromUTF8(C_("Menu item label for the automatically choosen track", "Auto"));
 }
 
 String textTrackNoLabelText()
 {
-    return String::fromUTF8(C_("No label", "Menu item label for a closed captions track that has no other name"));
+    return String::fromUTF8(C_("Menu item label for a closed captions track that has no other name", "No label"));
 }
 #endif
 

@@ -20,10 +20,10 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 messages -> PluginProcessConnectionManager {
-    PluginProcessCrashed(WTF::String pluginPath, uint32_t processType)
+    PluginProcessCrashed(uint64_t pluginProcessToken)
 }
 
 #endif

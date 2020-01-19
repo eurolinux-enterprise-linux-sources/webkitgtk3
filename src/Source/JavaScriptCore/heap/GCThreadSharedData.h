@@ -31,15 +31,15 @@
 #include "MarkedBlock.h"
 #include "UnconditionalFinalizer.h"
 #include "WeakReferenceHarvester.h"
+#include <condition_variable>
 #include <wtf/HashSet.h>
 #include <wtf/TCSpinLock.h>
-#include <wtf/Threading.h>
 #include <wtf/Vector.h>
 
 namespace JSC {
 
 class GCThread;
-class JSGlobalData;
+class VM;
 class CopiedSpace;
 class CopyVisitor;
 
@@ -52,7 +52,7 @@ enum GCPhase {
 
 class GCThreadSharedData {
 public:
-    GCThreadSharedData(JSGlobalData*);
+    GCThreadSharedData(VM*);
     ~GCThreadSharedData();
     
     void reset();
@@ -65,6 +65,8 @@ public:
 #if ENABLE(PARALLEL_GC)
     void resetChildren();
     size_t childVisitCount();
+    size_t childBytesVisited();
+    size_t childBytesCopied();
     size_t childDupStrings();
 #endif
     
@@ -77,15 +79,15 @@ private:
     void startNextPhase(GCPhase);
     void endCurrentPhase();
 
-    JSGlobalData* m_globalData;
+    VM* m_vm;
     CopiedSpace* m_copiedSpace;
     
-    bool m_shouldHashConst;
+    bool m_shouldHashCons;
 
     Vector<GCThread*> m_gcThreads;
 
-    Mutex m_markingLock;
-    ThreadCondition m_markingCondition;
+    std::mutex m_markingMutex;
+    std::condition_variable m_markingConditionVariable;
     MarkStackArray m_sharedMarkStack;
     unsigned m_numberOfActiveParallelMarkers;
     bool m_parallelMarkersShouldExit;
@@ -98,9 +100,9 @@ private:
     size_t m_copyIndex;
     static const size_t s_blockFragmentLength = 32;
 
-    Mutex m_phaseLock;
-    ThreadCondition m_phaseCondition;
-    ThreadCondition m_activityCondition;
+    std::mutex m_phaseMutex;
+    std::condition_variable m_phaseConditionVariable;
+    std::condition_variable m_activityConditionVariable;
     unsigned m_numberOfActiveGCThreads;
     bool m_gcThreadsShouldWait;
     GCPhase m_currentPhase;

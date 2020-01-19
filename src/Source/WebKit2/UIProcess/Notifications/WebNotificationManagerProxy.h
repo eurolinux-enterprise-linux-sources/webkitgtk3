@@ -36,58 +36,57 @@
 #include <wtf/PassRefPtr.h>
 #include <wtf/text/StringHash.h>
 
+namespace API {
+class Array;
+}
+
 namespace WebKit {
 
-class ImmutableArray;
 class WebContext;
 class WebPageProxy;
 class WebSecurityOrigin;
 
-class WebNotificationManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebNotificationManagerProxy : public API::ObjectImpl<API::Object::Type::NotificationManager>, public WebContextSupplement {
 public:
-    static const Type APIType = TypeNotificationManager;
 
     static const char* supplementName();
 
     static PassRefPtr<WebNotificationManagerProxy> create(WebContext*);
 
-    void initializeProvider(const WKNotificationProvider*);
+    void initializeProvider(const WKNotificationProviderBase*);
     void populateCopyOfNotificationPermissions(HashMap<String, bool>&);
 
-    void show(WebPageProxy*, const String& title, const String& body, const String& iconURL, const String& tag, const String& lang, const String& dir, const String& originString, uint64_t notificationID);
+    void show(WebPageProxy*, const String& title, const String& body, const String& iconURL, const String& tag, const String& lang, const String& dir, const String& originString, uint64_t pageNotificationID);
+    void cancel(WebPageProxy*, uint64_t pageNotificationID);
+    void clearNotifications(WebPageProxy*);
+    void clearNotifications(WebPageProxy*, const Vector<uint64_t>& pageNotificationIDs);
+    void didDestroyNotification(WebPageProxy*, uint64_t pageNotificationID);
 
     void providerDidShowNotification(uint64_t notificationID);
     void providerDidClickNotification(uint64_t notificationID);
-    void providerDidCloseNotifications(ImmutableArray* notificationIDs);
+    void providerDidCloseNotifications(API::Array* notificationIDs);
     void providerDidUpdateNotificationPolicy(const WebSecurityOrigin*, bool allowed);
-    void providerDidRemoveNotificationPolicies(ImmutableArray* origins);
+    void providerDidRemoveNotificationPolicies(API::Array* origins);
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebNotificationManagerProxy(WebContext*);
-    
-    virtual Type type() const { return APIType; }
+
+    typedef bool (*NotificationFilterFunction)(uint64_t pageID, uint64_t pageNotificationID, uint64_t desiredPageID, const Vector<uint64_t>& desiredPageNotificationIDs);
+    void clearNotifications(WebPageProxy*, const Vector<uint64_t>& pageNotificationIDs, NotificationFilterFunction);
 
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
-    
-    // Message handlers
-    void cancel(uint64_t notificationID);
-    void didDestroyNotification(uint64_t notificationID);
-    void clearNotifications(const Vector<uint64_t>& notificationIDs);
-
-    typedef HashMap<uint64_t, RefPtr<WebNotification> > WebNotificationMap;
-    
     WebNotificationProvider m_provider;
-    WebNotificationMap m_notifications;
+    // Pair comprised of web page ID and the web process's notification ID
+    HashMap<uint64_t, std::pair<uint64_t, uint64_t>> m_globalNotificationMap;
+    // Key pair comprised of web page ID and the web process's notification ID; value pair comprised of global notification ID, and notification object
+    HashMap<std::pair<uint64_t, uint64_t>, std::pair<uint64_t, RefPtr<WebNotification>>> m_notifications;
 };
 
 } // namespace WebKit

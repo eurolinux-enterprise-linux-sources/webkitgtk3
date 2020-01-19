@@ -22,14 +22,11 @@
 #include "HTMLDetailsElement.h"
 
 #if ENABLE(DETAILS_ELEMENT)
-#include "HTMLContentElement.h"
-#include "HTMLNames.h"
 #include "HTMLSummaryElement.h"
+#include "InsertionPoint.h"
 #include "LocalizedStrings.h"
 #include "MouseEvent.h"
-#include "NodeRenderingContext.h"
-#include "RenderBlock.h"
-#include "ShadowRoot.h"
+#include "RenderBlockFlow.h"
 #include "Text.h"
 
 namespace WebCore {
@@ -42,25 +39,32 @@ static const AtomicString& summaryQuerySelector()
     return selector;
 };
 
-class DetailsContentElement : public HTMLContentElement {
+class DetailsContentElement : public InsertionPoint {
 public:
-    static PassRefPtr<DetailsContentElement> create(Document*);
+    static PassRefPtr<DetailsContentElement> create(Document&);
 
 private:
-    DetailsContentElement(Document* document)
-        : HTMLContentElement(HTMLNames::webkitShadowContentTag, document)
+    DetailsContentElement(Document& document)
+        : InsertionPoint(webkitShadowContentTag, document)
     {
+    }
+
+    virtual MatchType matchTypeFor(Node* node) const override
+    {
+        if (node->isElementNode() && node == node->parentNode()->querySelector(summaryQuerySelector(), ASSERT_NO_EXCEPTION))
+            return NeverMatches;
+        return AlwaysMatches;
     }
 };
 
-PassRefPtr<DetailsContentElement> DetailsContentElement::create(Document* document)
+PassRefPtr<DetailsContentElement> DetailsContentElement::create(Document& document)
 {
     return adoptRef(new DetailsContentElement(document));
 }
 
-class DetailsSummaryElement : public HTMLContentElement {
+class DetailsSummaryElement : public InsertionPoint {
 public:
-    static PassRefPtr<DetailsSummaryElement> create(Document*);
+    static PassRefPtr<DetailsSummaryElement> create(Document&);
 
     Element* fallbackSummary()
     {
@@ -69,11 +73,12 @@ public:
     }
 
 private:
-    DetailsSummaryElement(Document* document)
-        : HTMLContentElement(HTMLNames::webkitShadowContentTag, document)
-    { }
+    DetailsSummaryElement(Document& document)
+        : InsertionPoint(webkitShadowContentTag, document)
+    {
+    }
 
-    virtual MatchType matchTypeFor(Node* node) OVERRIDE
+    virtual MatchType matchTypeFor(Node* node) const override
     {
         if (node->isElementNode() && node == node->parentNode()->querySelector(summaryQuerySelector(), ASSERT_NO_EXCEPTION))
             return AlwaysMatches;
@@ -81,7 +86,7 @@ private:
     }
 };
 
-PassRefPtr<DetailsSummaryElement> DetailsSummaryElement::create(Document* document)
+PassRefPtr<DetailsSummaryElement> DetailsSummaryElement::create(Document& document)
 {
     RefPtr<HTMLSummaryElement> summary = HTMLSummaryElement::create(summaryTag, document);
     summary->appendChild(Text::create(document, defaultDetailsSummaryText()), ASSERT_NO_EXCEPTION);
@@ -91,29 +96,29 @@ PassRefPtr<DetailsSummaryElement> DetailsSummaryElement::create(Document* docume
     return detailsSummary.release();
 }
 
-PassRefPtr<HTMLDetailsElement> HTMLDetailsElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLDetailsElement> HTMLDetailsElement::create(const QualifiedName& tagName, Document& document)
 {
     RefPtr<HTMLDetailsElement> details = adoptRef(new HTMLDetailsElement(tagName, document));
     details->ensureUserAgentShadowRoot();
     return details.release();
 }
 
-HTMLDetailsElement::HTMLDetailsElement(const QualifiedName& tagName, Document* document)
+HTMLDetailsElement::HTMLDetailsElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_isOpen(false)
 {
     ASSERT(hasTagName(detailsTag));
 }
 
-RenderObject* HTMLDetailsElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderPtr<RenderElement> HTMLDetailsElement::createElementRenderer(PassRef<RenderStyle> style)
 {
-    return new (arena) RenderBlock(this);
+    return createRenderer<RenderBlockFlow>(*this, std::move(style));
 }
 
 void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot* root)
 {
-    root->appendChild(DetailsSummaryElement::create(document()), ASSERT_NO_EXCEPTION, true);
-    root->appendChild(DetailsContentElement::create(document()), ASSERT_NO_EXCEPTION, true);
+    root->appendChild(DetailsSummaryElement::create(document()), ASSERT_NO_EXCEPTION);
+    root->appendChild(DetailsContentElement::create(document()), ASSERT_NO_EXCEPTION);
 }
 
 Element* HTMLDetailsElement::findMainSummary() const
@@ -132,23 +137,26 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
         bool oldValue = m_isOpen;
         m_isOpen = !value.isNull();
         if (oldValue != m_isOpen)
-            reattachIfAttached();
+            setNeedsStyleRecalc(ReconstructRenderTree);
     } else
         HTMLElement::parseAttribute(name, value);
 }
 
-bool HTMLDetailsElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool HTMLDetailsElement::childShouldCreateRenderer(const Node& child) const
 {
-    if (!childContext.isOnEncapsulationBoundary())
+    if (child.isPseudoElement())
+        return HTMLElement::childShouldCreateRenderer(child);
+
+    if (!hasShadowRootOrActiveInsertionPointParent(child))
         return false;
 
     if (m_isOpen)
-        return HTMLElement::childShouldCreateRenderer(childContext);
+        return HTMLElement::childShouldCreateRenderer(child);
 
-    if (!childContext.node()->hasTagName(summaryTag))
+    if (!child.hasTagName(summaryTag))
         return false;
 
-    return childContext.node() == findMainSummary() && HTMLElement::childShouldCreateRenderer(childContext);
+    return &child == findMainSummary() && HTMLElement::childShouldCreateRenderer(child);
 }
 
 void HTMLDetailsElement::toggleOpen()

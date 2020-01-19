@@ -24,24 +24,24 @@
 #include "config.h"
 #include "RenderListItem.h"
 
-#include "CachedImage.h"
+#include "ElementTraversal.h"
 #include "HTMLNames.h"
 #include "HTMLOListElement.h"
+#include "InlineElementBox.h"
+#include "PseudoElement.h"
 #include "RenderListMarker.h"
 #include "RenderView.h"
 #include "StyleInheritedData.h"
+#include <wtf/StackStats.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringBuilder.h>
-
-using namespace std;
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-RenderListItem::RenderListItem(Element* element)
-    : RenderBlock(element)
-    , m_marker(0)
+RenderListItem::RenderListItem(Element& element, PassRef<RenderStyle> style)
+    : RenderBlockFlow(element, std::move(style))
     , m_hasExplicitValue(false)
     , m_isValueUpToDate(false)
     , m_notInList(false)
@@ -51,63 +51,61 @@ RenderListItem::RenderListItem(Element* element)
 
 void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(diff, oldStyle);
+    RenderBlockFlow::styleDidChange(diff, oldStyle);
 
-    if (style()->listStyleType() != NoneListStyle
-        || (style()->listStyleImage() && !style()->listStyleImage()->errorOccurred())) {
-        RefPtr<RenderStyle> newStyle = RenderStyle::create();
-        // The marker always inherits from the list item, regardless of where it might end
-        // up (e.g., in some deeply nested line box). See CSS3 spec.
-        newStyle->inheritFrom(style()); 
-        if (!m_marker)
-            m_marker = RenderListMarker::createAnonymous(this);
-        m_marker->setStyle(newStyle.release());
-    } else if (m_marker) {
-        m_marker->destroy();
-        m_marker = 0;
+    if (style().listStyleType() == NoneListStyle && (!style().listStyleImage() || style().listStyleImage()->errorOccurred())) {
+        m_marker = nullptr;
+        return;
     }
+
+    auto newStyle = RenderStyle::create();
+    // The marker always inherits from the list item, regardless of where it might end
+    // up (e.g., in some deeply nested line box). See CSS3 spec.
+    newStyle.get().inheritFrom(&style());
+    if (!m_marker) {
+        m_marker = createRenderer<RenderListMarker>(*this, std::move(newStyle));
+        m_marker->initializeStyle();
+    } else
+        m_marker->setStyle(std::move(newStyle));
 }
 
 void RenderListItem::willBeDestroyed()
-{    
-    if (m_marker) {
-        m_marker->destroy();
-        m_marker = 0;
-    }
-    RenderBlock::willBeDestroyed();
+{
+    m_marker = nullptr;
+    RenderBlockFlow::willBeDestroyed();
 }
 
 void RenderListItem::insertedIntoTree()
 {
-    RenderBlock::insertedIntoTree();
+    RenderBlockFlow::insertedIntoTree();
 
     updateListMarkerNumbers();
 }
 
 void RenderListItem::willBeRemovedFromTree()
 {
-    RenderBlock::willBeRemovedFromTree();
+    RenderBlockFlow::willBeRemovedFromTree();
 
     updateListMarkerNumbers();
 }
 
-static bool isList(Node* node)
+static bool isList(const Element* element)
 {
-    return (node->hasTagName(ulTag) || node->hasTagName(olTag));
+    return element->hasTagName(ulTag) || element->hasTagName(olTag);
 }
 
-static Node* enclosingList(const RenderListItem* listItem)
+// Returns the enclosing list with respect to the DOM order.
+static Element* enclosingList(const RenderListItem* listItem)
 {
-    Node* firstNode = 0;
-
-    for (const RenderObject* renderer = listItem->parent(); renderer; renderer = renderer->parent()) {
-        Node* node = renderer->node();
-        if (node) {
-            if (isList(node))
-                return node;
-            if (!firstNode)
-                firstNode = node;
-        }
+    Element& listItemElement = listItem->element();
+    Element* firstNode = 0;
+    Element* parent = listItemElement.isPseudoElement() ? toPseudoElement(listItemElement).hostElement() : listItemElement.parentElement();
+    // We use parentNode because the enclosing list could be a ShadowRoot that's not Element.
+    for (; parent; parent = parent->parentElement()) {
+        if (isList(parent))
+            return parent;
+        if (!firstNode)
+            firstNode = parent;
     }
 
     // If there's no actual <ul> or <ol> list element, then the first found
@@ -116,44 +114,72 @@ static Node* enclosingList(const RenderListItem* listItem)
     return firstNode;
 }
 
-RenderListItem* RenderListItem::nextListItem(RenderObject* list, const RenderListItem* item)
+// Returns the next list item with respect to the DOM order.
+static RenderListItem* nextListItem(const Element* listNode, const RenderListItem* item = 0)
 {
-    if (!list)
+    if (!listNode)
         return 0;
 
-    RenderObject* renderer = item ? item->nextInPreOrder(list) : list->nextInPreOrder(list);
-    while (renderer) {
-        if (renderer->node() && isList(renderer->node())) {
+    const Element* current = item ? &item->element() : listNode;
+    current = ElementTraversal::nextIncludingPseudo(current, listNode);
+
+    while (current) {
+        if (isList(current)) {
             // We've found a nested, independent list: nothing to do here.
-            renderer = renderer->nextInPreOrderAfterChildren(list);
+            current = ElementTraversal::nextIncludingPseudoSkippingChildren(current, listNode);
             continue;
         }
 
-        if (renderer->isListItem())
+        RenderObject* renderer = current->renderer();
+        if (renderer && renderer->isListItem())
             return toRenderListItem(renderer);
 
-        renderer = renderer->nextInPreOrder(list);
+        // FIXME: Can this be optimized to skip the children of the elements without a renderer?
+        current = ElementTraversal::nextIncludingPseudo(current, listNode);
+    }
+
+    return 0;
+}
+
+// Returns the previous list item with respect to the DOM order.
+static RenderListItem* previousListItem(const Element* listNode, const RenderListItem* item)
+{
+    Element* current = &item->element();
+    for (current = ElementTraversal::previousIncludingPseudo(current, listNode); current; current = ElementTraversal::previousIncludingPseudo(current, listNode)) {
+        RenderObject* renderer = current->renderer();
+        if (!renderer || (renderer && !renderer->isListItem()))
+            continue;
+        Node* otherList = enclosingList(toRenderListItem(renderer));
+        // This item is part of our current list, so it's what we're looking for.
+        if (listNode == otherList)
+            return toRenderListItem(renderer);
+        // We found ourself inside another list; lets skip the rest of it.
+        // Use nextIncludingPseudo() here because the other list itself may actually
+        // be a list item itself. We need to examine it, so we do this to counteract
+        // the previousIncludingPseudo() that will be done by the loop.
+        if (otherList)
+            current = ElementTraversal::nextIncludingPseudo(otherList);
     }
     return 0;
 }
 
-static RenderListItem* previousListItem(RenderObject* list, const RenderListItem* item)
+void RenderListItem::updateItemValuesForOrderedList(const HTMLOListElement* listNode)
 {
-    for (RenderObject* renderer = item->previousInPreOrder(); renderer && renderer != list; renderer = renderer->previousInPreOrder()) {
-        if (!renderer->isListItem())
-            continue;
-        Node* otherList = enclosingList(toRenderListItem(renderer));
-        // This item is part of our current list, so it's what we're looking for.
-        if (list->node() == otherList)
-            return toRenderListItem(renderer);
-        // We found ourself inside another list; lets skip the rest of it.
-        // Use nextInPreOrder() here because the other list itself may actually
-        // be a list item itself. We need to examine it, so we do this to counteract
-        // the previousInPreOrder() that will be done by the loop.
-        if (otherList)
-            renderer = otherList->renderer()->nextInPreOrder();
-    }
-    return 0;
+    ASSERT(listNode);
+
+    for (RenderListItem* listItem = nextListItem(listNode); listItem; listItem = nextListItem(listNode, listItem))
+        listItem->updateValue();
+}
+
+unsigned RenderListItem::itemCountForOrderedList(const HTMLOListElement* listNode)
+{
+    ASSERT(listNode);
+
+    unsigned itemCount = 0;
+    for (RenderListItem* listItem = nextListItem(listNode); listItem; listItem = nextListItem(listNode, listItem))
+        itemCount++;
+
+    return itemCount;
 }
 
 inline int RenderListItem::calcValue() const
@@ -161,16 +187,15 @@ inline int RenderListItem::calcValue() const
     if (m_hasExplicitValue)
         return m_explicitValue;
 
-    Node* list = enclosingList(this);
-    RenderObject* listRenderer = list ? list->renderer() : 0;
-    HTMLOListElement* oListElement = (list && list->hasTagName(olTag)) ? static_cast<HTMLOListElement*>(list) : 0;
+    Element* list = enclosingList(this);
+    HTMLOListElement* oListElement = (list && list->hasTagName(olTag)) ? toHTMLOListElement(list) : nullptr;
     int valueStep = 1;
     if (oListElement && oListElement->isReversed())
         valueStep = -1;
 
     // FIXME: This recurses to a possible depth of the length of the list.
     // That's not good -- we need to change this to an iterative algorithm.
-    if (RenderListItem* previousItem = previousListItem(listRenderer, this))
+    if (RenderListItem* previousItem = previousListItem(list, this))
         return previousItem->value() + valueStep;
 
     if (oListElement)
@@ -190,13 +215,13 @@ bool RenderListItem::isEmpty() const
     return lastChild() == m_marker;
 }
 
-static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* marker)
+static RenderBlock* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* marker)
 {
     RenderObject* firstChild = curr->firstChild();
     if (!firstChild)
         return 0;
 
-    bool inQuirksMode = curr->document()->inQuirksMode();
+    bool inQuirksMode = curr->document().inQuirksMode();
     for (RenderObject* currChild = firstChild; currChild; currChild = currChild->nextSibling()) {
         if (currChild == marker)
             continue;
@@ -214,7 +239,7 @@ static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* ma
             (currChild->node()->hasTagName(ulTag)|| currChild->node()->hasTagName(olTag)))
             break;
 
-        RenderObject* lineBox = getParentOfFirstLineBox(toRenderBlock(currChild), marker);
+        RenderBlock* lineBox = getParentOfFirstLineBox(toRenderBlock(currChild), marker);
         if (lineBox)
             return lineBox;
     }
@@ -231,7 +256,7 @@ void RenderListItem::updateValue()
     }
 }
 
-static RenderObject* firstNonMarkerChild(RenderObject* parent)
+static RenderObject* firstNonMarkerChild(RenderBlock* parent)
 {
     RenderObject* result = parent->firstChild();
     while (result && result->isListMarker())
@@ -239,38 +264,36 @@ static RenderObject* firstNonMarkerChild(RenderObject* parent)
     return result;
 }
 
-void RenderListItem::updateMarkerLocation()
+void RenderListItem::insertOrMoveMarkerRendererIfNeeded()
 {
     // Sanity check the location of our marker.
-    if (m_marker) {
-        RenderObject* markerPar = m_marker->parent();
-        RenderObject* lineBoxParent = getParentOfFirstLineBox(this, m_marker);
-        if (!lineBoxParent) {
-            // If the marker is currently contained inside an anonymous box,
-            // then we are the only item in that anonymous box (since no line box
-            // parent was found).  It's ok to just leave the marker where it is
-            // in this case.
-            if (markerPar && markerPar->isAnonymousBlock())
-                lineBoxParent = markerPar;
-            else
-                lineBoxParent = this;
-        }
+    if (!m_marker)
+        return;
 
-        if (markerPar != lineBoxParent || m_marker->preferredLogicalWidthsDirty()) {
-            // Removing and adding the marker can trigger repainting in
-            // containers other than ourselves, so we need to disable LayoutState.
-            LayoutStateDisabler layoutStateDisabler(view());
-            updateFirstLetter();
-            m_marker->remove();
-            if (!lineBoxParent)
-                lineBoxParent = this;
-            lineBoxParent->addChild(m_marker, firstNonMarkerChild(lineBoxParent));
-            m_marker->updateMarginsAndContent();
-            // If markerPar is an anonymous block that has lost all its children, destroy it.
-            if (markerPar && markerPar->isAnonymousBlock() && !markerPar->firstChild() && !toRenderBlock(markerPar)->continuation())
-                markerPar->destroy();
-        }
+    RenderElement* currentParent = m_marker->parent();
+    RenderBlock* newParent = getParentOfFirstLineBox(this, m_marker.get());
+    if (!newParent) {
+        // If the marker is currently contained inside an anonymous box,
+        // then we are the only item in that anonymous box (since no line box
+        // parent was found). It's ok to just leave the marker where it is
+        // in this case.
+        if (currentParent && currentParent->isAnonymousBlock())
+            return;
+        newParent = this;
     }
+
+    if (newParent != currentParent) {
+        // Removing and adding the marker can trigger repainting in
+        // containers other than ourselves, so we need to disable LayoutState.
+        LayoutStateDisabler layoutStateDisabler(&view());
+        m_marker->removeFromParent();
+        newParent->addChild(m_marker.get(), firstNonMarkerChild(newParent));
+        m_marker->updateMarginsAndContent();
+        // If current parent is an anonymous block that has lost all its children, destroy it.
+        if (currentParent && currentParent->isAnonymousBlock() && !currentParent->firstChild() && !toRenderBlock(currentParent)->continuation())
+            currentParent->destroy();
+    }
+
 }
 
 void RenderListItem::layout()
@@ -278,14 +301,27 @@ void RenderListItem::layout()
     StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout()); 
 
-    updateMarkerLocation();    
-    RenderBlock::layout();
+    insertOrMoveMarkerRendererIfNeeded();
+    RenderBlockFlow::layout();
 }
 
 void RenderListItem::addOverflowFromChildren()
 {
-    RenderBlock::addOverflowFromChildren();
     positionListMarker();
+    RenderBlockFlow::addOverflowFromChildren();
+}
+
+void RenderListItem::computePreferredLogicalWidths()
+{
+#ifndef NDEBUG
+    // FIXME: We shouldn't be modifying the tree in computePreferredLogicalWidths.
+    // Instead, we should insert the marker soon after the tree construction.
+    // This is similar case to RenderCounter::computePreferredLogicalWidths()
+    // See https://bugs.webkit.org/show_bug.cgi?id=104829
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(this, false);
+#endif
+    insertOrMoveMarkerRendererIfNeeded();
+    RenderBlockFlow::computePreferredLogicalWidths();
 }
 
 void RenderListItem::positionListMarker()
@@ -301,15 +337,14 @@ void RenderListItem::positionListMarker()
 
         bool adjustOverflow = false;
         LayoutUnit markerLogicalLeft;
-        RootInlineBox* root = m_marker->inlineBoxWrapper()->root();
         bool hitSelfPaintingLayer = false;
         
-        RootInlineBox* rootBox = m_marker->inlineBoxWrapper()->root();
-        LayoutUnit lineTop = rootBox->lineTop();
-        LayoutUnit lineBottom = rootBox->lineBottom();
+        const RootInlineBox& rootBox = m_marker->inlineBoxWrapper()->root();
+        LayoutUnit lineTop = rootBox.lineTop();
+        LayoutUnit lineBottom = rootBox.lineBottom();
 
         // FIXME: Need to account for relative positioning in the layout overflow.
-        if (style()->isLeftToRightDirection()) {
+        if (style().isLeftToRightDirection()) {
             LayoutUnit leftLineOffset = logicalLeftOffsetForLine(blockOffset, logicalLeftOffsetForLine(blockOffset, false), false);
             markerLogicalLeft = leftLineOffset - lineOffset - paddingStart() - borderStart() + m_marker->marginStart();
             m_marker->inlineBoxWrapper()->adjustLineDirectionPosition(markerLogicalLeft - markerOldLogicalLeft);
@@ -319,21 +354,20 @@ void RenderListItem::positionListMarker()
                 if (markerLogicalLeft < newLogicalVisualOverflowRect.x() && !hitSelfPaintingLayer) {
                     newLogicalVisualOverflowRect.setWidth(newLogicalVisualOverflowRect.maxX() - markerLogicalLeft);
                     newLogicalVisualOverflowRect.setX(markerLogicalLeft);
-                    if (box == root)
+                    if (box == &rootBox)
                         adjustOverflow = true;
                 }
                 if (markerLogicalLeft < newLogicalLayoutOverflowRect.x()) {
                     newLogicalLayoutOverflowRect.setWidth(newLogicalLayoutOverflowRect.maxX() - markerLogicalLeft);
                     newLogicalLayoutOverflowRect.setX(markerLogicalLeft);
-                    if (box == root)
+                    if (box == &rootBox)
                         adjustOverflow = true;
                 }
                 box->setOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
-                if (box->boxModelObject()->hasSelfPaintingLayer())
+                if (box->renderer().hasSelfPaintingLayer())
                     hitSelfPaintingLayer = true;
             }
         } else {
-            markerLogicalLeft = m_marker->logicalLeft() + paddingStart() + borderStart() + m_marker->marginEnd();
             LayoutUnit rightLineOffset = logicalRightOffsetForLine(blockOffset, logicalRightOffsetForLine(blockOffset, false), false);
             markerLogicalLeft = rightLineOffset - lineOffset + paddingStart() + borderStart() + m_marker->marginEnd();
             m_marker->inlineBoxWrapper()->adjustLineDirectionPosition(markerLogicalLeft - markerOldLogicalLeft);
@@ -342,26 +376,26 @@ void RenderListItem::positionListMarker()
                 LayoutRect newLogicalLayoutOverflowRect = box->logicalLayoutOverflowRect(lineTop, lineBottom);
                 if (markerLogicalLeft + m_marker->logicalWidth() > newLogicalVisualOverflowRect.maxX() && !hitSelfPaintingLayer) {
                     newLogicalVisualOverflowRect.setWidth(markerLogicalLeft + m_marker->logicalWidth() - newLogicalVisualOverflowRect.x());
-                    if (box == root)
+                    if (box == &rootBox)
                         adjustOverflow = true;
                 }
                 if (markerLogicalLeft + m_marker->logicalWidth() > newLogicalLayoutOverflowRect.maxX()) {
                     newLogicalLayoutOverflowRect.setWidth(markerLogicalLeft + m_marker->logicalWidth() - newLogicalLayoutOverflowRect.x());
-                    if (box == root)
+                    if (box == &rootBox)
                         adjustOverflow = true;
                 }
                 box->setOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
                 
-                if (box->boxModelObject()->hasSelfPaintingLayer())
+                if (box->renderer().hasSelfPaintingLayer())
                     hitSelfPaintingLayer = true;
             }
         }
 
         if (adjustOverflow) {
             LayoutRect markerRect(markerLogicalLeft + lineOffset, blockOffset, m_marker->width(), m_marker->height());
-            if (!style()->isHorizontalWritingMode())
+            if (!style().isHorizontalWritingMode())
                 markerRect = markerRect.transposedRect();
-            RenderBox* o = m_marker;
+            RenderBox* o = m_marker.get();
             bool propagateVisualOverflow = true;
             bool propagateLayoutOverflow = true;
             do {
@@ -389,15 +423,14 @@ void RenderListItem::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     if (!logicalHeight() && hasOverflowClip())
         return;
 
-    RenderBlock::paint(paintInfo, paintOffset);
+    RenderBlockFlow::paint(paintInfo, paintOffset);
 }
 
 const String& RenderListItem::markerText() const
 {
     if (m_marker)
         return m_marker->text();
-    DEFINE_STATIC_LOCAL(String, staticNullString, ());
-    return staticNullString;
+    return nullAtom.string();
 }
 
 String RenderListItem::markerTextWithSuffix() const
@@ -412,12 +445,12 @@ String RenderListItem::markerTextWithSuffix() const
     const String markerSuffix = m_marker->suffix();
     StringBuilder result;
 
-    if (!m_marker->style()->isLeftToRightDirection())
+    if (!m_marker->style().isLeftToRightDirection())
         result.append(markerSuffix);
 
     result.append(markerText);
 
-    if (m_marker->style()->isLeftToRightDirection())
+    if (m_marker->style().isLeftToRightDirection())
         result.append(markerSuffix);
 
     return result.toString();
@@ -427,18 +460,13 @@ void RenderListItem::explicitValueChanged()
 {
     if (m_marker)
         m_marker->setNeedsLayoutAndPrefWidthsRecalc();
-    Node* listNode = enclosingList(this);
-    RenderObject* listRenderer = 0;
-    if (listNode)
-        listRenderer = listNode->renderer();
-    for (RenderListItem* item = this; item; item = nextListItem(listRenderer, item))
+    Element* listNode = enclosingList(this);
+    for (RenderListItem* item = this; item; item = nextListItem(listNode, item))
         item->updateValue();
 }
 
 void RenderListItem::setExplicitValue(int value)
 {
-    ASSERT(node());
-
     if (m_hasExplicitValue && m_explicitValue == value)
         return;
     m_explicitValue = value;
@@ -449,8 +477,6 @@ void RenderListItem::setExplicitValue(int value)
 
 void RenderListItem::clearExplicitValue()
 {
-    ASSERT(node());
-
     if (!m_hasExplicitValue)
         return;
     m_hasExplicitValue = false;
@@ -458,26 +484,26 @@ void RenderListItem::clearExplicitValue()
     explicitValueChanged();
 }
 
-static RenderListItem* previousOrNextItem(bool isListReversed, RenderObject* list, RenderListItem* item)
+static RenderListItem* previousOrNextItem(bool isListReversed, Element* list, RenderListItem* item)
 {
-    return isListReversed ? previousListItem(list, item) : RenderListItem::nextListItem(list, item);
+    return isListReversed ? previousListItem(list, item) : nextListItem(list, item);
 }
 
 void RenderListItem::updateListMarkerNumbers()
 {
-    Node* listNode = enclosingList(this);
-    ASSERT(listNode && listNode->renderer());
-    if (!listNode || !listNode->renderer())
+    Element* listNode = enclosingList(this);
+    // The list node can be the shadow root which has no renderer.
+    ASSERT(listNode);
+    if (!listNode)
         return;
 
     bool isListReversed = false;
-    RenderObject* list = listNode->renderer();
-    HTMLOListElement* oListElement = (listNode && listNode->hasTagName(olTag)) ? static_cast<HTMLOListElement*>(listNode) : 0;
+    HTMLOListElement* oListElement = (listNode && listNode->hasTagName(olTag)) ? toHTMLOListElement(listNode) : nullptr;
     if (oListElement) {
         oListElement->itemCountChanged();
         isListReversed = oListElement->isReversed();
     }
-    for (RenderListItem* item = previousOrNextItem(isListReversed, list, this); item; item = previousOrNextItem(isListReversed, list, item)) {
+    for (RenderListItem* item = previousOrNextItem(isListReversed, listNode, this); item; item = previousOrNextItem(isListReversed, listNode, item)) {
         if (!item->m_isValueUpToDate) {
             // If an item has been marked for update before, we can safely
             // assume that all the following ones have too.

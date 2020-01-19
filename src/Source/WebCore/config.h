@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006 Apple Inc.
+ * Copyright (C) 2004, 2005, 2006, 2013, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2009 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
@@ -17,7 +17,7 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- */ 
+ */
 
 #if defined(HAVE_CONFIG_H) && HAVE_CONFIG_H
 #ifdef BUILDING_WITH_CMAKE
@@ -29,7 +29,11 @@
 
 #include <wtf/Platform.h>
 
-#if PLATFORM(WIN) && !OS(WINCE)
+#if PLATFORM(COCOA)
+#define WTF_USE_FILE_LOCK 1
+#endif
+
+#if PLATFORM(WIN) && !USE(WINGDI)
 #include <WebCore/WebCoreHeaderDetection.h>
 #endif
 
@@ -50,15 +54,6 @@
 
 #ifndef WINVER
 #define WINVER 0x0502
-#endif
-
-// If we don't define these, they get defined in windef.h.
-// We want to use std::min and std::max.
-#ifndef max
-#define max max
-#endif
-#ifndef min
-#define min min
 #endif
 
 // CURL needs winsock, so don't prevent inclusion of it
@@ -82,12 +77,6 @@
 
 #endif
 
-// On MSW, wx headers need to be included before windows.h is.
-// The only way we can always ensure this is if we include wx here.
-#if PLATFORM(WX)
-#include <wx/defs.h>
-#endif
-
 #include <wtf/DisallowCType.h>
 
 #if COMPILER(MSVC)
@@ -104,32 +93,20 @@
 #ifndef _WINSOCKAPI_
 #define _WINSOCKAPI_ // Prevent inclusion of winsock.h in windows.h
 #endif
-#elif !OS(WINCE)
+#elif !USE(WINGDI)
 #define WTF_USE_CG 1
 #undef WTF_USE_CAIRO
 #undef WTF_USE_CURL
 #endif
 #endif
 
-#if PLATFORM(MAC)
-// New theme
+#if PLATFORM(MAC) && !PLATFORM(IOS)
 #define WTF_USE_NEW_THEME 1
-#endif // PLATFORM(MAC)
-
-#if PLATFORM(CHROMIUM)
-
-// Chromium uses this file instead of JavaScriptCore/config.h to compile
-// JavaScriptCore/wtf (chromium doesn't compile the rest of JSC). Therefore,
-// this define is required.
-#define WTF_CHANGES 1
-
-#define WTF_USE_GOOGLEURL 1
-
-#endif /* PLATFORM(CHROMIUM) */
+#endif
 
 #if USE(CG)
 #ifndef CGFLOAT_DEFINED
-#ifdef __LP64__
+#if (defined(__LP64__) && __LP64__) || (defined(__x86_64__) && __x86_64__) || defined(_M_X64) || defined(__amd64__)
 typedef double CGFloat;
 #else
 typedef float CGFloat;
@@ -138,14 +115,26 @@ typedef float CGFloat;
 #endif
 #endif /* USE(CG) */
 
-// CoreAnimation is available to IOS, Mac and Windows if using CG
-#if PLATFORM(MAC) || PLATFORM(IOS) || (PLATFORM(WIN) && USE(CG))
-#define WTF_USE_CA 1
+#if PLATFORM(WIN) && USE(CG)
+#define WTF_USE_SAFARI_THEME 1
+#endif
+
+#if PLATFORM(IOS)
+#define WEBCORE_NAVIGATOR_PLATFORM wkGetPlatformNameForNavigator();
+#define WEBCORE_NAVIGATOR_VENDOR wkGetVendorNameForNavigator();
 #endif
 
 // FIXME: Move this to JavaScriptCore/wtf/Platform.h, which is where we define WTF_USE_AVFOUNDATION on the Mac.
 // https://bugs.webkit.org/show_bug.cgi?id=67334
-#if PLATFORM(WIN) && HAVE(AVCF)
+#if PLATFORM(WIN) && USE(CG) && HAVE(AVCF)
 #define WTF_USE_AVFOUNDATION 1
+
+#if HAVE(AVCF_LEGIBLE_OUTPUT)
+#define WTF_USE_AVFOUNDATION 1
+#define HAVE_AVFOUNDATION_MEDIA_SELECTION_GROUP 1
+#define HAVE_AVFOUNDATION_LEGIBLE_OUTPUT_SUPPORT 1
+#define HAVE_MEDIA_ACCESSIBILITY_FRAMEWORK 1
+#endif
+
 #endif
 

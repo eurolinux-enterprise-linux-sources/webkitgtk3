@@ -63,11 +63,15 @@ WebNotificationProvider::WebNotificationProvider()
 {
 }
 
-WKNotificationProvider WebNotificationProvider::provider()
+WebNotificationProvider::~WebNotificationProvider()
 {
-    WKNotificationProvider notificationProvider = {
-        kWKNotificationProviderCurrentVersion,
-        this,
+    WKNotificationManagerSetProvider(m_notificationManager.get(), 0);
+}
+
+WKNotificationProviderV0 WebNotificationProvider::provider()
+{
+    WKNotificationProviderV0 notificationProvider = {
+        { kWKNotificationProviderCurrentVersion, this },
         WTR::showWebNotification,
         WTR::closeWebNotification,
         0, // didDestroyNotification

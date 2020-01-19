@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,84 +25,25 @@
 #ifndef WTF_ObjcRuntimeExtras_h
 #define WTF_ObjcRuntimeExtras_h
 
+// FIXME: This file's name and function names refer to Objective-C as Objc with a lowercase C,
+// but it should be ObjC with an uppercase C.
+
 #include <objc/message.h>
 
-template<typename RetType>
-RetType wtfObjcMsgSend(id target, SEL selector)
+#ifdef __cplusplus
+
+template<typename ReturnType, typename... ArgumentTypes>
+inline ReturnType wtfObjcMsgSend(id target, SEL selector, ArgumentTypes... arguments)
 {
-    return reinterpret_cast<RetType (*)(id, SEL)>(objc_msgSend)(target, selector);
+    return reinterpret_cast<ReturnType (*)(id, SEL, ArgumentTypes...)>(objc_msgSend)(target, selector, arguments...);
 }
 
-template<typename RetType, typename Arg1Type>
-RetType wtfObjcMsgSend(id target, SEL selector, Arg1Type arg1)
+template<typename ReturnType, typename... ArgumentTypes>
+inline ReturnType wtfCallIMP(IMP implementation, id target, SEL selector, ArgumentTypes... arguments)
 {
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type)>(objc_msgSend)(target, selector, arg1);
+    return reinterpret_cast<ReturnType (*)(id, SEL, ArgumentTypes...)>(implementation)(target, selector, arguments...);
 }
 
-template<typename RetType, typename Arg1Type, typename Arg2Type>
-RetType wtfObjcMsgSend(id target, SEL selector, Arg1Type arg1, Arg2Type arg2)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type)>(objc_msgSend)(target, selector, arg1, arg2);
-}
+#endif // __cplusplus
 
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type>
-RetType wtfObjcMsgSend(id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type)>(objc_msgSend)(target, selector, arg1, arg2, arg3);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Arg4Type>
-RetType wtfObjcMsgSend(id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3, Arg4Type arg4)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type, Arg4Type)>(objc_msgSend)(target, selector, arg1, arg2, arg3, arg4);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Arg4Type, typename Arg5Type>
-RetType wtfObjcMsgSend(id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3, Arg4Type arg4, Arg5Type arg5)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type, Arg4Type, Arg5Type)>(objc_msgSend)(target, selector, arg1, arg2, arg3, arg4, arg5);
-}
-
-template<typename RetType>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector)
-{
-    return reinterpret_cast<RetType (*)(id, SEL)>(implementation)(target, selector);
-}
-
-template<typename RetType, typename Arg1Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type)>(implementation)(target, selector, arg1);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1, Arg2Type arg2)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type)>(implementation)(target, selector, arg1, arg2);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type)>(implementation)(target, selector, arg1, arg2, arg3);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Arg4Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3, Arg4Type arg4)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type, Arg4Type)>(implementation)(target, selector, arg1, arg2, arg3, arg4);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Arg4Type, typename Arg5Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3, Arg4Type arg4, Arg5Type arg5)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type, Arg4Type, Arg5Type)>(implementation)(target, selector, arg1, arg2, arg3, arg4, arg5);
-}
-
-template<typename RetType, typename Arg1Type, typename Arg2Type, typename Arg3Type, typename Arg4Type, typename Arg5Type, typename Arg6Type>
-RetType wtfCallIMP(IMP implementation, id target, SEL selector, Arg1Type arg1, Arg2Type arg2, Arg3Type arg3, Arg4Type arg4, Arg5Type arg5, Arg6Type arg6)
-{
-    return reinterpret_cast<RetType (*)(id, SEL, Arg1Type, Arg2Type, Arg3Type, Arg4Type, Arg5Type, Arg6Type)>(implementation)(target, selector, arg1, arg2, arg3, arg4, arg5, arg6);
-}
-
-#endif
+#endif // WTF_ObjcRuntimeExtras_h

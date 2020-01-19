@@ -1,6 +1,6 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,28 +32,9 @@
 #include <objc/objc.h>
 #endif
 
-#if PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QString;
-QT_END_NAMESPACE
-#endif
-
-#if PLATFORM(WX)
-class wxString;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class String;
-}
-}
-#endif
-
 namespace WTF {
 
 class CString;
-class MemoryObjectInfo;
 struct StringHash;
 
 // Declarations of string operations
@@ -116,8 +97,8 @@ public:
     // which will sometimes return a null string when vector.data() is null
     // which can only occur for vectors without inline capacity.
     // See: https://bugs.webkit.org/show_bug.cgi?id=109792
-    template<size_t inlineCapacity>
-    explicit String(const Vector<UChar, inlineCapacity>&);
+    template<size_t inlineCapacity, typename OverflowHandler>
+    explicit String(const Vector<UChar, inlineCapacity, OverflowHandler>&);
 
     // Construct a string with UTF-16 data, from a null-terminated source.
     WTF_EXPORT_STRING_API String(const UChar*);
@@ -133,7 +114,8 @@ public:
     // Construct a string referencing an existing StringImpl.
     String(StringImpl* impl) : m_impl(impl) { }
     String(PassRefPtr<StringImpl> impl) : m_impl(impl) { }
-    String(RefPtr<StringImpl> impl) : m_impl(impl) { }
+    String(PassRef<StringImpl> impl) : m_impl(std::move(impl)) { }
+    String(RefPtr<StringImpl>&& impl) : m_impl(impl) { }
 
     // Construct a string from a constant string literal.
     WTF_EXPORT_STRING_API String(ASCIILiteral characters);
@@ -144,14 +126,12 @@ public:
     template<unsigned charactersCount>
     String(const char (&characters)[charactersCount], ConstructFromLiteralTag) : m_impl(StringImpl::createFromLiteral<charactersCount>(characters)) { }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
     // We have to declare the copy constructor and copy assignment operator as well, otherwise
     // they'll be implicitly deleted by adding the move constructor and move assignment operator.
     String(const String& other) : m_impl(other.m_impl) { }
     String(String&& other) : m_impl(other.m_impl.release()) { }
     String& operator=(const String& other) { m_impl = other.m_impl; return *this; }
     String& operator=(String&& other) { m_impl = other.m_impl.release(); return *this; }
-#endif
 
     // Inline the destructor.
     ALWAYS_INLINE ~String() { }
@@ -160,13 +140,14 @@ public:
 
     static String adopt(StringBuffer<LChar>& buffer) { return StringImpl::adopt(buffer); }
     static String adopt(StringBuffer<UChar>& buffer) { return StringImpl::adopt(buffer); }
-    template<typename CharacterType, size_t inlineCapacity>
-    static String adopt(Vector<CharacterType, inlineCapacity>& vector) { return StringImpl::adopt(vector); }
+    template<typename CharacterType, size_t inlineCapacity, typename OverflowHandler>
+    static String adopt(Vector<CharacterType, inlineCapacity, OverflowHandler>& vector) { return StringImpl::adopt(vector); }
 
     bool isNull() const { return !m_impl; }
     bool isEmpty() const { return !m_impl || !m_impl->length(); }
 
     StringImpl* impl() const { return m_impl.get(); }
+    PassRefPtr<StringImpl> releaseImpl() { return m_impl.release(); }
 
     unsigned length() const
     {
@@ -175,13 +156,14 @@ public:
         return m_impl->length();
     }
 
-    const UChar* characters() const
+    const UChar* characters() const { return deprecatedCharacters(); } // FIXME: Delete this.
+    const UChar* deprecatedCharacters() const
     {
         if (!m_impl)
             return 0;
-        return m_impl->characters();
+        return m_impl->deprecatedCharacters();
     }
-    
+
     const LChar* characters8() const
     {
         if (!m_impl)
@@ -218,20 +200,15 @@ public:
     WTF_EXPORT_STRING_API CString ascii() const;
     WTF_EXPORT_STRING_API CString latin1() const;
 
-    typedef enum {
-        LenientConversion,
-        StrictConversion,
-        StrictConversionReplacingUnpairedSurrogatesWithFFFD,
-    } ConversionMode;
-
     WTF_EXPORT_STRING_API CString utf8(ConversionMode = LenientConversion) const;
 
-    UChar operator[](unsigned index) const
+    UChar at(unsigned index) const
     {
         if (!m_impl || index >= m_impl->length())
             return 0;
         return (*m_impl)[index];
     }
+    UChar operator[](unsigned index) const { return at(index); }
 
     WTF_EXPORT_STRING_API static String number(int);
     WTF_EXPORT_STRING_API static String number(unsigned int);
@@ -260,6 +237,9 @@ public:
     size_t find(const LChar* str, unsigned start = 0) const
         { return m_impl ? m_impl->find(str, start) : notFound; }
 
+    size_t findNextLineStart(unsigned start = 0) const
+        { return m_impl ? m_impl->findNextLineStart(start) : notFound; }
+
     // Find the last instance of a single character or string.
     size_t reverseFind(UChar c, unsigned start = UINT_MAX) const
         { return m_impl ? m_impl->reverseFind(c, start) : notFound; }
@@ -282,7 +262,7 @@ public:
     size_t reverseFind(const String& str, unsigned start, bool caseSensitive) const
         { return caseSensitive ? reverseFind(str, start) : reverseFindIgnoringCase(str, start); }
 
-    WTF_EXPORT_STRING_API const UChar* charactersWithNullTermination();
+    WTF_EXPORT_STRING_API Vector<UChar> charactersWithNullTermination() const;
     
     WTF_EXPORT_STRING_API UChar32 characterStartingAt(unsigned) const; // Ditto.
     
@@ -290,7 +270,9 @@ public:
     bool contains(const LChar* str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != notFound; }
     bool contains(const String& str, bool caseSensitive = true) const { return find(str, 0, caseSensitive) != notFound; }
 
-    bool startsWith(const String& s, bool caseSensitive = true) const
+    bool startsWith(const String& s) const
+        { return m_impl ? m_impl->startsWith(s.impl()) : s.isEmpty(); }
+    bool startsWith(const String& s, bool caseSensitive) const
         { return m_impl ? m_impl->startsWith(s.impl(), caseSensitive) : s.isEmpty(); }
     bool startsWith(UChar character) const
         { return m_impl ? m_impl->startsWith(character) : false; }
@@ -329,8 +311,6 @@ public:
         return *this;
     }
 
-    void makeLower() { if (m_impl) m_impl = m_impl->lower(); }
-    void makeUpper() { if (m_impl) m_impl = m_impl->upper(); }
     void fill(UChar c) { if (m_impl) m_impl = m_impl->fill(c); }
 
     WTF_EXPORT_STRING_API void truncate(unsigned len);
@@ -345,6 +325,9 @@ public:
     WTF_EXPORT_STRING_API String lower() const;
     WTF_EXPORT_STRING_API String upper() const;
 
+    WTF_EXPORT_STRING_API String lower(const AtomicString& localeIdentifier) const;
+    WTF_EXPORT_STRING_API String upper(const AtomicString& localeIdentifier) const;
+
     WTF_EXPORT_STRING_API String stripWhiteSpace() const;
     WTF_EXPORT_STRING_API String stripWhiteSpace(IsWhiteSpaceFunctionPtr) const;
     WTF_EXPORT_STRING_API String simplifyWhiteSpace() const;
@@ -356,11 +339,7 @@ public:
     // Return the string with case folded for case insensitive comparison.
     WTF_EXPORT_STRING_API String foldCase() const;
 
-#if !PLATFORM(QT)
     WTF_EXPORT_STRING_API static String format(const char *, ...) WTF_ATTRIBUTE_PRINTF(1, 2);
-#else
-    WTF_EXPORT_STRING_API static String format(const char *, ...);
-#endif
 
     // Returns an uninitialized string. The characters needs to be written
     // into the buffer returned in data before the returned string is used.
@@ -382,12 +361,12 @@ public:
     WTF_EXPORT_STRING_API int toIntStrict(bool* ok = 0, int base = 10) const;
     WTF_EXPORT_STRING_API unsigned toUIntStrict(bool* ok = 0, int base = 10) const;
     WTF_EXPORT_STRING_API int64_t toInt64Strict(bool* ok = 0, int base = 10) const;
-    uint64_t toUInt64Strict(bool* ok = 0, int base = 10) const;
+    WTF_EXPORT_STRING_API uint64_t toUInt64Strict(bool* ok = 0, int base = 10) const;
     intptr_t toIntPtrStrict(bool* ok = 0, int base = 10) const;
 
     WTF_EXPORT_STRING_API int toInt(bool* ok = 0) const;
     WTF_EXPORT_STRING_API unsigned toUInt(bool* ok = 0) const;
-    int64_t toInt64(bool* ok = 0) const;
+    WTF_EXPORT_STRING_API int64_t toInt64(bool* ok = 0) const;
     WTF_EXPORT_STRING_API uint64_t toUInt64(bool* ok = 0) const;
     WTF_EXPORT_STRING_API intptr_t toIntPtr(bool* ok = 0) const;
 
@@ -399,7 +378,13 @@ public:
 
     bool percentage(int& percentage) const;
 
+#if COMPILER_SUPPORTS(CXX_REFERENCE_QUALIFIED_FUNCTIONS)
+    WTF_EXPORT_STRING_API String isolatedCopy() const &;
+    WTF_EXPORT_STRING_API String isolatedCopy() const &&;
+#else
     WTF_EXPORT_STRING_API String isolatedCopy() const;
+#endif
+
     WTF_EXPORT_STRING_API bool isSafeToSendToAnotherThread() const;
 
     // Prevent Strings from being implicitly convertable to bool as it will be ambiguous on any platform that
@@ -410,32 +395,16 @@ public:
     operator UnspecifiedBoolTypeB() const;
 
 #if USE(CF)
-    String(CFStringRef);
-    RetainPtr<CFStringRef> createCFString() const;
+    WTF_EXPORT_STRING_API String(CFStringRef);
+    WTF_EXPORT_STRING_API RetainPtr<CFStringRef> createCFString() const;
 #endif
 
 #ifdef __OBJC__
-    String(NSString*);
+    WTF_EXPORT_STRING_API String(NSString*);
     
-    // This conversion maps NULL to "", which loses the meaning of NULL, but we 
+    // This conversion maps NULL to "", which loses the meaning of NULL, but we
     // need this mapping because AppKit crashes when passed nil NSStrings.
     operator NSString*() const { if (!m_impl) return @""; return *m_impl; }
-#endif
-
-#if PLATFORM(QT)
-    WTF_EXPORT_STRING_API String(const QString&);
-    WTF_EXPORT_STRING_API String(const QStringRef&);
-    WTF_EXPORT_STRING_API operator QString() const;
-#endif
-
-#if PLATFORM(WX)
-    WTF_EXPORT_PRIVATE String(const wxString&);
-    WTF_EXPORT_PRIVATE operator wxString() const;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-    String(const BlackBerry::Platform::String&);
-    operator BlackBerry::Platform::String() const;
 #endif
 
     WTF_EXPORT_STRING_API static String make8BitFrom16BitSource(const UChar*, size_t);
@@ -453,20 +422,20 @@ public:
     WTF_EXPORT_STRING_API static String fromUTF8(const LChar*);
     static String fromUTF8(const char* s, size_t length) { return fromUTF8(reinterpret_cast<const LChar*>(s), length); };
     static String fromUTF8(const char* s) { return fromUTF8(reinterpret_cast<const LChar*>(s)); };
-    static String fromUTF8(const CString&);
+    WTF_EXPORT_STRING_API static String fromUTF8(const CString&);
 
     // Tries to convert the passed in string to UTF-8, but will fall back to Latin-1 if the string is not valid UTF-8.
     WTF_EXPORT_STRING_API static String fromUTF8WithLatin1Fallback(const LChar*, size_t);
     static String fromUTF8WithLatin1Fallback(const char* s, size_t length) { return fromUTF8WithLatin1Fallback(reinterpret_cast<const LChar*>(s), length); };
     
     // Determines the writing direction using the Unicode Bidi Algorithm rules P2 and P3.
-    WTF::Unicode::Direction defaultWritingDirection(bool* hasStrongDirectionality = 0) const
+    UCharDirection defaultWritingDirection(bool* hasStrongDirectionality = nullptr) const
     {
         if (m_impl)
             return m_impl->defaultWritingDirection(hasStrongDirectionality);
         if (hasStrongDirectionality)
             *hasStrongDirectionality = false;
-        return WTF::Unicode::LeftToRight;
+        return U_LEFT_TO_RIGHT;
     }
 
     bool containsOnlyASCII() const;
@@ -492,6 +461,9 @@ public:
 private:
     template <typename CharacterType>
     void removeInternal(const CharacterType*, unsigned, int);
+
+    template <typename CharacterType>
+    void appendInternal(CharacterType);
 
     RefPtr<StringImpl> m_impl;
 };
@@ -539,9 +511,9 @@ inline void swap(String& a, String& b) { a.swap(b); }
 
 // Definitions of string operations
 
-template<size_t inlineCapacity>
-String::String(const Vector<UChar, inlineCapacity>& vector)
-    : m_impl(vector.size() ? StringImpl::create(vector.data(), vector.size()) : StringImpl::empty())
+template<size_t inlineCapacity, typename OverflowHandler>
+String::String(const Vector<UChar, inlineCapacity, OverflowHandler>& vector)
+    : m_impl(vector.size() ? StringImpl::create(vector.data(), vector.size()) : *StringImpl::empty())
 {
 }
 
@@ -569,7 +541,7 @@ inline const LChar* String::getCharactersWithUpconvert<LChar>() const
 template<>
 inline const UChar* String::getCharactersWithUpconvert<UChar>() const
 {
-    return characters();
+    return deprecatedCharacters();
 }
 
 inline bool String::containsOnlyLatin1() const
@@ -616,7 +588,7 @@ inline bool codePointCompareLessThan(const String& a, const String& b)
 template<size_t inlineCapacity>
 inline void append(Vector<UChar, inlineCapacity>& vector, const String& string)
 {
-    vector.append(string.characters(), string.length());
+    vector.append(string.deprecatedCharacters(), string.length());
 }
 
 template<typename CharacterType>
@@ -630,10 +602,12 @@ inline void appendNumber(Vector<CharacterType>& vector, unsigned char number)
     case 3:
         vector[vectorSize + 2] = number % 10 + '0';
         number /= 10;
+        FALLTHROUGH;
 
     case 2:
         vector[vectorSize + 1] = number % 10 + '0';
         number /= 10;
+        FALLTHROUGH;
 
     case 1:
         vector[vectorSize] = number % 10 + '0';
@@ -660,7 +634,7 @@ inline bool String::isAllSpecialCharacters() const
 
     if (is8Bit())
         return WTF::isAllSpecialCharacters<isSpecialCharacter, LChar>(characters8(), len);
-    return WTF::isAllSpecialCharacters<isSpecialCharacter, UChar>(characters(), len);
+    return WTF::isAllSpecialCharacters<isSpecialCharacter, UChar>(characters16(), len);
 }
 
 // StringHash is the default hash for String

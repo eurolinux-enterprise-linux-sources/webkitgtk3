@@ -48,7 +48,7 @@
 #include "SubresourceLoader.h"
 #include "ThreadableLoaderClient.h"
 #include <wtf/Assertions.h>
-#include <wtf/UnusedParam.h>
+#include <wtf/Ref.h>
 
 #if ENABLE(INSPECTOR)
 #include "ProgressTracker.h"
@@ -145,7 +145,7 @@ DocumentThreadableLoader::~DocumentThreadableLoader()
 
 void DocumentThreadableLoader::cancel()
 {
-    RefPtr<DocumentThreadableLoader> protect(this);
+    Ref<DocumentThreadableLoader> protect(*this);
 
     // Cancel can re-enter and m_resource might be null here as a result.
     if (m_client && m_resource) {
@@ -181,7 +181,7 @@ void DocumentThreadableLoader::redirectReceived(CachedResource* resource, Resour
     ASSERT(m_client);
     ASSERT_UNUSED(resource, resource == m_resource);
 
-    RefPtr<DocumentThreadableLoader> protect(this);
+    Ref<DocumentThreadableLoader> protect(*this);
     // Allow same origin requests to continue after allowing clients to audit the redirect.
     if (isAllowedRedirect(request.url())) {
         if (m_client->isDocumentThreadableLoaderClient())
@@ -248,7 +248,7 @@ void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, cons
     String accessControlErrorDescription;
     if (m_actualRequest) {
 #if ENABLE(INSPECTOR)
-        DocumentLoader* loader = m_document->frame()->loader()->documentLoader();
+        DocumentLoader* loader = m_document->frame()->loader().documentLoader();
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceResponse(m_document->frame(), identifier, response);
         InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, response, 0);
 #endif
@@ -293,6 +293,8 @@ void DocumentThreadableLoader::didReceiveData(unsigned long identifier, const ch
     if (m_actualRequest) {
 #if ENABLE(INSPECTOR)
         InspectorInstrumentation::didReceiveData(m_document->frame(), identifier, 0, 0, dataLength);
+#else
+        UNUSED_PARAM(identifier);
 #endif
         return;
     }
@@ -315,7 +317,7 @@ void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double
 {
     if (m_actualRequest) {
 #if ENABLE(INSPECTOR)
-        InspectorInstrumentation::didFinishLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, finishTime);
+        InspectorInstrumentation::didFinishLoading(m_document->frame(), m_document->frame()->loader().documentLoader(), identifier, finishTime);
 #endif
         ASSERT(!m_sameOriginRequest);
         ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
@@ -328,7 +330,9 @@ void DocumentThreadableLoader::didFail(unsigned long identifier, const ResourceE
 {
 #if ENABLE(INSPECTOR)
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader().documentLoader(), identifier, error);
+#else
+    UNUSED_PARAM(identifier);
 #endif
 
     m_client->didFail(error);
@@ -352,7 +356,9 @@ void DocumentThreadableLoader::preflightFailure(unsigned long identifier, const 
     ResourceError error(errorDomainWebKitInternal, 0, url, errorDescription);
 #if ENABLE(INSPECTOR)
     if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader()->documentLoader(), identifier, error);
+        InspectorInstrumentation::didFailLoading(m_document->frame(), m_document->frame()->loader().documentLoader(), identifier, error);
+#else
+    UNUSED_PARAM(identifier);
 #endif
     m_actualRequest = nullptr; // Prevent didFinishLoading() from bypassing access check.
     m_client->didFailAccessControlCheck(error);
@@ -361,14 +367,14 @@ void DocumentThreadableLoader::preflightFailure(unsigned long identifier, const 
 void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, SecurityCheckPolicy securityCheck)
 {
     // Any credential should have been removed from the cross-site requests.
-    const KURL& requestURL = request.url();
+    const URL& requestURL = request.url();
     m_options.securityCheck = securityCheck;
     ASSERT(m_sameOriginRequest || requestURL.user().isEmpty());
     ASSERT(m_sameOriginRequest || requestURL.pass().isEmpty());
 
     if (m_async) {
         ThreadableLoaderOptions options = m_options;
-        options.crossOriginCredentialPolicy = DoNotAskClientForCrossOriginCredentials;
+        options.clientCredentialPolicy = DoNotAskClientForCrossOriginCredentials;
         if (m_actualRequest) {
             // Don't sniff content or send load callbacks for the preflight request.
             options.sendLoadCallbacks = DoNotSendCallbacks;
@@ -401,7 +407,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
     ResourceResponse response;
     unsigned long identifier = std::numeric_limits<unsigned long>::max();
     if (m_document->frame())
-        identifier = m_document->frame()->loader()->loadResourceSynchronously(request, m_options.allowCredentials, error, response, data);
+        identifier = m_document->frame()->loader().loadResourceSynchronously(request, m_options.allowCredentials, m_options.clientCredentialPolicy, error, response, data);
 
     InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
 
@@ -429,7 +435,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
     didFinishLoading(identifier, 0.0);
 }
 
-bool DocumentThreadableLoader::isAllowedRedirect(const KURL& url)
+bool DocumentThreadableLoader::isAllowedRedirect(const URL& url)
 {
     if (m_options.crossOriginRequestPolicy == AllowCrossOriginRequests)
         return true;

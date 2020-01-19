@@ -206,8 +206,6 @@ MACRO_INSTRUCTIONS =
      "tqs",
      "tqz",
      "tqnz",
-     "peekq",
-     "pokeq",
      "bqeq",
      "bqneq",
      "bqa",
@@ -249,6 +247,9 @@ MACRO_INSTRUCTIONS =
      "bnz",
      "leai",
      "leap",
+     "pushCalleeSaves",
+     "popCalleeSaves",
+     "memfence"
     ]
 
 X86_INSTRUCTIONS =
@@ -257,12 +258,19 @@ X86_INSTRUCTIONS =
      "idivi"
     ]
 
-ARMv7_INSTRUCTIONS =
+ARM64_INSTRUCTIONS =
     [
-     "smulli",
-     "addis",
-     "subis",
-     "oris"
+     "popLRAndFP",   # ARM64 requires registers to be pushed and popped in pairs,
+     "pushLRAndFP"   # therefore we do LR (link register) and FP (frame pointer) together.
+    ]
+
+RISC_INSTRUCTIONS =
+    [
+     "smulli",  # Multiply two 32-bit words and produce a 64-bit word
+     "addis",   # Add integers and set a flag.
+     "subis",   # Same, but for subtraction.
+     "oris",    # Same, but for bitwise or.
+     "addps"    # addis but for pointers.
     ]
 
 MIPS_INSTRUCTIONS =
@@ -273,6 +281,20 @@ MIPS_INSTRUCTIONS =
     "sltu",
     "pichdr",
     "pichdrra"
+    ]
+
+SH4_INSTRUCTIONS =
+    [
+    "shllx",
+    "shlrx",
+    "shld",
+    "shad",
+    "bdnan",
+    "loaddReversedAndIncrementAddress",
+    "storedReversedAndDecrementAddress",
+    "ldspr",
+    "stspr",
+    "setargs"
     ]
 
 CXX_INSTRUCTIONS =
@@ -291,7 +313,7 @@ CXX_INSTRUCTIONS =
      "cloopDo",              # no operands
     ]
 
-INSTRUCTIONS = MACRO_INSTRUCTIONS + X86_INSTRUCTIONS + ARMv7_INSTRUCTIONS + MIPS_INSTRUCTIONS + CXX_INSTRUCTIONS
+INSTRUCTIONS = MACRO_INSTRUCTIONS + X86_INSTRUCTIONS + ARM64_INSTRUCTIONS + RISC_INSTRUCTIONS + MIPS_INSTRUCTIONS + SH4_INSTRUCTIONS + CXX_INSTRUCTIONS
 
 INSTRUCTION_PATTERN = Regexp.new('\\A((' + INSTRUCTIONS.join(')|(') + '))\\Z')
 

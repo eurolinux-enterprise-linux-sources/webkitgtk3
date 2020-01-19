@@ -49,10 +49,10 @@ namespace JSC {
     // thread acquired it to begin with.
 
     class ExecState;
-    class JSGlobalData;
+    class VM;
 
     // This class is used to protect the initialization of the legacy single 
-    // shared JSGlobalData.
+    // shared VM.
     class GlobalJSLock {
         WTF_MAKE_NONCOPYABLE(GlobalJSLock);
     public:
@@ -66,19 +66,21 @@ namespace JSC {
 
     class JSLockHolder {
     public:
-        JS_EXPORT_PRIVATE JSLockHolder(JSGlobalData*);
-        JS_EXPORT_PRIVATE JSLockHolder(JSGlobalData&);
+        JS_EXPORT_PRIVATE JSLockHolder(VM*);
+        JS_EXPORT_PRIVATE JSLockHolder(VM&);
         JS_EXPORT_PRIVATE JSLockHolder(ExecState*);
 
         JS_EXPORT_PRIVATE ~JSLockHolder();
     private:
-        RefPtr<JSGlobalData> m_globalData;
+        void init();
+
+        RefPtr<VM> m_vm;
     };
 
-    class JSLock {
+    class JSLock : public ThreadSafeRefCounted<JSLock> {
         WTF_MAKE_NONCOPYABLE(JSLock);
     public:
-        JSLock();
+        JSLock(VM*);
         JS_EXPORT_PRIVATE ~JSLock();
 
         JS_EXPORT_PRIVATE void lock();
@@ -86,25 +88,32 @@ namespace JSC {
 
         static void lock(ExecState*);
         static void unlock(ExecState*);
-        static void lock(JSGlobalData&);
-        static void unlock(JSGlobalData&);
+        static void lock(VM&);
+        static void unlock(VM&);
+
+        VM* vm() { return m_vm; }
 
         JS_EXPORT_PRIVATE bool currentThreadIsHoldingLock();
 
-        unsigned dropAllLocks();
-        unsigned dropAllLocksUnconditionally();
-        void grabAllLocks(unsigned lockCount);
+        unsigned dropAllLocks(SpinLock&);
+        unsigned dropAllLocksUnconditionally(SpinLock&);
+        void grabAllLocks(unsigned lockCount, SpinLock&);
+
+        void willDestroyVM(VM*);
 
         class DropAllLocks {
             WTF_MAKE_NONCOPYABLE(DropAllLocks);
         public:
-            JS_EXPORT_PRIVATE DropAllLocks(ExecState* exec);
-            JS_EXPORT_PRIVATE DropAllLocks(JSGlobalData*);
+            // By default, we release all locks conditionally. Some clients, such as Mobile Safari,
+            // may require that we release all locks unconditionally.
+            enum AlwaysDropLocksTag { DontAlwaysDropLocks = 0, AlwaysDropLocks };
+            JS_EXPORT_PRIVATE DropAllLocks(ExecState*, AlwaysDropLocksTag = DontAlwaysDropLocks);
+            JS_EXPORT_PRIVATE DropAllLocks(VM*, AlwaysDropLocksTag = DontAlwaysDropLocks);
             JS_EXPORT_PRIVATE ~DropAllLocks();
             
         private:
             intptr_t m_lockCount;
-            RefPtr<JSGlobalData> m_globalData;
+            RefPtr<VM> m_vm;
         };
 
     private:
@@ -113,6 +122,7 @@ namespace JSC {
         ThreadIdentifier m_ownerThread;
         intptr_t m_lockCount;
         unsigned m_lockDropDepth;
+        VM* m_vm;
     };
 
 } // namespace

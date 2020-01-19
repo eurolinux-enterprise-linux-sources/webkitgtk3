@@ -32,8 +32,9 @@
 #define BlobData_h
 
 #include "FileSystem.h"
-#include "KURL.h"
+#include "URL.h"
 #include <wtf/Forward.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/ThreadSafeRefCounted.h>
 #include <wtf/text/WTFString.h>
 
@@ -101,7 +102,7 @@ struct BlobDataItem {
     }
 
     // Constructor for Blob type.
-    BlobDataItem(const KURL& url, long long offset, long long length)
+    BlobDataItem(const URL& url, long long offset, long long length)
         : type(Blob)
         , url(url)
         , offset(offset)
@@ -110,18 +111,6 @@ struct BlobDataItem {
     {
     }
 
-#if ENABLE(FILE_SYSTEM)
-    // Constructor for URL type (e.g. FileSystem files).
-    BlobDataItem(const KURL& url, long long offset, long long length, double expectedModificationTime)
-        : type(URL)
-        , url(url)
-        , offset(offset)
-        , length(length)
-        , expectedModificationTime(expectedModificationTime)
-    {
-    }
-#endif
-
     // Detaches from current thread so that it can be passed to another thread.
     void detachFromCurrentThread();
 
@@ -129,9 +118,6 @@ struct BlobDataItem {
         Data,
         File,
         Blob
-#if ENABLE(FILE_SYSTEM)
-        , URL
-#endif
     } type;
 
     // For Data type.
@@ -141,7 +127,7 @@ struct BlobDataItem {
     String path;
 
     // For Blob or URL type.
-    KURL url;
+    URL url;
 
     long long offset;
     long long length;
@@ -166,13 +152,13 @@ typedef Vector<BlobDataItem> BlobDataItemList;
 class BlobData {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<BlobData> create();
+    BlobData() { }
 
     // Detaches from current thread so that it can be passed to another thread.
     void detachFromCurrentThread();
 
     const String& contentType() const { return m_contentType; }
-    void setContentType(const String& contentType) { m_contentType = contentType; }
+    void setContentType(const String&);
 
     const String& contentDisposition() const { return m_contentDisposition; }
     void setContentDisposition(const String& contentDisposition) { m_contentDisposition = contentDisposition; }
@@ -183,16 +169,11 @@ public:
     void appendData(PassRefPtr<RawData>, long long offset, long long length);
     void appendFile(const String& path);
     void appendFile(const String& path, long long offset, long long length, double expectedModificationTime);
-    void appendBlob(const KURL&, long long offset, long long length);
-#if ENABLE(FILE_SYSTEM)
-    void appendURL(const KURL&, long long offset, long long length, double expectedModificationTime);
-#endif
+    void appendBlob(const URL&, long long offset, long long length);
 
 private:
     friend class BlobRegistryImpl;
     friend class BlobStorageData;
-
-    BlobData() { }
 
     // This is only exposed to BlobStorageData.
     void appendData(const RawData&, long long offset, long long length);
@@ -200,6 +181,23 @@ private:
     String m_contentType;
     String m_contentDisposition;
     BlobDataItemList m_items;
+};
+
+// FIXME: This class is mostly place holder until I get farther along with
+// https://bugs.webkit.org/show_bug.cgi?id=108733 and more specifically with landing
+// https://codereview.chromium.org/11192017/.
+class BlobDataHandle : public ThreadSafeRefCounted<BlobDataHandle> {
+public:
+    static PassRefPtr<BlobDataHandle> create(std::unique_ptr<BlobData> data, long long size)
+    {
+        return adoptRef(new BlobDataHandle(std::move(data), size));
+    }
+
+    ~BlobDataHandle();
+
+private:
+    BlobDataHandle(std::unique_ptr<BlobData>, long long size);
+    URL m_internalURL;
 };
 
 } // namespace WebCore

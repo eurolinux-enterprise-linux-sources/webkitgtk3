@@ -28,12 +28,13 @@
 
 #include "CSSStyleDeclaration.h"
 #include "ExceptionCodePlaceholder.h"
-#include "StylePropertySet.h"
+#include "StyleProperties.h"
+#include "StyledElement.h"
 #include <wtf/Assertions.h>
 
 namespace WebCore {
 
-RemoveCSSPropertyCommand::RemoveCSSPropertyCommand(Document* document, PassRefPtr<StyledElement> element, CSSPropertyID property)
+RemoveCSSPropertyCommand::RemoveCSSPropertyCommand(Document& document, PassRefPtr<StyledElement> element, CSSPropertyID property)
     : SimpleEditCommand(document)
     , m_element(element)
     , m_property(property)
@@ -42,9 +43,13 @@ RemoveCSSPropertyCommand::RemoveCSSPropertyCommand(Document* document, PassRefPt
     ASSERT(m_element);
 }
 
+RemoveCSSPropertyCommand::~RemoveCSSPropertyCommand()
+{
+}
+
 void RemoveCSSPropertyCommand::doApply()
 {
-    const StylePropertySet* style = m_element->inlineStyle();
+    const StyleProperties* style = m_element->inlineStyle();
     m_oldValue = style->getPropertyValue(m_property);
     m_important = style->propertyIsImportant(m_property);
 

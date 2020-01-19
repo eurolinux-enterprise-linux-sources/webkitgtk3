@@ -33,23 +33,29 @@
 #include "PopupMenu.h"
 #include "PopupMenuClient.h"
 #include "RenderEmbeddedObject.h"
-#include "RenderSnapshottedPlugIn.h"
 #include "ScrollTypes.h"
+#include "ScrollingCoordinator.h"
 #include "SearchPopupMenu.h"
 #include "WebCoreKeyboardUIMode.h"
 #include <wtf/Forward.h>
 #include <wtf/PassOwnPtr.h>
-#include <wtf/UnusedParam.h>
 #include <wtf/Vector.h>
+
+#if PLATFORM(IOS)
+#include "PlatformLayer.h"
+#define NSResponder WAKResponder
+#ifndef __OBJC__
+class WAKResponder;
+#else
+@class WAKResponder;
+#endif
+#endif
 
 #if ENABLE(SQL_DATABASE)
 #include "DatabaseDetails.h"
 #endif
 
-#ifndef __OBJC__
-class NSMenu;
-class NSResponder;
-#endif
+OBJC_CLASS NSResponder;
 
 namespace WebCore {
 
@@ -67,17 +73,15 @@ class Geolocation;
 class GraphicsContext3D;
 class GraphicsLayer;
 class GraphicsLayerFactory;
-class HitTestResult;
 class HTMLInputElement;
+class HitTestResult;
 class IntRect;
 class NavigationAction;
 class Node;
 class Page;
-class PagePopup;
-class PagePopupClient;
-class PagePopupDriver;
 class PopupMenuClient;
 class SecurityOrigin;
+class ViewportConstraints;
 class Widget;
 
 struct DateTimeChooserParameters;
@@ -101,7 +105,7 @@ public:
     virtual bool canTakeFocus(FocusDirection) = 0;
     virtual void takeFocus(FocusDirection) = 0;
 
-    virtual void focusedNodeChanged(Node*) = 0;
+    virtual void focusedElementChanged(Element*) = 0;
     virtual void focusedFrameChanged(Frame*) = 0;
 
     // The Frame pointer provides the ChromeClient with context about which
@@ -130,11 +134,11 @@ public:
 
     virtual void setResizable(bool) = 0;
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID) = 0;
+    virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, unsigned columnNumber, const String& sourceID) = 0;
     // FIXME: Remove this MessageType variant once all the clients are updated.
-    virtual void addMessageToConsole(MessageSource source, MessageType, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID)
+    virtual void addMessageToConsole(MessageSource source, MessageType, MessageLevel level, const String& message, unsigned lineNumber, unsigned columnNumber, const String& sourceID)
     {
-        addMessageToConsole(source, level, message, lineNumber, sourceID);
+        addMessageToConsole(source, level, message, lineNumber, columnNumber, sourceID);
     }
 
     virtual bool canRunBeforeUnloadConfirmPanel() = 0;
@@ -149,14 +153,13 @@ public:
     virtual bool shouldInterruptJavaScript() = 0;
     virtual KeyboardUIMode keyboardUIMode() = 0;
 
-    virtual void* webView() const = 0;
-
     virtual IntRect windowResizerRect() const = 0;
 
     // Methods used by HostWindow.
-    virtual void invalidateRootView(const IntRect&, bool) = 0;
-    virtual void invalidateContentsAndRootView(const IntRect&, bool) = 0;
-    virtual void invalidateContentsForSlowScroll(const IntRect&, bool) = 0;
+    virtual bool supportsImmediateInvalidation() { return false; }
+    virtual void invalidateRootView(const IntRect&, bool immediate) = 0;
+    virtual void invalidateContentsAndRootView(const IntRect&, bool immediate) = 0;
+    virtual void invalidateContentsForSlowScroll(const IntRect&, bool immediate) = 0;
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
 #if USE(TILED_BACKING_STORE)
     virtual void delegatedScrollRequested(const IntPoint&) = 0;
@@ -165,8 +168,10 @@ public:
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
     virtual PlatformPageClient platformPageClient() const = 0;
     virtual void scrollbarsModeDidChange() const = 0;
+#if ENABLE(CURSOR_SUPPORT)
     virtual void setCursor(const Cursor&) = 0;
     virtual void setCursorHiddenUntilMouseMoves(bool) = 0;
+#endif
 #if ENABLE(REQUEST_ANIMATION_FRAME) && !USE(REQUEST_ANIMATION_FRAME_TIMER)
     virtual void scheduleAnimation() = 0;
 #endif
@@ -185,7 +190,8 @@ public:
     virtual void setToolTip(const String&, TextDirection) = 0;
 
     virtual void print(Frame*) = 0;
-    virtual bool shouldRubberBandInDirection(ScrollDirection) const = 0;
+
+    virtual Color underlayColor() const { return Color(); }
 
 #if ENABLE(SQL_DATABASE)
     virtual void exceededDatabaseQuota(Frame*, const String& databaseName, DatabaseDetails) = 0;
@@ -208,7 +214,7 @@ public:
     // the new cache.
     virtual void reachedApplicationCacheOriginQuota(SecurityOrigin*, int64_t totalSpaceNeeded) = 0;
 
-#if ENABLE(DASHBOARD_SUPPORT) || ENABLE(DRAGGABLE_REGION)
+#if ENABLE(DASHBOARD_SUPPORT)
     virtual void annotatedRegionsChanged();
 #endif
 
@@ -220,19 +226,46 @@ public:
     virtual bool shouldReplaceWithGeneratedFileForUpload(const String& path, String& generatedFilename);
     virtual String generateReplacementFile(const String& path);
 
-    virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
+#if ENABLE(IOS_TOUCH_EVENTS)
+    virtual void didPreventDefaultForEvent() = 0;
+#endif
+
+#if PLATFORM(IOS)
+    virtual void didReceiveMobileDocType() = 0;
+    virtual void setNeedsScrollNotifications(Frame*, bool) = 0;
+    virtual void observedContentChange(Frame*) = 0;
+    virtual void clearContentChangeObservers(Frame*) = 0;
+    virtual void notifyRevealedSelectionByScrollingFrame(Frame*) = 0;
+
+    enum LayoutType { NormalLayout, Scroll };
+    virtual void didLayout(LayoutType = NormalLayout) = 0;
+    virtual void didStartOverflowScroll() = 0;
+    virtual void didEndOverflowScroll() = 0;
+
+    // FIXME: Remove this functionality. This functionality was added to workaround an issue (<rdar://problem/5973875>)
+    // where the unconfirmed text in a text area would be removed when a person clicks in the text area before a
+    // suggestion is shown. We should fix this issue in <rdar://problem/5975559>.
+    virtual void suppressFormNotifications() = 0;
+    virtual void restoreFormNotifications() = 0;
+
+    virtual void didFlushCompositingLayers() { }
+
+    virtual bool fetchCustomFixedPositionLayoutRect(IntRect&) { return false; }
+
+    // FIXME: Use std::unique_ptr instead of OwnPtr.
+    virtual void updateViewportConstrainedLayers(HashMap<PlatformLayer*, OwnPtr<ViewportConstraints>>&, HashMap<PlatformLayer*, PlatformLayer*>&) { }
+
+    virtual void addOrUpdateScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer, const IntSize& scrollSize, bool allowHorizontalScrollbar, bool allowVerticalScrollbar) = 0;
+    virtual void removeScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer) = 0;
+
+    virtual void webAppOrientationsUpdated() = 0;
+#endif
 
 #if ENABLE(INPUT_TYPE_COLOR)
     virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) = 0;
 #endif
 
-#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
-    // This function is used for:
-    //  - Mandatory date/time choosers if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    //  - Date/time choosers for types for which RenderTheme::supportsCalendarPicker
-    //    returns true, if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    //  - <datalist> UI for date/time input types regardless of
-    //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES) && !PLATFORM(IOS)
     virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 #endif
 
@@ -251,6 +284,8 @@ public:
         
     virtual void elementDidFocus(const Node*) { };
     virtual void elementDidBlur(const Node*) { };
+    
+    virtual bool shouldPaintEntireContents() const { return false; }
 
 #if USE(ACCELERATED_COMPOSITING)
     // Allows ports to customize the type of graphics layers created by this page.
@@ -276,13 +311,19 @@ public:
         AnimationTrigger = 1 << 4,
         FilterTrigger = 1 << 5,
         ScrollableInnerFrameTrigger = 1 << 6,
+        AnimatedOpacityTrigger = 1 << 7,
         AllTriggers = 0xFFFFFFFF
     };
     typedef unsigned CompositingTriggerFlags;
 
     // Returns a bitfield indicating conditions that can trigger the compositor.
     virtual CompositingTriggerFlags allowedCompositingTriggers() const { return static_cast<CompositingTriggerFlags>(AllTriggers); }
+    
+    // Returns true if layer tree updates are disabled.
+    virtual bool layerTreeStateIsFrozen() const { return false; }
 #endif
+
+    virtual PassRefPtr<ScrollingCoordinator> createScrollingCoordinator(Page*) const { return nullptr; }
 
 #if PLATFORM(WIN) && USE(AVFOUNDATION)
     virtual GraphicsDeviceAdapter* graphicsDeviceAdapter() const { return 0; }
@@ -297,7 +338,6 @@ public:
     virtual bool supportsFullScreenForElement(const Element*, bool) { return false; }
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
-    virtual void fullScreenRendererChanged(RenderBox*) { }
     virtual void setRootFullScreenLayer(GraphicsLayer*) { }
 #endif
 
@@ -310,11 +350,20 @@ public:
     virtual void makeFirstResponder(NSResponder *) { }
     // Focuses on the containing view associated with this page.
     virtual void makeFirstResponder() { }
-    virtual void willPopUpMenu(NSMenu *) { }
 #endif
+
+#if PLATFORM(IOS)
+    // FIXME: Come up with a more descriptive name for this function and make it platform independent (if possible).
+    virtual bool isStopping() = 0;
+#endif
+
+    virtual void enableSuddenTermination() { }
+    virtual void disableSuddenTermination() { }
 
 #if PLATFORM(WIN)
     virtual void setLastSetCursorToCurrentCursor() = 0;
+    virtual void AXStartFrameLoad() = 0;
+    virtual void AXFinishFrameLoad() = 0;
 #endif
 
 #if ENABLE(TOUCH_EVENTS)
@@ -327,22 +376,6 @@ public:
     virtual bool hasOpenedPopup() const = 0;
     virtual PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const = 0;
     virtual PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const = 0;
-#if ENABLE(PAGE_POPUP)
-    // Creates a PagePopup object, and shows it beside originBoundsInRootView.
-    // The return value can be 0.
-    virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect& originBoundsInRootView) = 0;
-    virtual void closePagePopup(PagePopup*) = 0;
-    // For testing.
-    virtual void setPagePopupDriver(PagePopupDriver*) = 0;
-    virtual void resetPagePopupDriver() = 0;
-#endif
-    // This function is called whenever a text field <input> is created. The
-    // implementation should return true if it wants to do something in
-    // addTextFieldDecorationsTo().
-    // The argument is always non-0.
-    virtual bool willAddTextFieldDecorationsTo(HTMLInputElement*) { return false; }
-    // The argument is always non-0.
-    virtual void addTextFieldDecorationsTo(HTMLInputElement*) { }
 
     virtual void postAccessibilityNotification(AccessibilityObject*, AXObjectCache::AXNotification) { }
 
@@ -373,12 +406,24 @@ public:
 
     virtual bool isEmptyChromeClient() const { return false; }
 
-    virtual String plugInStartLabelTitle() const { return String(); }
-    virtual String plugInStartLabelSubtitle() const { return String(); }
+    virtual String plugInStartLabelTitle(const String& mimeType) const { UNUSED_PARAM(mimeType); return String(); }
+    virtual String plugInStartLabelSubtitle(const String& mimeType) const { UNUSED_PARAM(mimeType); return String(); }
     virtual String plugInExtraStyleSheet() const { return String(); }
+    virtual String plugInExtraScript() const { return String(); }
 
-    // FIXME: Port should return true using heuristic based on scrollable(RenderBox).
-    virtual bool shouldAutoscrollForDragAndDrop(RenderBox*) const { return false; }
+    virtual void didAssociateFormControls(const Vector<RefPtr<Element>>&) { };
+    virtual bool shouldNotifyOnFormChanges() { return false; };
+
+    virtual void didAddHeaderLayer(GraphicsLayer*) { }
+    virtual void didAddFooterLayer(GraphicsLayer*) { }
+
+    virtual bool shouldUseTiledBackingForFrameView(const FrameView*) const { return false; }
+
+    // These methods are used to report pages that are performing
+    // some task that we consider to be "active", and so the user
+    // would likely want the page to remain running uninterrupted.
+    virtual void incrementActivePageCount() { }
+    virtual void decrementActivePageCount() { }
 
 protected:
     virtual ~ChromeClient() { }

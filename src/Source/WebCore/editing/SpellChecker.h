@@ -31,7 +31,6 @@
 #include "TextChecking.h"
 #include "Timer.h"
 #include <wtf/Deque.h>
-#include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
@@ -46,10 +45,8 @@ class SpellChecker;
 
 class SpellCheckRequest : public TextCheckingRequest {
 public:
-    SpellCheckRequest(PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType);
-    virtual ~SpellCheckRequest();
-
     static PassRefPtr<SpellCheckRequest> create(TextCheckingTypeMask, TextCheckingProcessType, PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange);
+    virtual ~SpellCheckRequest();
 
     PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
     PassRefPtr<Range> paragraphRange() const { return m_paragraphRange; }
@@ -59,14 +56,18 @@ public:
     void requesterDestroyed();
     bool isStarted() const { return m_checker; }
 
-    virtual void didSucceed(const Vector<TextCheckingResult>&) OVERRIDE;
-    virtual void didCancel() OVERRIDE;
+    virtual const TextCheckingRequestData& data() const override;
+    virtual void didSucceed(const Vector<TextCheckingResult>&) override;
+    virtual void didCancel() override;
 
 private:
+    SpellCheckRequest(PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType);
+
     SpellChecker* m_checker;
     RefPtr<Range> m_checkingRange;
     RefPtr<Range> m_paragraphRange;
     RefPtr<Element> m_rootEditableElement;
+    TextCheckingRequestData m_requestData;
 };
 
 class SpellChecker {
@@ -74,7 +75,7 @@ class SpellChecker {
 public:
     friend class SpellCheckRequest;
 
-    explicit SpellChecker(Frame*);
+    explicit SpellChecker(Frame&);
     ~SpellChecker();
 
     bool isAsynchronousEnabled() const;
@@ -93,7 +94,7 @@ public:
     }
 
 private:
-    typedef Deque<RefPtr<SpellCheckRequest> > RequestQueue;
+    typedef Deque<RefPtr<SpellCheckRequest>> RequestQueue;
 
     bool canCheckAsynchronously(Range*) const;
     TextCheckerClient* client() const;
@@ -104,7 +105,7 @@ private:
     void didCheckCancel(int sequence);
     void didCheck(int sequence, const Vector<TextCheckingResult>&);
 
-    Frame* m_frame;
+    Frame& m_frame;
     int m_lastRequestSequence;
     int m_lastProcessedSequence;
 

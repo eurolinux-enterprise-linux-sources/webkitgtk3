@@ -43,24 +43,24 @@ class HTMLPreloadScanner;
 class ScriptController;
 class ScriptSourceCode;
 
-class HTMLViewSourceParser :  public DecodedDataDocumentParser {
+class HTMLViewSourceParser : public DecodedDataDocumentParser {
 public:
-    static PassRefPtr<HTMLViewSourceParser> create(HTMLViewSourceDocument* document)
+    static PassRefPtr<HTMLViewSourceParser> create(HTMLViewSourceDocument& document)
     {
         return adoptRef(new HTMLViewSourceParser(document));
     }
     virtual ~HTMLViewSourceParser();
 
 protected:
-    explicit HTMLViewSourceParser(HTMLViewSourceDocument*);
+    explicit HTMLViewSourceParser(HTMLViewSourceDocument&);
 
     HTMLTokenizer* tokenizer() const { return m_tokenizer.get(); }
 
 private:
     // DocumentParser
-    virtual void insert(const SegmentedString&);
-    virtual void append(const SegmentedString&);
-    virtual void finish();
+    virtual void insert(const SegmentedString&) override;
+    virtual void append(PassRefPtr<StringImpl>) override;
+    virtual void finish() override;
 
     HTMLViewSourceDocument* document() const { return static_cast<HTMLViewSourceDocument*>(DecodedDataDocumentParser::document()); }
 
@@ -71,7 +71,7 @@ private:
     HTMLInputStream m_input;
     HTMLToken m_token;
     HTMLSourceTracker m_sourceTracker;
-    OwnPtr<HTMLTokenizer> m_tokenizer;
+    std::unique_ptr<HTMLTokenizer> m_tokenizer;
 };
 
 }

@@ -30,6 +30,7 @@
 #include "webkitwebinspectorprivate.h"
 #include "webkitwebview.h"
 #include "webkitwebviewprivate.h"
+#include <inspector/InspectorAgentBase.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 
@@ -104,16 +105,14 @@ InspectorFrontendChannel* InspectorClient::openInspectorFrontend(InspectorContro
 
     webkit_web_inspector_set_web_view(webInspector, inspectorWebView);
  
-    GOwnPtr<gchar> inspectorPath(g_build_filename(inspectorFilesPath(), "inspector.html", NULL));
-    GOwnPtr<gchar> inspectorURI(g_filename_to_uri(inspectorPath.get(), 0, 0));
-    webkit_web_view_load_uri(inspectorWebView, inspectorURI.get());
+    webkit_web_view_load_uri(inspectorWebView, "resource:///org/webkitgtk/inspector/UserInterface/Main.html");
 
     gtk_widget_show(GTK_WIDGET(inspectorWebView));
 
     m_frontendPage = core(inspectorWebView);
-    OwnPtr<InspectorFrontendClient> frontendClient = adoptPtr(new InspectorFrontendClient(m_inspectedWebView, inspectorWebView, webInspector, m_frontendPage, this));
+    auto frontendClient = std::make_unique<InspectorFrontendClient>(m_inspectedWebView, inspectorWebView, webInspector, m_frontendPage, this);
     m_frontendClient = frontendClient.get();
-    m_frontendPage->inspectorController()->setInspectorFrontendClient(frontendClient.release());
+    m_frontendPage->inspectorController().setInspectorFrontendClient(std::move(frontendClient));
 
     // The inspector must be in it's own PageGroup to avoid deadlock while debugging.
     m_frontendPage->setGroupName("");
@@ -157,22 +156,8 @@ bool InspectorClient::sendMessageToFrontend(const String& message)
     return doDispatchMessageOnFrontendPage(m_frontendPage, message);
 }
 
-const char* InspectorClient::inspectorFilesPath()
-{
-    if (m_inspectorFilesPath)
-        m_inspectorFilesPath.get();
-
-    const char* environmentPath = getenv("WEBKIT_INSPECTOR_PATH");
-    if (environmentPath && g_file_test(environmentPath, G_FILE_TEST_IS_DIR))
-        m_inspectorFilesPath.set(g_strdup(environmentPath));
-    else
-        m_inspectorFilesPath.set(g_build_filename(sharedResourcesPath().data(), "webinspector", NULL));
-
-    return m_inspectorFilesPath.get();
-}
-
 InspectorFrontendClient::InspectorFrontendClient(WebKitWebView* inspectedWebView, WebKitWebView* inspectorWebView, WebKitWebInspector* webInspector, Page* inspectorPage, InspectorClient* inspectorClient)
-    : InspectorFrontendClientLocal(core(inspectedWebView)->inspectorController(), inspectorPage, adoptPtr(new InspectorFrontendSettingsGtk()))
+    : InspectorFrontendClientLocal(&core(inspectedWebView)->inspectorController(), inspectorPage, adoptPtr(new InspectorFrontendSettingsGtk()))
     , m_inspectorWebView(inspectorWebView)
     , m_inspectedWebView(inspectedWebView)
     , m_webInspector(webInspector)
@@ -205,7 +190,7 @@ void InspectorFrontendClient::destroyInspectorWindow(bool notifyInspectorControl
     }
 
     if (notifyInspectorController)
-        core(m_inspectedWebView)->inspectorController()->disconnectFrontend();
+        core(m_inspectedWebView)->inspectorController().disconnectFrontend(Inspector::InspectorDisconnectReason::InspectorDestroyed);
 
     if (m_inspectorClient)
         m_inspectorClient->releaseFrontendPage();
@@ -220,17 +205,8 @@ void InspectorFrontendClient::destroyInspectorWindow(bool notifyInspectorControl
 
 String InspectorFrontendClient::localizedStringsURL()
 {
-    GOwnPtr<gchar> stringsPath(g_build_filename(m_inspectorClient->inspectorFilesPath(), "localizedStrings.js", NULL));
-    GOwnPtr<gchar> stringsURI(g_filename_to_uri(stringsPath.get(), 0, 0));
-
     // FIXME: support l10n of localizedStrings.js
-    return String::fromUTF8(stringsURI.get());
-}
-
-String InspectorFrontendClient::hiddenPanels()
-{
-    notImplemented();
-    return String();
+    return String("resource:///org/webkitgtk/inspector/Localizations/en.lproj/localizedStrings.js");
 }
 
 void InspectorFrontendClient::bringToFront()
@@ -247,7 +223,7 @@ void InspectorFrontendClient::closeWindow()
     destroyInspectorWindow(true);
 }
 
-void InspectorFrontendClient::attachWindow()
+void InspectorFrontendClient::attachWindow(DockSide)
 {
     if (!m_inspectorWebView)
         return;
@@ -266,6 +242,16 @@ void InspectorFrontendClient::detachWindow()
 }
 
 void InspectorFrontendClient::setAttachedWindowHeight(unsigned height)
+{
+    notImplemented();
+}
+
+void InspectorFrontendClient::setAttachedWindowWidth(unsigned width)
+{
+    notImplemented();
+}
+
+void InspectorFrontendClient::setToolbarHeight(unsigned height)
 {
     notImplemented();
 }

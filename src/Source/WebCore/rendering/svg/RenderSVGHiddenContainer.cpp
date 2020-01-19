@@ -23,12 +23,12 @@
 #include "RenderSVGHiddenContainer.h"
 
 #include "RenderSVGPath.h"
-#include "SVGStyledElement.h"
+#include <wtf/StackStats.h>
 
 namespace WebCore {
 
-RenderSVGHiddenContainer::RenderSVGHiddenContainer(SVGStyledElement* element)
-    : RenderSVGContainer(element)
+RenderSVGHiddenContainer::RenderSVGHiddenContainer(SVGElement& element, PassRef<RenderStyle> style)
+    : RenderSVGContainer(element, std::move(style))
 {
 }
 
@@ -36,8 +36,8 @@ void RenderSVGHiddenContainer::layout()
 {
     StackStats::LayoutCheckPoint layoutCheckPoint;
     ASSERT(needsLayout());
-    SVGRenderSupport::layoutChildren(this, selfNeedsLayout()); 
-    setNeedsLayout(false);    
+    SVGRenderSupport::layoutChildren(*this, selfNeedsLayout());
+    clearNeedsLayout();    
 }
 
 void RenderSVGHiddenContainer::paint(PaintInfo&, const LayoutPoint&)

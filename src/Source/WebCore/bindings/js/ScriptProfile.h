@@ -27,7 +27,6 @@
 #ifndef ScriptProfile_h
 #define ScriptProfile_h
 
-#if ENABLE(JAVASCRIPT_DEBUGGER)
 #include "ScriptProfileNode.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
@@ -35,7 +34,7 @@
 #include <wtf/RefPtr.h>
 
 #if ENABLE(INSPECTOR)
-#include "InspectorTypeBuilder.h"
+#include "InspectorWebTypeBuilders.h"
 #endif
 
 namespace JSC {
@@ -43,8 +42,6 @@ class Profile;
 }
 
 namespace WebCore {
-
-class InspectorObject;
 
 class ScriptProfile : public RefCounted<ScriptProfile> {
 public:
@@ -54,12 +51,11 @@ public:
     String title() const;
     unsigned int uid() const;
     ScriptProfileNode* head() const;
-    PassRefPtr<ScriptProfileNode> bottomUpHead() const;
     double idleTime() const;
 
 #if ENABLE(INSPECTOR)
-    PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectForHead() const;
-    PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectForBottomUpHead() const;
+    PassRefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectForHead() const;
+    PassRefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectForBottomUpHead() const;
 #endif
 
 private:
@@ -70,7 +66,5 @@ private:
 
 
 } // namespace WebCore
-
-#endif // ENABLE(JAVASCRIPT_DEBUGGER)
 
 #endif // ScriptProfile_h

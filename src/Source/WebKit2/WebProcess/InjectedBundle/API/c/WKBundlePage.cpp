@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,8 +27,13 @@
 #include "WKBundlePage.h"
 #include "WKBundlePagePrivate.h"
 
+#include "APIArray.h"
+#include "APIString.h"
+#include "APIURL.h"
+#include "APIURLRequest.h"
 #include "InjectedBundleBackForwardList.h"
 #include "InjectedBundleNodeHandle.h"
+#include "PageBanner.h"
 #include "WKAPICast.h"
 #include "WKArray.h"
 #include "WKBundleAPICast.h"
@@ -42,17 +47,12 @@
 #include "WebPage.h"
 #include "WebRenderLayer.h"
 #include "WebRenderObject.h"
-#include "WebString.h"
-#include "WebURL.h"
-#include "WebURLRequest.h"
-
 #include <WebCore/AXObjectCache.h>
 #include <WebCore/AccessibilityObject.h>
-#include <WebCore/Frame.h>
-#include <WebCore/KURL.h>
-#include <WebCore/MIMETypeRegistry.h>
+#include <WebCore/MainFrame.h>
 #include <WebCore/Page.h>
-#include <wtf/UnusedParam.h>
+#include <WebCore/URL.h>
+#include <wtf/StdLibExtras.h>
 
 using namespace WebKit;
 
@@ -61,47 +61,53 @@ WKTypeID WKBundlePageGetTypeID()
     return toAPI(WebPage::APIType);
 }
 
-void WKBundlePageSetContextMenuClient(WKBundlePageRef pageRef, WKBundlePageContextMenuClient* wkClient)
+void WKBundlePageSetContextMenuClient(WKBundlePageRef pageRef, WKBundlePageContextMenuClientBase* wkClient)
 {
 #if ENABLE(CONTEXT_MENUS)
     toImpl(pageRef)->initializeInjectedBundleContextMenuClient(wkClient);
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(wkClient);
 #endif
 }
 
-void WKBundlePageSetEditorClient(WKBundlePageRef pageRef, WKBundlePageEditorClient* wkClient)
+void WKBundlePageSetEditorClient(WKBundlePageRef pageRef, WKBundlePageEditorClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundleEditorClient(wkClient);
 }
 
-void WKBundlePageSetFormClient(WKBundlePageRef pageRef, WKBundlePageFormClient* wkClient)
+void WKBundlePageSetFormClient(WKBundlePageRef pageRef, WKBundlePageFormClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundleFormClient(wkClient);
 }
 
-void WKBundlePageSetPageLoaderClient(WKBundlePageRef pageRef, WKBundlePageLoaderClient* wkClient)
+void WKBundlePageSetPageLoaderClient(WKBundlePageRef pageRef, WKBundlePageLoaderClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundleLoaderClient(wkClient);
 }
 
-void WKBundlePageSetResourceLoadClient(WKBundlePageRef pageRef, WKBundlePageResourceLoadClient* wkClient)
+void WKBundlePageSetResourceLoadClient(WKBundlePageRef pageRef, WKBundlePageResourceLoadClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundleResourceLoadClient(wkClient);
 }
 
-void WKBundlePageSetPolicyClient(WKBundlePageRef pageRef, WKBundlePagePolicyClient* wkClient)
+void WKBundlePageSetPolicyClient(WKBundlePageRef pageRef, WKBundlePagePolicyClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundlePolicyClient(wkClient);
 }
 
-void WKBundlePageSetUIClient(WKBundlePageRef pageRef, WKBundlePageUIClient* wkClient)
+void WKBundlePageSetUIClient(WKBundlePageRef pageRef, WKBundlePageUIClientBase* wkClient)
 {
     toImpl(pageRef)->initializeInjectedBundleUIClient(wkClient);
 }
 
-void WKBundlePageSetFullScreenClient(WKBundlePageRef pageRef, WKBundlePageFullScreenClient* wkClient)
+void WKBundlePageSetFullScreenClient(WKBundlePageRef pageRef, WKBundlePageFullScreenClientBase* wkClient)
 {
 #if defined(ENABLE_FULLSCREEN_API) && ENABLE_FULLSCREEN_API
     toImpl(pageRef)->initializeInjectedBundleFullScreenClient(wkClient);
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(wkClient);
 #endif
 }
 
@@ -109,6 +115,8 @@ void WKBundlePageWillEnterFullScreen(WKBundlePageRef pageRef)
 {
 #if defined(ENABLE_FULLSCREEN_API) && ENABLE_FULLSCREEN_API
     toImpl(pageRef)->fullScreenManager()->willEnterFullScreen();
+#else
+    UNUSED_PARAM(pageRef);
 #endif
 }
 
@@ -116,6 +124,8 @@ void WKBundlePageDidEnterFullScreen(WKBundlePageRef pageRef)
 {
 #if defined(ENABLE_FULLSCREEN_API) && ENABLE_FULLSCREEN_API
     toImpl(pageRef)->fullScreenManager()->didEnterFullScreen();
+#else
+    UNUSED_PARAM(pageRef);
 #endif
 }
 
@@ -123,6 +133,8 @@ void WKBundlePageWillExitFullScreen(WKBundlePageRef pageRef)
 {
 #if defined(ENABLE_FULLSCREEN_API) && ENABLE_FULLSCREEN_API
     toImpl(pageRef)->fullScreenManager()->willExitFullScreen();
+#else
+    UNUSED_PARAM(pageRef);
 #endif
 }
 
@@ -130,10 +142,12 @@ void WKBundlePageDidExitFullScreen(WKBundlePageRef pageRef)
 {
 #if defined(ENABLE_FULLSCREEN_API) && ENABLE_FULLSCREEN_API
     toImpl(pageRef)->fullScreenManager()->didExitFullScreen();
+#else
+    UNUSED_PARAM(pageRef);
 #endif
 }
 
-void WKBundlePageSetDiagnosticLoggingClient(WKBundlePageRef pageRef, WKBundlePageDiagnosticLoggingClient* client)
+void WKBundlePageSetDiagnosticLoggingClient(WKBundlePageRef pageRef, WKBundlePageDiagnosticLoggingClientBase* client)
 {
     toImpl(pageRef)->initializeInjectedBundleDiagnosticLoggingClient(client);
 }
@@ -148,19 +162,55 @@ WKBundleFrameRef WKBundlePageGetMainFrame(WKBundlePageRef pageRef)
     return toAPI(toImpl(pageRef)->mainWebFrame());
 }
 
-WKArrayRef WKBundlePageCopyContextMenuItemTitles(WKBundlePageRef pageRef)
+void WKBundlePageClickMenuItem(WKBundlePageRef pageRef, WKContextMenuItemRef item)
+{
+#if ENABLE(CONTEXT_MENUS)
+    toImpl(pageRef)->contextMenu()->itemSelected(*toImpl(item)->data());
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(item);
+#endif
+}
+
+#if ENABLE(CONTEXT_MENUS)
+static PassRefPtr<API::Array> contextMenuItems(const WebContextMenu& contextMenu)
+{
+    auto items = contextMenu.items();
+
+    Vector<RefPtr<API::Object>> menuItems;
+    menuItems.reserveInitialCapacity(items.size());
+
+    for (const auto& item : items)
+        menuItems.uncheckedAppend(WebContextMenuItem::create(item));
+
+    return API::Array::create(std::move(menuItems));
+}
+#endif
+
+WKArrayRef WKBundlePageCopyContextMenuItems(WKBundlePageRef pageRef)
 {
 #if ENABLE(CONTEXT_MENUS)
     WebContextMenu* contextMenu = toImpl(pageRef)->contextMenu();
-    const Vector<WebContextMenuItemData> &items = contextMenu->items();
-    size_t arrayLength = items.size();
-    OwnArrayPtr<WKTypeRef> itemNames = adoptArrayPtr(new WKTypeRef[arrayLength]);
-    for (size_t i = 0; i < arrayLength; ++i)
-        itemNames[i] = WKStringCreateWithUTF8CString(items[i].title().utf8().data());
 
-    return WKArrayCreateAdoptingValues(itemNames.get(), arrayLength);
+    return toAPI(contextMenuItems(*contextMenu).leakRef());
 #else
-    return 0;
+    UNUSED_PARAM(pageRef);
+    return nullptr;
+#endif
+}
+
+WKArrayRef WKBundlePageCopyContextMenuAtPointInWindow(WKBundlePageRef pageRef, WKPoint point)
+{
+#if ENABLE(CONTEXT_MENUS)
+    WebContextMenu* contextMenu = toImpl(pageRef)->contextMenuAtPointInWindow(toIntPoint(point));
+    if (!contextMenu)
+        return nullptr;
+
+    return toAPI(contextMenuItems(*contextMenu).leakRef());
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(point);
+    return nullptr;
 #endif
 }
 
@@ -174,13 +224,13 @@ void* WKAccessibilityRootObject(WKBundlePageRef pageRef)
     if (!page)
         return 0;
     
-    WebCore::Frame* core = page->mainFrame();
-    if (!core || !core->document())
+    WebCore::Frame& core = page->mainFrame();
+    if (!core.document())
         return 0;
     
     WebCore::AXObjectCache::enableAccessibility();
 
-    WebCore::AccessibilityObject* root = core->document()->axObjectCache()->rootObject();
+    WebCore::AccessibilityObject* root = core.document()->axObjectCache()->rootObject();
     if (!root)
         return 0;
     
@@ -227,6 +277,11 @@ void WKBundlePageSetDefersLoading(WKBundlePageRef pageRef, bool defersLoading)
 WKStringRef WKBundlePageCopyRenderTreeExternalRepresentation(WKBundlePageRef pageRef)
 {
     return toCopiedAPI(toImpl(pageRef)->renderTreeExternalRepresentation());
+}
+
+WKStringRef WKBundlePageCopyRenderTreeExternalRepresentationForPrinting(WKBundlePageRef pageRef)
+{
+    return toCopiedAPI(toImpl(pageRef)->renderTreeExternalRepresentationForPrinting());
 }
 
 void WKBundlePageExecuteEditingCommand(WKBundlePageRef pageRef, WKStringRef name, WKStringRef argument)
@@ -279,11 +334,6 @@ WKBundleBackForwardListRef WKBundlePageGetBackForwardList(WKBundlePageRef pageRe
     return toAPI(toImpl(pageRef)->backForwardList());
 }
 
-void WKBundlePageSetUnderlayPage(WKBundlePageRef pageRef, WKBundlePageRef pageUnderlayRef)
-{
-    toImpl(pageRef)->setUnderlayPage(toImpl(pageUnderlayRef));
-}
-
 void WKBundlePageInstallPageOverlay(WKBundlePageRef pageRef, WKBundlePageOverlayRef pageOverlayRef)
 {
     toImpl(pageRef)->installPageOverlay(toImpl(pageOverlayRef));
@@ -304,9 +354,41 @@ void WKBundlePageUninstallPageOverlayWithAnimation(WKBundlePageRef pageRef, WKBu
     toImpl(pageRef)->uninstallPageOverlay(toImpl(pageOverlayRef), true);
 }
 
+void WKBundlePageSetTopOverhangImage(WKBundlePageRef pageRef, WKImageRef imageRef)
+{
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    toImpl(pageRef)->setTopOverhangImage(toImpl(imageRef));
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(imageRef);
+#endif
+}
+
+void WKBundlePageSetBottomOverhangImage(WKBundlePageRef pageRef, WKImageRef imageRef)
+{
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    toImpl(pageRef)->setBottomOverhangImage(toImpl(imageRef));
+#else
+    UNUSED_PARAM(pageRef);
+    UNUSED_PARAM(imageRef);
+#endif
+}
+
+#if !PLATFORM(IOS)
+void WKBundlePageSetHeaderBanner(WKBundlePageRef pageRef, WKBundlePageBannerRef bannerRef)
+{
+    toImpl(pageRef)->setHeaderPageBanner(toImpl(bannerRef));
+}
+
+void WKBundlePageSetFooterBanner(WKBundlePageRef pageRef, WKBundlePageBannerRef bannerRef)
+{
+    toImpl(pageRef)->setFooterPageBanner(toImpl(bannerRef));
+}
+#endif // !PLATFORM(IOS)
+
 bool WKBundlePageHasLocalDataForURL(WKBundlePageRef pageRef, WKURLRef urlRef)
 {
-    return toImpl(pageRef)->hasLocalDataForURL(WebCore::KURL(WebCore::KURL(), toWTFString(urlRef)));
+    return toImpl(pageRef)->hasLocalDataForURL(WebCore::URL(WebCore::URL(), toWTFString(urlRef)));
 }
 
 bool WKBundlePageCanHandleRequest(WKURLRequestRef requestRef)
@@ -446,26 +528,17 @@ void WKBundlePageConfirmCompositionWithText(WKBundlePageRef pageRef, WKStringRef
     toImpl(pageRef)->confirmCompositionForTesting(toWTFString(text));
 }
 
-bool WKBundlePageCanShowMIMEType(WKBundlePageRef, WKStringRef mimeTypeRef)
+bool WKBundlePageCanShowMIMEType(WKBundlePageRef pageRef, WKStringRef mimeTypeRef)
 {
-    const String mimeType = toWTFString(mimeTypeRef);
-
-    return WebCore::MIMETypeRegistry::canShowMIMEType(mimeType);
+    return toImpl(pageRef)->canShowMIMEType(toWTFString(mimeTypeRef));
 }
 
-void WKBundlePageSetViewMode(WKBundlePageRef pageRef, WKStringRef mode)
+WKRenderingSuppressionToken WKBundlePageExtendIncrementalRenderingSuppression(WKBundlePageRef pageRef)
 {
-    String modeWTF = toWTFString(mode);
-    if (modeWTF == "windowed")
-        toImpl(pageRef)->setViewMode(WebCore::Page::ViewModeWindowed);
-    else if (modeWTF == "floating")
-        toImpl(pageRef)->setViewMode(WebCore::Page::ViewModeFloating);
-    else if (modeWTF == "fullscreen")
-        toImpl(pageRef)->setViewMode(WebCore::Page::ViewModeFullscreen);
-    else if (modeWTF == "maximized")
-        toImpl(pageRef)->setViewMode(WebCore::Page::ViewModeMaximized);
-    else if (modeWTF == "minimized")
-        toImpl(pageRef)->setViewMode(WebCore::Page::ViewModeMinimized);
-    else
-        ASSERT_NOT_REACHED();
+    return toImpl(pageRef)->extendIncrementalRenderingSuppression();
+}
+
+void WKBundlePageStopExtendingIncrementalRenderingSuppression(WKBundlePageRef pageRef, WKRenderingSuppressionToken token)
+{
+    toImpl(pageRef)->stopExtendingIncrementalRenderingSuppression(token);
 }

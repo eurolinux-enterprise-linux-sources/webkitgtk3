@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2012 Research In Motion Limited. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,7 @@
 #include "JSStack.h"
 #include "LLIntData.h"
 #include "Opcode.h"
+#include "SourceProvider.h"
 
 #include <wtf/HashMap.h>
 #include <wtf/text/StringBuilder.h>
@@ -48,7 +49,7 @@ namespace JSC {
     class EvalExecutable;
     class ExecutableBase;
     class FunctionExecutable;
-    class JSGlobalData;
+    class VM;
     class JSGlobalObject;
     class LLIntOffsetsExtractor;
     class ProgramExecutable;
@@ -58,7 +59,8 @@ namespace JSC {
     struct CallFrameClosure;
     struct HandlerInfo;
     struct Instruction;
-    
+    struct ProtoCallFrame;
+
     enum DebugHookID {
         WillExecuteProgram,
         DidExecuteProgram,
@@ -79,25 +81,14 @@ namespace JSC {
         Strong<JSObject> callee;
         StackFrameCodeType codeType;
         Strong<ExecutableBase> executable;
-        int line;
+        Strong<UnlinkedCodeBlock> codeBlock;
+        RefPtr<SourceProvider> code;
+        int lineOffset;
+        unsigned firstLineColumnOffset;
+        unsigned characterOffset;
+        unsigned bytecodeOffset;
         String sourceURL;
-        String toString(CallFrame* callFrame) const
-        {
-            StringBuilder traceBuild;
-            String functionName = friendlyFunctionName(callFrame);
-            String sourceURL = friendlySourceURL();
-            traceBuild.append(functionName);
-            if (!sourceURL.isEmpty()) {
-                if (!functionName.isEmpty())
-                    traceBuild.append('@');
-                traceBuild.append(sourceURL);
-                if (line > -1) {
-                    traceBuild.append(':');
-                    traceBuild.appendNumber(line);
-                }
-            }
-            return traceBuild.toString().impl();
-        }
+        JS_EXPORT_PRIVATE String toString(CallFrame*);
         String friendlySourceURL() const
         {
             String traceLine;
@@ -137,37 +128,57 @@ namespace JSC {
             }
             return traceLine.isNull() ? emptyString() : traceLine;
         }
-        unsigned friendlyLineNumber() const
-        {
-            return line > -1 ? line : 0;
-        }
+        JS_EXPORT_PRIVATE void computeLineAndColumn(unsigned& line, unsigned& column);
+
+    private:
+        void expressionInfo(int& divot, int& startOffset, int& endOffset, unsigned& line, unsigned& column);
     };
 
+    class ClearExceptionScope {
+    public:
+        ClearExceptionScope(VM* vm): m_vm(vm)
+        {
+            vm->getExceptionInfo(oldException, oldExceptionStack);
+            vm->clearException();
+        }
+        ~ClearExceptionScope()
+        {
+            m_vm->setExceptionInfo(oldException, oldExceptionStack);
+        }
+    private:
+        JSC::JSValue oldException;
+        RefCountedArray<JSC::StackFrame> oldExceptionStack;
+        VM* m_vm;
+    };
+    
     class TopCallFrameSetter {
     public:
-        TopCallFrameSetter(JSGlobalData& global, CallFrame* callFrame)
-            : globalData(global)
-            , oldCallFrame(global.topCallFrame) 
+        TopCallFrameSetter(VM& currentVM, CallFrame* callFrame)
+            : vm(currentVM)
+            , oldCallFrame(currentVM.topCallFrame) 
         {
-            global.topCallFrame = callFrame;
+            ASSERT(!callFrame->isVMEntrySentinel());
+            currentVM.topCallFrame = callFrame;
         }
         
         ~TopCallFrameSetter() 
         {
-            globalData.topCallFrame = oldCallFrame;
+            ASSERT(!oldCallFrame->isVMEntrySentinel());
+            vm.topCallFrame = oldCallFrame;
         }
     private:
-        JSGlobalData& globalData;
+        VM& vm;
         CallFrame* oldCallFrame;
     };
     
     class NativeCallFrameTracer {
     public:
-        ALWAYS_INLINE NativeCallFrameTracer(JSGlobalData* global, CallFrame* callFrame)
+        ALWAYS_INLINE NativeCallFrameTracer(VM* vm, CallFrame* callFrame)
         {
-            ASSERT(global);
+            ASSERT(vm);
             ASSERT(callFrame);
-            global->topCallFrame = callFrame;
+            ASSERT(!callFrame->isVMEntrySentinel());
+            vm->topCallFrame = callFrame;
         }
     };
 
@@ -176,6 +187,7 @@ namespace JSC {
         friend class CachedCall;
         friend class LLIntOffsetsExtractor;
         friend class JIT;
+        friend class VM;
 
     public:
         class ErrorHandlingMode {
@@ -186,7 +198,7 @@ namespace JSC {
             Interpreter& m_interpreter;
         };
 
-        Interpreter(JSGlobalData &);
+        Interpreter(VM &);
         ~Interpreter();
         
         void initialize(bool canUseJIT);
@@ -221,19 +233,20 @@ namespace JSC {
         JSObject* executeConstruct(CallFrame*, JSObject* function, ConstructType, const ConstructData&, const ArgList&);
         JSValue execute(EvalExecutable*, CallFrame*, JSValue thisValue, JSScope*);
 
-        JSValue retrieveArgumentsFromVMCode(CallFrame*, JSFunction*) const;
-        JSValue retrieveCallerFromVMCode(CallFrame*, JSFunction*) const;
-        JS_EXPORT_PRIVATE void retrieveLastCaller(CallFrame*, int& lineNumber, intptr_t& sourceID, String& sourceURL, JSValue& function) const;
-        
         void getArgumentsData(CallFrame*, JSFunction*&, ptrdiff_t& firstParameterIndex, Register*& argv, int& argc);
         
         SamplingTool* sampler() { return m_sampler.get(); }
 
-        NEVER_INLINE HandlerInfo* throwException(CallFrame*&, JSValue&, unsigned bytecodeOffset);
-        NEVER_INLINE void debug(CallFrame*, DebugHookID, int firstLine, int lastLine, int column);
-        static const String getTraceLine(CallFrame*, StackFrameCodeType, const String&, int);
-        JS_EXPORT_PRIVATE static void getStackTrace(JSGlobalData*, Vector<StackFrame>& results);
-        static void addStackTraceIfNecessary(CallFrame*, JSObject* error);
+        bool isInErrorHandlingMode() { return m_errorHandlingModeReentry; }
+
+        NEVER_INLINE HandlerInfo* unwind(CallFrame*&, JSValue&);
+        NEVER_INLINE void debug(CallFrame*, DebugHookID);
+        JSString* stackTraceAsString(ExecState*, Vector<StackFrame>);
+
+        static EncodedJSValue JSC_HOST_CALL constructWithErrorConstructor(ExecState*);
+        static EncodedJSValue JSC_HOST_CALL callErrorConstructor(ExecState*);
+        static EncodedJSValue JSC_HOST_CALL constructWithNativeErrorConstructor(ExecState*);
+        static EncodedJSValue JSC_HOST_CALL callNativeErrorConstructor(ExecState*);
 
         void dumpSampleData(ExecState* exec);
         void startSampling();
@@ -242,25 +255,13 @@ namespace JSC {
         JS_EXPORT_PRIVATE void dumpCallFrame(CallFrame*);
 
     private:
-        class StackPolicy {
-        public:
-            StackPolicy(Interpreter&, const StackBounds&);
-            inline size_t requiredCapacity() { return m_requiredCapacity; }
-
-        private:
-            Interpreter& m_interpreter;
-            size_t m_requiredCapacity;
-        };
-
         enum ExecutionFlag { Normal, InitializeAndReturn };
 
-        CallFrameClosure prepareForRepeatCall(FunctionExecutable*, CallFrame*, JSFunction*, int argumentCountIncludingThis, JSScope*);
-        void endRepeatCall(CallFrameClosure&);
+        CallFrameClosure prepareForRepeatCall(FunctionExecutable*, CallFrame*, ProtoCallFrame*, JSFunction*, int argumentCountIncludingThis, JSScope*, JSValue*);
+
         JSValue execute(CallFrameClosure&);
 
-        NEVER_INLINE bool unwindCallFrame(CallFrame*&, JSValue, unsigned& bytecodeOffset, CodeBlock*&);
-
-        static CallFrame* findFunctionCallFrameFromVMCode(CallFrame*, JSFunction*);
+        void getStackTrace(Vector<StackFrame>& results, size_t maxStackSize = std::numeric_limits<size_t>::max());
 
         void dumpRegisters(CallFrame*);
         
@@ -270,6 +271,7 @@ namespace JSC {
         int m_sampleEntryDepth;
         OwnPtr<SamplingTool> m_sampler;
 
+        VM& m_vm;
         JSStack m_stack;
         int m_errorHandlingModeReentry;
         
@@ -283,15 +285,9 @@ namespace JSC {
 #endif
     };
 
-    // This value must not be an object that would require this conversion (WebCore's global object).
-    inline bool isValidThisObject(JSValue thisValue, ExecState* exec)
-    {
-        return !thisValue.isObject() || thisValue.toThisObject(exec) == thisValue;
-    }
-
     JSValue eval(CallFrame*);
-    CallFrame* loadVarargs(CallFrame*, JSStack*, JSValue thisValue, JSValue arguments, int firstFreeRegister);
-
+    CallFrame* sizeAndAllocFrameForVarargs(CallFrame*, JSStack*, JSValue, int);
+    void loadVarargs(CallFrame*, CallFrame*, JSValue, JSValue);
 } // namespace JSC
 
 #endif // Interpreter_h

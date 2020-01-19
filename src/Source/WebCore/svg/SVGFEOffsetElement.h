@@ -28,17 +28,17 @@
 
 namespace WebCore {
 
-class SVGFEOffsetElement : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEOffsetElement final : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEOffsetElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFEOffsetElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGFEOffsetElement(const QualifiedName&, Document*);
+    SVGFEOffsetElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEOffsetElement)
         DECLARE_ANIMATED_STRING(In1, in1)

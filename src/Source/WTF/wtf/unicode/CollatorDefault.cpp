@@ -29,7 +29,7 @@
 #include "config.h"
 #include "Collator.h"
 
-#if !USE(ICU_UNICODE) || UCONFIG_NO_COLLATION
+#if UCONFIG_NO_COLLATION
 
 namespace WTF {
 
@@ -45,9 +45,9 @@ void Collator::setOrderLowerFirst(bool)
 {
 }
 
-PassOwnPtr<Collator> Collator::userDefault()
+std::unique_ptr<Collator> Collator::userDefault()
 {
-    return adoptPtr(new Collator(0));
+    return std::make_unique<Collator>(nullptr);
 }
 
 // A default implementation for platforms that lack Unicode-aware collation.

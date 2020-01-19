@@ -25,9 +25,10 @@
 #ifndef AudioNode_h
 #define AudioNode_h
 
+#include "AudioBus.h"
+#include "EventTarget.h"
+#include <memory>
 #include <wtf/Forward.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 
@@ -48,7 +49,7 @@ typedef int ExceptionCode;
 // An AudioDestinationNode has one input and no outputs and represents the final destination to the audio hardware.
 // Most processing nodes such as filters will have one input and one output, although multiple inputs and outputs are possible.
 
-class AudioNode {
+class AudioNode : public EventTargetWithInlineData {
 public:
     enum { ProcessingSizeInFrames = 128 };
 
@@ -78,6 +79,12 @@ public:
         NodeTypeDynamicsCompressor,
         NodeTypeWaveShaper,
         NodeTypeEnd
+    };
+
+    enum ChannelCountMode {
+        Max,
+        ClampedMax,
+        Explicit
     };
 
     NodeType nodeType() const { return m_nodeType; }
@@ -159,40 +166,65 @@ public:
     void enableOutputsIfNecessary();
     void disableOutputsIfNecessary();
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    unsigned long channelCount();
+    virtual void setChannelCount(unsigned long, ExceptionCode&);
+
+    String channelCountMode();
+    void setChannelCountMode(const String&, ExceptionCode&);
+
+    String channelInterpretation();
+    void setChannelInterpretation(const String&, ExceptionCode&);
+
+    ChannelCountMode internalChannelCountMode() const { return m_channelCountMode; }
+    AudioBus::ChannelInterpretation internalChannelInterpretation() const { return m_channelInterpretation; }
+
+    // EventTarget
+    virtual EventTargetInterface eventTargetInterface() const override;
+    virtual ScriptExecutionContext* scriptExecutionContext() const override final;
 
 protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
-    void addInput(PassOwnPtr<AudioNodeInput>);
-    void addOutput(PassOwnPtr<AudioNodeOutput>);
+    void addInput(std::unique_ptr<AudioNodeInput>);
+    void addOutput(std::unique_ptr<AudioNodeOutput>);
     
     // Called by processIfNecessary() to cause all parts of the rendering graph connected to us to process.
     // Each rendering quantum, the audio data for each of the AudioNode's inputs will be available after this method is called.
     // Called from context's audio thread.
     virtual void pullInputs(size_t framesToProcess);
 
+    // Force all inputs to take any channel interpretation changes into account.
+    void updateChannelsForInputs();
+
 private:
     volatile bool m_isInitialized;
     NodeType m_nodeType;
     RefPtr<AudioContext> m_context;
     float m_sampleRate;
-    Vector<OwnPtr<AudioNodeInput> > m_inputs;
-    Vector<OwnPtr<AudioNodeOutput> > m_outputs;
+    Vector<std::unique_ptr<AudioNodeInput>> m_inputs;
+    Vector<std::unique_ptr<AudioNodeOutput>> m_outputs;
 
     double m_lastProcessingTime;
     double m_lastNonSilentTime;
 
     // Ref-counting
-    volatile int m_normalRefCount;
-    volatile int m_connectionRefCount;
+    std::atomic<int> m_normalRefCount;
+    std::atomic<int> m_connectionRefCount;
     
     bool m_isMarkedForDeletion;
     bool m_isDisabled;
-    
+
 #if DEBUG_AUDIONODE_REFERENCES
     static bool s_isNodeCountInitialized;
     static int s_nodeCount[NodeTypeEnd];
 #endif
+
+    virtual void refEventTarget() override { ref(); }
+    virtual void derefEventTarget() override { deref(); }
+
+protected:
+    unsigned m_channelCount;
+    ChannelCountMode m_channelCountMode;
+    AudioBus::ChannelInterpretation m_channelInterpretation;
 };
 
 } // namespace WebCore

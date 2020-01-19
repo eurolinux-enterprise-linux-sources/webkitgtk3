@@ -28,14 +28,12 @@
 
 #include "HTMLDocumentParser.h"
 #include "HTMLNames.h"
-#include "HTMLParserOptions.h"
-#include "HTMLViewSourceDocument.h"
 
 namespace WebCore {
 
-HTMLViewSourceParser::HTMLViewSourceParser(HTMLViewSourceDocument* document)
+HTMLViewSourceParser::HTMLViewSourceParser(HTMLViewSourceDocument& document)
     : DecodedDataDocumentParser(document)
-    , m_tokenizer(HTMLTokenizer::create(HTMLParserOptions(document)))
+    , m_tokenizer(std::make_unique<HTMLTokenizer>(HTMLParserOptions(document)))
 {
 }
 
@@ -62,9 +60,9 @@ void HTMLViewSourceParser::pumpTokenizer()
     }
 }
 
-void HTMLViewSourceParser::append(const SegmentedString& input)
+void HTMLViewSourceParser::append(PassRefPtr<StringImpl> input)
 {
-    m_input.appendToEnd(input);
+    m_input.appendToEnd(String(input));
     pumpTokenizer();
 }
 

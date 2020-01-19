@@ -27,6 +27,7 @@
 #include "IncrementalSweeper.h"
 
 #include "APIShims.h"
+#include "DelayedReleaseScope.h"
 #include "Heap.h"
 #include "JSObject.h"
 #include "JSString.h"
@@ -37,24 +38,22 @@
 
 namespace JSC {
 
-#if USE(CF) || PLATFORM(BLACKBERRY) || PLATFORM(QT)
+#if USE(CF)
 
 static const double sweepTimeSlice = .01; // seconds
 static const double sweepTimeTotal = .10;
 static const double sweepTimeMultiplier = 1.0 / sweepTimeTotal;
 
-#if USE(CF)
-    
 IncrementalSweeper::IncrementalSweeper(Heap* heap, CFRunLoopRef runLoop)
-    : HeapTimer(heap->globalData(), runLoop)
+    : HeapTimer(heap->vm(), runLoop)
     , m_currentBlockToSweepIndex(0)
     , m_blocksToSweep(heap->m_blockSnapshot)
 {
 }
 
-IncrementalSweeper* IncrementalSweeper::create(Heap* heap)
+PassOwnPtr<IncrementalSweeper> IncrementalSweeper::create(Heap* heap)
 {
-    return new IncrementalSweeper(heap, CFRunLoopGetCurrent());
+    return adoptPtr(new IncrementalSweeper(heap, CFRunLoopGetCurrent()));
 }
 
 void IncrementalSweeper::scheduleTimer()
@@ -67,36 +66,6 @@ void IncrementalSweeper::cancelTimer()
     CFRunLoopTimerSetNextFireDate(m_timer.get(), CFAbsoluteTimeGetCurrent() + s_decade);
 }
 
-#elif PLATFORM(BLACKBERRY) || PLATFORM(QT)
-   
-IncrementalSweeper::IncrementalSweeper(Heap* heap)
-    : HeapTimer(heap->globalData())
-    , m_currentBlockToSweepIndex(0)
-    , m_blocksToSweep(heap->m_blockSnapshot)
-{
-}
-
-IncrementalSweeper* IncrementalSweeper::create(Heap* heap)
-{
-    return new IncrementalSweeper(heap);
-}
-
-void IncrementalSweeper::scheduleTimer()
-{
-#if PLATFORM(QT)
-    m_timer.start(sweepTimeSlice * sweepTimeMultiplier * 1000, this);
-#else
-    m_timer.start(sweepTimeSlice * sweepTimeMultiplier);
-#endif
-}
-
-void IncrementalSweeper::cancelTimer()
-{
-    m_timer.stop();
-}
-
-#endif
-
 void IncrementalSweeper::doWork()
 {
     doSweep(WTF::monotonicallyIncreasingTime());
@@ -104,6 +73,7 @@ void IncrementalSweeper::doWork()
 
 void IncrementalSweeper::doSweep(double sweepBeginTime)
 {
+    DelayedReleaseScope scope(m_vm->heap.m_objectSpace);
     while (m_currentBlockToSweepIndex < m_blocksToSweep.size()) {
         sweepNextBlock();
 
@@ -128,7 +98,7 @@ void IncrementalSweeper::sweepNextBlock()
             continue;
 
         block->sweep();
-        m_globalData->heap.objectSpace().freeOrShrinkBlock(block);
+        m_vm->heap.objectSpace().freeOrShrinkBlock(block);
         return;
     }
 }
@@ -144,14 +114,14 @@ void IncrementalSweeper::willFinishSweeping()
 {
     m_currentBlockToSweepIndex = 0;
     m_blocksToSweep.clear();
-    if (m_globalData)
+    if (m_vm)
         cancelTimer();
 }
 
 #else
 
-IncrementalSweeper::IncrementalSweeper(JSGlobalData* globalData)
-    : HeapTimer(globalData)
+IncrementalSweeper::IncrementalSweeper(VM* vm)
+    : HeapTimer(vm)
 {
 }
 
@@ -159,9 +129,9 @@ void IncrementalSweeper::doWork()
 {
 }
 
-IncrementalSweeper* IncrementalSweeper::create(Heap* heap)
+PassOwnPtr<IncrementalSweeper> IncrementalSweeper::create(Heap* heap)
 {
-    return new IncrementalSweeper(heap->globalData());
+    return adoptPtr(new IncrementalSweeper(heap->vm()));
 }
 
 void IncrementalSweeper::startSweeping(Vector<MarkedBlock*>&)

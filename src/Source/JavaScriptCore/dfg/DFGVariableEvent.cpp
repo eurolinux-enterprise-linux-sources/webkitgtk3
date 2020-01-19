@@ -28,8 +28,8 @@
 
 #if ENABLE(DFG_JIT)
 
-#include "DFGFPRInfo.h"
-#include "DFGGPRInfo.h"
+#include "FPRInfo.h"
+#include "GPRInfo.h"
 
 namespace JSC { namespace DFG {
 
@@ -54,11 +54,13 @@ void VariableEvent::dump(PrintStream& out) const
     case Death:
         out.print("Death(", id(), ")");
         break;
-    case MovHint:
-        out.print("MovHint(", id(), ", r", operand(), ")");
+    case MovHintEvent:
+        out.print("MovHint(", id(), ", r", bytecodeRegister(), ")");
         break;
     case SetLocalEvent:
-        out.printf("SetLocal(r%d, %s)", operand(), dataFormatToString(dataFormat()));
+        out.print(
+            "SetLocal(machine:r", machineRegister(), " -> bytecode:r", bytecodeRegister(),
+            ", ", dataFormatToString(dataFormat()), ")");
         break;
     default:
         RELEASE_ASSERT_NOT_REACHED();
@@ -82,7 +84,7 @@ void VariableEvent::dumpFillInfo(const char* name, PrintStream& out) const
 
 void VariableEvent::dumpSpillInfo(const char* name, PrintStream& out) const
 {
-    out.print(name, "(", id(), ", r", virtualRegister(), ", ", dataFormatToString(dataFormat()), ")");
+    out.print(name, "(", id(), ", r", spillRegister(), ", ", dataFormatToString(dataFormat()), ")");
 }
 
 } } // namespace JSC::DFG

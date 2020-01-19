@@ -65,19 +65,18 @@ SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* textRenderer, const TextRun&
 
 TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, const UChar* characters, unsigned position, unsigned length)
 {
-    RenderStyle* style = text->style();
-    ASSERT(style);
+    const RenderStyle& style = text->style();
 
     TextRun run(characters + position
                 , length
                 , 0 /* xPos, only relevant with allowTabs=true */
                 , 0 /* padding, only relevant for justified text, not relevant for SVG */
                 , TextRun::AllowTrailingExpansion
-                , style->direction()
-                , isOverride(style->unicodeBidi()) /* directionalOverride */);
+                , style.direction()
+                , isOverride(style.unicodeBidi()) /* directionalOverride */);
 
-    if (textRunNeedsRenderingContext(style->font()))
-        run.setRenderingContext(SVGTextRunRenderingContext::create(text));
+    if (style.font().isSVGFont())
+        run.setRenderingContext(SVGTextRunRenderingContext::create(*text));
 
     run.disableRoundingHacks();
 
@@ -93,14 +92,14 @@ TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, const UChar*
 SVGTextMetrics SVGTextMetrics::measureCharacterRange(RenderSVGInlineText* text, unsigned position, unsigned length)
 {
     ASSERT(text);
-    return SVGTextMetrics(text, constructTextRun(text, text->characters(), position, length));
+    return SVGTextMetrics(text, constructTextRun(text, text->deprecatedCharacters(), position, length));
 }
 
 SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, unsigned length, float width, const String& glyphName)
 {
     ASSERT(text);
 
-    bool needsContext = textRunNeedsRenderingContext(text->style()->font());
+    bool needsContext = text->style().font().isSVGFont();
     float scalingFactor = text->scalingFactor();
     ASSERT(scalingFactor);
 
@@ -108,7 +107,7 @@ SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, uns
     m_height = text->scaledFont().fontMetrics().floatHeight() / scalingFactor;
     if (needsContext) {
         m_glyph.isValid = true;
-        m_glyph.unicodeString = String(text->characters() + position, length);
+        m_glyph.unicodeString = String(text->deprecatedCharacters() + position, length);
         m_glyph.name = glyphName;
     }
 

@@ -33,10 +33,8 @@
 #include "DOMNamedFlowCollection.h"
 #include "Document.h"
 #include "InspectorInstrumentation.h"
-#include "WebKitNamedFlow.h"
 
 #include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -45,9 +43,9 @@ NamedFlowCollection::NamedFlowCollection(Document* document)
 {
 }
 
-Vector<RefPtr<WebKitNamedFlow> > NamedFlowCollection::namedFlows()
+Vector<RefPtr<WebKitNamedFlow>> NamedFlowCollection::namedFlows()
 {
-    Vector<RefPtr<WebKitNamedFlow> > namedFlows;
+    Vector<RefPtr<WebKitNamedFlow>> namedFlows;
 
     for (NamedFlowSet::iterator it = m_namedFlows.begin(); it != m_namedFlows.end(); ++it) {
         if ((*it)->flowState() == WebKitNamedFlow::FlowStateNull)
@@ -103,8 +101,7 @@ void NamedFlowCollection::discardNamedFlow(WebKitNamedFlow* namedFlow)
 Document* NamedFlowCollection::document() const
 {
     ScriptExecutionContext* context = ContextDestructionObserver::scriptExecutionContext();
-    ASSERT(!context || context->isDocument());
-    return static_cast<Document*>(context);
+    return toDocument(context);
 }
 
 PassRefPtr<DOMNamedFlowCollection> NamedFlowCollection::createCSSOMSnapshot()

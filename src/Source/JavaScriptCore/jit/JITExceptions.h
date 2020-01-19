@@ -27,26 +27,15 @@
 #define JITExceptions_h
 
 #include "JSCJSValue.h"
-#include "MacroAssemblerCodeRef.h"
 
 #if ENABLE(JIT) || ENABLE(LLINT)
 
 namespace JSC {
 
 class ExecState;
-class JSGlobalData;
+class VM;
 
-// This header gives other parts of the system access to the JIT's prototocol
-// for the throwing and handling exceptions.
-
-struct ExceptionHandler {
-    void* catchRoutine;
-    ExecState* callFrame;
-};
-
-ExceptionHandler genericThrow(JSGlobalData*, ExecState*, JSValue exceptionValue, unsigned vPCIndex);
-
-ExceptionHandler jitThrow(JSGlobalData*, ExecState*, JSValue exceptionValue, ReturnAddressPtr faultLocation);
+void genericUnwind(VM*, ExecState*, JSValue exceptionValue);
 
 } // namespace JSC
 

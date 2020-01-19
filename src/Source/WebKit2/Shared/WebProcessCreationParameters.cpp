@@ -44,10 +44,11 @@ WebProcessCreationParameters::WebProcessCreationParameters()
 #if ENABLE(NETWORK_PROCESS)
     , usesNetworkProcess(false)
 #endif
+    , memoryCacheDisabled(false)
 {
 }
 
-void WebProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
+void WebProcessCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
 {
     encoder << injectedBundlePath;
     encoder << injectedBundlePathExtensionHandle;
@@ -61,6 +62,7 @@ void WebProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) con
     encoder << diskCacheDirectoryExtensionHandle;
     encoder << cookieStorageDirectory;
     encoder << cookieStorageDirectoryExtensionHandle;
+    encoder << shouldUseTestingNetworkSession;
     encoder << urlSchemesRegistererdAsEmptyDocument;
     encoder << urlSchemesRegisteredAsSecure;
     encoder << urlSchemesForWhichDomainRelaxationIsForbidden;
@@ -72,7 +74,9 @@ void WebProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) con
     encoder << urlSchemesRegisteredForCustomProtocols;
 #endif
 #if USE(SOUP)
+#if !ENABLE(CUSTOM_PROTOCOLS)
     encoder << urlSchemesRegistered;
+#endif
     encoder << cookiePersistentStoragePath;
     encoder << cookiePersistentStorageType;
     encoder.encodeEnum(cookieAcceptPolicy);
@@ -93,6 +97,7 @@ void WebProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) con
 #endif
 #if PLATFORM(MAC)
     encoder << presenterApplicationPid;
+    encoder << accessibilityEnhancedUserInterfaceEnabled;
     encoder << nsURLCacheMemoryCapacity;
     encoder << nsURLCacheDiskCapacity;
     encoder << acceleratedCompositingPort;
@@ -110,10 +115,12 @@ void WebProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) con
     encoder << usesNetworkProcess;
 #endif
 
+    encoder << plugInAutoStartOriginHashes;
     encoder << plugInAutoStartOrigins;
+    encoder << memoryCacheDisabled;
 }
 
-bool WebProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, WebProcessCreationParameters& parameters)
+bool WebProcessCreationParameters::decode(IPC::ArgumentDecoder& decoder, WebProcessCreationParameters& parameters)
 {
     if (!decoder.decode(parameters.injectedBundlePath))
         return false;
@@ -139,6 +146,8 @@ bool WebProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, Web
         return false;
     if (!decoder.decode(parameters.cookieStorageDirectoryExtensionHandle))
         return false;
+    if (!decoder.decode(parameters.shouldUseTestingNetworkSession))
+        return false;
     if (!decoder.decode(parameters.urlSchemesRegistererdAsEmptyDocument))
         return false;
     if (!decoder.decode(parameters.urlSchemesRegisteredAsSecure))
@@ -158,8 +167,10 @@ bool WebProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, Web
         return false;
 #endif
 #if USE(SOUP)
+#if !ENABLE(CUSTOM_PROTOCOLS)
     if (!decoder.decode(parameters.urlSchemesRegistered))
         return false;
+#endif
     if (!decoder.decode(parameters.cookiePersistentStoragePath))
         return false;
     if (!decoder.decode(parameters.cookiePersistentStorageType))
@@ -197,6 +208,8 @@ bool WebProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, Web
 #if PLATFORM(MAC)
     if (!decoder.decode(parameters.presenterApplicationPid))
         return false;
+    if (!decoder.decode(parameters.accessibilityEnhancedUserInterfaceEnabled))
+        return false;
     if (!decoder.decode(parameters.nsURLCacheMemoryCapacity))
         return false;
     if (!decoder.decode(parameters.nsURLCacheDiskCapacity))
@@ -223,7 +236,11 @@ bool WebProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, Web
         return false;
 #endif
 
+    if (!decoder.decode(parameters.plugInAutoStartOriginHashes))
+        return false;
     if (!decoder.decode(parameters.plugInAutoStartOrigins))
+        return false;
+    if (!decoder.decode(parameters.memoryCacheDisabled))
         return false;
 
     return true;

@@ -25,7 +25,7 @@
 #include "GtkAdjustmentWatcher.h"
 #include "IntRect.h"
 #include "IntSize.h"
-#include "KURL.h"
+#include "URL.h"
 #include "PopupMenu.h"
 #include "Region.h"
 #include "SearchPopupMenu.h"
@@ -43,7 +43,6 @@ namespace WebKit {
     class ChromeClient : public WebCore::ChromeClient {
     public:
         ChromeClient(WebKitWebView*);
-        virtual void* webView() const { return m_webView; }
         GtkAdjustmentWatcher* adjustmentWatcher() { return &m_adjustmentWatcher; }
 
         virtual void chromeDestroyed();
@@ -59,7 +58,7 @@ namespace WebKit {
         virtual bool canTakeFocus(FocusDirection);
         virtual void takeFocus(FocusDirection);
 
-        virtual void focusedNodeChanged(Node*);
+        virtual void focusedElementChanged(Element*);
         virtual void focusedFrameChanged(Frame*);
 
         virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&);
@@ -82,7 +81,7 @@ namespace WebKit {
 
         virtual void setResizable(bool);
 
-        virtual void addMessageToConsole(MessageSource, MessageLevel, const WTF::String& message, unsigned lineNumber, const WTF::String& sourceID);
+        virtual void addMessageToConsole(MessageSource, MessageLevel, const WTF::String& message, unsigned lineNumber, unsigned columnNumber, const WTF::String& sourceID);
 
         virtual bool canRunBeforeUnloadConfirmPanel();
         virtual bool runBeforeUnloadConfirmPanel(const WTF::String& message, Frame* frame);
@@ -135,11 +134,6 @@ namespace WebKit {
         virtual bool hasOpenedPopup() const;
         virtual PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const;
         virtual PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const;
-#if ENABLE(VIDEO) && USE(NATIVE_FULLSCREEN_VIDEO)
-        virtual bool supportsFullscreenForNode(const Node*);
-        virtual void enterFullscreenForNode(Node*);
-        virtual void exitFullscreenForNode(Node*);
-#endif
 
 #if ENABLE(FULLSCREEN_API)
         virtual bool supportsFullScreenForElement(const Element*, bool withKeyboard);
@@ -148,8 +142,8 @@ namespace WebKit {
         void cancelFullScreen();
 #endif
 
-        virtual bool shouldRubberBandInDirection(ScrollDirection) const { return true; }
         virtual void numWheelEventHandlersChanged(unsigned) { }
+        virtual void needTouchEvents(bool) { }
 
 #if USE(ACCELERATED_COMPOSITING) 
         virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*);
@@ -162,11 +156,14 @@ namespace WebKit {
         void paint(Timer<ChromeClient>*);
         void forcePaint();
         void widgetSizeChanged(const IntSize& oldWidgetSize, IntSize newSize);
+        void deviceScaleFactorChanged();
+
+        WebKitWebView* webView() { return m_webView; }
 
     private:
         WebKitWebView* m_webView;
         GtkAdjustmentWatcher m_adjustmentWatcher;
-        KURL m_hoveredLinkURL;
+        URL m_hoveredLinkURL;
         unsigned int m_closeSoonTimer;
 
         Timer <ChromeClient> m_displayTimer;

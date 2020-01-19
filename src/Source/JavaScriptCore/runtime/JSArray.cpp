@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 1999-2000 Harri Porten (porten@kde.org)
- *  Copyright (C) 2003, 2007, 2008, 2009, 2012 Apple Inc. All rights reserved.
+ *  Copyright (C) 2003, 2007, 2008, 2009, 2012, 2013 Apple Inc. All rights reserved.
  *  Copyright (C) 2003 Peter Kelly (pmk@post.com)
  *  Copyright (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
@@ -44,14 +44,15 @@ using namespace WTF;
 
 namespace JSC {
 
-ASSERT_HAS_TRIVIAL_DESTRUCTOR(JSArray);
+STATIC_ASSERT_IS_TRIVIALLY_DESTRUCTIBLE(JSArray);
 
 const ClassInfo JSArray::s_info = {"Array", &JSNonFinalObject::s_info, 0, 0, CREATE_METHOD_TABLE(JSArray)};
 
-Butterfly* createArrayButterflyInDictionaryIndexingMode(JSGlobalData& globalData, unsigned initialLength)
+Butterfly* createArrayButterflyInDictionaryIndexingMode(
+    VM& vm, JSCell* intendedOwner, unsigned initialLength)
 {
     Butterfly* butterfly = Butterfly::create(
-        globalData, 0, 0, true, IndexingHeader(), ArrayStorage::sizeFor(0));
+        vm, intendedOwner, 0, 0, true, IndexingHeader(), ArrayStorage::sizeFor(0));
     ArrayStorage* storage = butterfly->arrayStorage();
     storage->setLength(initialLength);
     storage->setVectorLength(0);
@@ -67,7 +68,7 @@ void JSArray::setLengthWritable(ExecState* exec, bool writable)
     if (!isLengthWritable() || writable)
         return;
 
-    enterDictionaryIndexingMode(exec->globalData());
+    enterDictionaryIndexingMode(exec->vm());
 
     SparseArrayValueMap* map = arrayStorage()->m_sparseMap.get();
     ASSERT(map);
@@ -75,7 +76,7 @@ void JSArray::setLengthWritable(ExecState* exec, bool writable)
 }
 
 // Defined in ES5.1 15.4.5.1
-bool JSArray::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor, bool throwException)
+bool JSArray::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName propertyName, const PropertyDescriptor& descriptor, bool throwException)
 {
     JSArray* array = jsCast<JSArray*>(object);
 
@@ -108,7 +109,7 @@ bool JSArray::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName 
         unsigned newLen = descriptor.value().toUInt32(exec);
         // d. If newLen is not equal to ToNumber( Desc.[[Value]]), throw a RangeError exception.
         if (newLen != descriptor.value().toNumber(exec)) {
-            throwError(exec, createRangeError(exec, "Invalid array length"));
+            exec->vm().throwException(exec, createRangeError(exec, "Invalid array length"));
             return false;
         }
 
@@ -176,26 +177,16 @@ bool JSArray::defineOwnProperty(JSObject* object, ExecState* exec, PropertyName 
     return array->JSObject::defineOwnNonIndexProperty(exec, propertyName, descriptor, throwException);
 }
 
-bool JSArray::getOwnPropertySlot(JSCell* cell, ExecState* exec, PropertyName propertyName, PropertySlot& slot)
+bool JSArray::getOwnPropertySlot(JSObject* object, ExecState* exec, PropertyName propertyName, PropertySlot& slot)
 {
-    JSArray* thisObject = jsCast<JSArray*>(cell);
+    JSArray* thisObject = jsCast<JSArray*>(object);
     if (propertyName == exec->propertyNames().length) {
-        slot.setValue(jsNumber(thisObject->length()));
+        unsigned attributes = thisObject->isLengthWritable() ? DontDelete | DontEnum : DontDelete | DontEnum | ReadOnly;
+        slot.setValue(thisObject, attributes, jsNumber(thisObject->length()));
         return true;
     }
 
     return JSObject::getOwnPropertySlot(thisObject, exec, propertyName, slot);
-}
-
-bool JSArray::getOwnPropertyDescriptor(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
-{
-    JSArray* thisObject = jsCast<JSArray*>(object);
-    if (propertyName == exec->propertyNames().length) {
-        descriptor.setDescriptor(jsNumber(thisObject->length()), thisObject->isLengthWritable() ? DontDelete | DontEnum : DontDelete | DontEnum | ReadOnly);
-        return true;
-    }
-
-    return JSObject::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
 }
 
 // ECMA 15.4.5.1
@@ -206,7 +197,7 @@ void JSArray::put(JSCell* cell, ExecState* exec, PropertyName propertyName, JSVa
     if (propertyName == exec->propertyNames().length) {
         unsigned newLength = value.toUInt32(exec);
         if (value.toNumber(exec) != static_cast<double>(newLength)) {
-            throwError(exec, createRangeError(exec, ASCIILiteral("Invalid array length")));
+            exec->vm().throwException(exec, createRangeError(exec, ASCIILiteral("Invalid array length")));
             return;
         }
         thisObject->setLength(exec, newLength, slot.isStrictMode());
@@ -244,9 +235,9 @@ void JSArray::getOwnNonIndexPropertyNames(JSObject* object, ExecState* exec, Pro
 }
 
 // This method makes room in the vector, but leaves the new space for count slots uncleared.
-bool JSArray::unshiftCountSlowCase(JSGlobalData& globalData, bool addToFront, unsigned count)
+bool JSArray::unshiftCountSlowCase(VM& vm, bool addToFront, unsigned count)
 {
-    ArrayStorage* storage = ensureArrayStorage(globalData);
+    ArrayStorage* storage = ensureArrayStorage(vm);
     Butterfly* butterfly = storage->butterfly();
     unsigned propertyCapacity = structure()->outOfLineCapacity();
     unsigned propertySize = structure()->outOfLineSize();
@@ -278,6 +269,7 @@ bool JSArray::unshiftCountSlowCase(JSGlobalData& globalData, bool addToFront, un
     // Step 2:
     // We're either going to choose to allocate a new ArrayStorage, or we're going to reuse the existing one.
 
+    DeferGC deferGC(vm.heap);
     void* newAllocBase = 0;
     unsigned newStorageCapacity;
     // If the current storage array is sufficiently large (but not too large!) then just keep using it.
@@ -286,7 +278,7 @@ bool JSArray::unshiftCountSlowCase(JSGlobalData& globalData, bool addToFront, un
         newStorageCapacity = currentCapacity;
     } else {
         size_t newSize = Butterfly::totalSize(0, propertyCapacity, true, ArrayStorage::sizeFor(desiredCapacity));
-        if (!globalData.heap.tryAllocateStorage(newSize, &newAllocBase))
+        if (!vm.heap.tryAllocateStorage(this, newSize, &newAllocBase))
             return false;
         newStorageCapacity = desiredCapacity;
     }
@@ -329,8 +321,7 @@ bool JSArray::unshiftCountSlowCase(JSGlobalData& globalData, bool addToFront, un
 
     newButterfly->arrayStorage()->setVectorLength(newVectorLength);
     newButterfly->arrayStorage()->m_indexBias = newIndexBias;
-
-    m_butterfly = newButterfly;
+    setButterflyWithoutChangingStructure(vm, newButterfly);
 
     return true;
 }
@@ -349,8 +340,8 @@ bool JSArray::setLengthWithArrayStorage(ExecState* exec, unsigned newLength, boo
 
         if (newLength < length) {
             // Copy any keys we might be interested in into a vector.
-            Vector<unsigned> keys;
-            keys.reserveCapacity(min(map->size(), static_cast<size_t>(length - newLength)));
+            Vector<unsigned, 0, UnsafeVectorOverflow> keys;
+            keys.reserveInitialCapacity(min(map->size(), static_cast<size_t>(length - newLength)));
             SparseArrayValueMap::const_iterator end = map->end();
             for (SparseArrayValueMap::const_iterator it = map->begin(); it != end; ++it) {
                 unsigned index = static_cast<unsigned>(it->key);
@@ -408,9 +399,9 @@ bool JSArray::setLength(ExecState* exec, unsigned newLength, bool throwException
         if (newLength >= MIN_SPARSE_ARRAY_INDEX) {
             return setLengthWithArrayStorage(
                 exec, newLength, throwException,
-                convertContiguousToArrayStorage(exec->globalData()));
+                convertContiguousToArrayStorage(exec->vm()));
         }
-        createInitialUndecided(exec->globalData(), newLength);
+        createInitialUndecided(exec->vm(), newLength);
         return true;
         
     case ArrayWithUndecided:
@@ -424,10 +415,10 @@ bool JSArray::setLength(ExecState* exec, unsigned newLength, bool throwException
                 && !isDenseEnoughForVector(newLength, countElements()))) {
             return setLengthWithArrayStorage(
                 exec, newLength, throwException,
-                ensureArrayStorage(exec->globalData()));
+                ensureArrayStorage(exec->vm()));
         }
         if (newLength > m_butterfly->publicLength()) {
-            ensureLength(exec->globalData(), newLength);
+            ensureLength(exec->vm(), newLength);
             return true;
         }
         if (structure()->indexingType() == ArrayWithDouble) {
@@ -549,19 +540,19 @@ void JSArray::push(ExecState* exec, JSValue value)
 {
     switch (structure()->indexingType()) {
     case ArrayClass: {
-        createInitialUndecided(exec->globalData(), 0);
-        // Fall through.
+        createInitialUndecided(exec->vm(), 0);
+        FALLTHROUGH;
     }
         
     case ArrayWithUndecided: {
-        convertUndecidedForValue(exec->globalData(), value);
+        convertUndecidedForValue(exec->vm(), value);
         push(exec, value);
         return;
     }
         
     case ArrayWithInt32: {
         if (!value.isInt32()) {
-            convertInt32ForValue(exec->globalData(), value);
+            convertInt32ForValue(exec->vm(), value);
             push(exec, value);
             return;
         }
@@ -577,7 +568,7 @@ void JSArray::push(ExecState* exec, JSValue value)
         if (length > MAX_ARRAY_INDEX) {
             methodTable()->putByIndex(this, exec, length, value, true);
             if (!exec->hadException())
-                throwError(exec, createRangeError(exec, "Invalid array length"));
+                exec->vm().throwException(exec, createRangeError(exec, "Invalid array length"));
             return;
         }
         
@@ -589,7 +580,7 @@ void JSArray::push(ExecState* exec, JSValue value)
         unsigned length = m_butterfly->publicLength();
         ASSERT(length <= m_butterfly->vectorLength());
         if (length < m_butterfly->vectorLength()) {
-            m_butterfly->contiguous()[length].set(exec->globalData(), this, value);
+            m_butterfly->contiguous()[length].set(exec->vm(), this, value);
             m_butterfly->setPublicLength(length + 1);
             return;
         }
@@ -597,7 +588,7 @@ void JSArray::push(ExecState* exec, JSValue value)
         if (length > MAX_ARRAY_INDEX) {
             methodTable()->putByIndex(this, exec, length, value, true);
             if (!exec->hadException())
-                throwError(exec, createRangeError(exec, "Invalid array length"));
+                exec->vm().throwException(exec, createRangeError(exec, "Invalid array length"));
             return;
         }
         
@@ -607,13 +598,13 @@ void JSArray::push(ExecState* exec, JSValue value)
         
     case ArrayWithDouble: {
         if (!value.isNumber()) {
-            convertDoubleToContiguous(exec->globalData());
+            convertDoubleToContiguous(exec->vm());
             push(exec, value);
             return;
         }
         double valueAsDouble = value.asNumber();
         if (valueAsDouble != valueAsDouble) {
-            convertDoubleToContiguous(exec->globalData());
+            convertDoubleToContiguous(exec->vm());
             push(exec, value);
             return;
         }
@@ -629,7 +620,7 @@ void JSArray::push(ExecState* exec, JSValue value)
         if (length > MAX_ARRAY_INDEX) {
             methodTable()->putByIndex(this, exec, length, value, true);
             if (!exec->hadException())
-                throwError(exec, createRangeError(exec, "Invalid array length"));
+                exec->vm().throwException(exec, createRangeError(exec, "Invalid array length"));
             return;
         }
         
@@ -644,7 +635,7 @@ void JSArray::push(ExecState* exec, JSValue value)
                 setLength(exec, oldLength + 1, true);
             return;
         }
-        // Fall through.
+        FALLTHROUGH;
     }
         
     case ArrayWithArrayStorage: {
@@ -653,7 +644,7 @@ void JSArray::push(ExecState* exec, JSValue value)
         // Fast case - push within vector, always update m_length & m_numValuesInVector.
         unsigned length = storage->length();
         if (length < storage->vectorLength()) {
-            storage->m_vector[length].set(exec->globalData(), this, value);
+            storage->m_vector[length].set(exec->vm(), this, value);
             storage->setLength(length + 1);
             ++storage->m_numValuesInVector;
             return;
@@ -664,7 +655,7 @@ void JSArray::push(ExecState* exec, JSValue value)
             methodTable()->putByIndex(this, exec, storage->length(), value, true);
             // Per ES5.1 15.4.4.7 step 6 & 15.4.5.1 step 3.d.
             if (!exec->hadException())
-                throwError(exec, createRangeError(exec, "Invalid array length"));
+                exec->vm().throwException(exec, createRangeError(exec, "Invalid array length"));
             return;
         }
 
@@ -708,29 +699,50 @@ bool JSArray::shiftCountWithArrayStorage(unsigned startIndex, unsigned count, Ar
     
     unsigned usedVectorLength = min(vectorLength, oldLength);
     
-    vectorLength -= count;
-    storage->setVectorLength(vectorLength);
-    
-    if (vectorLength) {
-        if (startIndex < usedVectorLength - (startIndex + count)) {
-            if (startIndex) {
-                memmove(
-                    storage->m_vector + count,
-                    storage->m_vector,
-                    sizeof(JSValue) * startIndex);
-            }
-            m_butterfly = m_butterfly->shift(structure(), count);
-            storage = m_butterfly->arrayStorage();
-            storage->m_indexBias += count;
-        } else {
+    unsigned numElementsBeforeShiftRegion = startIndex;
+    unsigned firstIndexAfterShiftRegion = startIndex + count;
+    unsigned numElementsAfterShiftRegion = usedVectorLength - firstIndexAfterShiftRegion;
+    ASSERT(numElementsBeforeShiftRegion + count + numElementsAfterShiftRegion == usedVectorLength);
+
+    // The point of this comparison seems to be to minimize the amount of elements that have to 
+    // be moved during a shift operation.
+    if (numElementsBeforeShiftRegion < numElementsAfterShiftRegion) {
+        // The number of elements before the shift region is less than the number of elements
+        // after the shift region, so we move the elements before to the right.
+        if (numElementsBeforeShiftRegion) {
+            RELEASE_ASSERT(count + startIndex <= vectorLength);
             memmove(
-                storage->m_vector + startIndex,
-                storage->m_vector + startIndex + count,
-                sizeof(JSValue) * (usedVectorLength - (startIndex + count)));
-            for (unsigned i = usedVectorLength - count; i < usedVectorLength; ++i)
-                storage->m_vector[i].clear();
+                storage->m_vector + count,
+                storage->m_vector,
+                sizeof(JSValue) * startIndex);
         }
+        // Adjust the Butterfly and the index bias. We only need to do this here because we're changing
+        // the start of the Butterfly, which needs to point at the first indexed property in the used
+        // portion of the vector.
+        m_butterfly.setWithoutWriteBarrier(m_butterfly->shift(structure(), count));
+        storage = m_butterfly->arrayStorage();
+        storage->m_indexBias += count;
+
+        // Since we're consuming part of the vector by moving its beginning to the left,
+        // we need to modify the vector length appropriately.
+        storage->setVectorLength(vectorLength - count);
+    } else {
+        // The number of elements before the shift region is greater than or equal to the number 
+        // of elements after the shift region, so we move the elements after the shift region to the left.
+        memmove(
+            storage->m_vector + startIndex,
+            storage->m_vector + firstIndexAfterShiftRegion,
+            sizeof(JSValue) * numElementsAfterShiftRegion);
+        // Clear the slots of the elements we just moved.
+        unsigned startOfEmptyVectorTail = usedVectorLength - count;
+        for (unsigned i = startOfEmptyVectorTail; i < usedVectorLength; ++i)
+            storage->m_vector[i].clear();
+        // We don't modify the index bias or the Butterfly pointer in this case because we're not changing 
+        // the start of the Butterfly, which needs to point at the first indexed property in the used 
+        // portion of the vector. We also don't modify the vector length because we're not actually changing
+        // its length; we're just using less of it.
     }
+    
     return true;
 }
 
@@ -754,22 +766,22 @@ bool JSArray::shiftCountWithAnyIndexingType(ExecState* exec, unsigned startIndex
         // We may have to walk the entire array to do the shift. We're willing to do
         // so only if it's not horribly slow.
         if (oldLength - (startIndex + count) >= MIN_SPARSE_ARRAY_INDEX)
-            return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->globalData()));
-        
+            return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->vm()));
+
+        // Storing to a hole is fine since we're still having a good time. But reading from a hole 
+        // is totally not fine, since we might have to read from the proto chain.
+        // We have to check for holes before we start moving things around so that we don't get halfway 
+        // through shifting and then realize we should have been in ArrayStorage mode.
         unsigned end = oldLength - count;
         for (unsigned i = startIndex; i < end; ++i) {
-            // Storing to a hole is fine since we're still having a good time. But reading
-            // from a hole is totally not fine, since we might have to read from the proto
-            // chain.
             JSValue v = m_butterfly->contiguous()[i + count].get();
-            if (UNLIKELY(!v)) {
-                // The purpose of this path is to ensure that we don't make the same
-                // mistake in the future: shiftCountWithArrayStorage() can't do anything
-                // about holes (at least for now), but it can detect them quickly. So
-                // we convert to array storage and then allow the array storage path to
-                // figure it out.
-                return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->globalData()));
-            }
+            if (UNLIKELY(!v))
+                return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->vm()));
+        }
+
+        for (unsigned i = startIndex; i < end; ++i) {
+            JSValue v = m_butterfly->contiguous()[i + count].get();
+            ASSERT(v);
             // No need for a barrier since we're just moving data around in the same vector.
             // This is in line with our standing assumption that we won't have a deletion
             // barrier.
@@ -789,22 +801,22 @@ bool JSArray::shiftCountWithAnyIndexingType(ExecState* exec, unsigned startIndex
         // We may have to walk the entire array to do the shift. We're willing to do
         // so only if it's not horribly slow.
         if (oldLength - (startIndex + count) >= MIN_SPARSE_ARRAY_INDEX)
-            return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->globalData()));
-        
+            return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->vm()));
+
+        // Storing to a hole is fine since we're still having a good time. But reading from a hole 
+        // is totally not fine, since we might have to read from the proto chain.
+        // We have to check for holes before we start moving things around so that we don't get halfway 
+        // through shifting and then realize we should have been in ArrayStorage mode.
         unsigned end = oldLength - count;
         for (unsigned i = startIndex; i < end; ++i) {
-            // Storing to a hole is fine since we're still having a good time. But reading
-            // from a hole is totally not fine, since we might have to read from the proto
-            // chain.
             double v = m_butterfly->contiguousDouble()[i + count];
-            if (UNLIKELY(v != v)) {
-                // The purpose of this path is to ensure that we don't make the same
-                // mistake in the future: shiftCountWithArrayStorage() can't do anything
-                // about holes (at least for now), but it can detect them quickly. So
-                // we convert to array storage and then allow the array storage path to
-                // figure it out.
-                return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->globalData()));
-            }
+            if (UNLIKELY(v != v))
+                return shiftCountWithArrayStorage(startIndex, count, ensureArrayStorage(exec->vm()));
+        }
+            
+        for (unsigned i = startIndex; i < end; ++i) {
+            double v = m_butterfly->contiguousDouble()[i + count];
+            ASSERT(v == v);
             // No need for a barrier since we're just moving data around in the same vector.
             // This is in line with our standing assumption that we won't have a deletion
             // barrier.
@@ -844,13 +856,14 @@ bool JSArray::unshiftCountWithArrayStorage(ExecState* exec, unsigned startIndex,
     unsigned vectorLength = storage->vectorLength();
 
     if (moveFront && storage->m_indexBias >= count) {
-        m_butterfly = storage->butterfly()->unshift(structure(), count);
-        storage = m_butterfly->arrayStorage();
+        Butterfly* newButterfly = storage->butterfly()->unshift(structure(), count);
+        storage = newButterfly->arrayStorage();
         storage->m_indexBias -= count;
         storage->setVectorLength(vectorLength + count);
+        setButterflyWithoutChangingStructure(exec->vm(), newButterfly);
     } else if (!moveFront && vectorLength - length >= count)
         storage = storage->butterfly()->arrayStorage();
-    else if (unshiftCountSlowCase(exec->globalData(), moveFront, count))
+    else if (unshiftCountSlowCase(exec->vm(), moveFront, count))
         storage = arrayStorage();
     else {
         throwOutOfMemoryError(exec);
@@ -886,14 +899,21 @@ bool JSArray::unshiftCountWithAnyIndexingType(ExecState* exec, unsigned startInd
         // We may have to walk the entire array to do the unshift. We're willing to do so
         // only if it's not horribly slow.
         if (oldLength - startIndex >= MIN_SPARSE_ARRAY_INDEX)
-            return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->globalData()));
+            return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->vm()));
         
-        ensureLength(exec->globalData(), oldLength + count);
-        
+        ensureLength(exec->vm(), oldLength + count);
+
+        // We have to check for holes before we start moving things around so that we don't get halfway 
+        // through shifting and then realize we should have been in ArrayStorage mode.
         for (unsigned i = oldLength; i-- > startIndex;) {
             JSValue v = m_butterfly->contiguous()[i].get();
             if (UNLIKELY(!v))
-                return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->globalData()));
+                return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->vm()));
+        }
+
+        for (unsigned i = oldLength; i-- > startIndex;) {
+            JSValue v = m_butterfly->contiguous()[i].get();
+            ASSERT(v);
             m_butterfly->contiguous()[i + count].setWithoutWriteBarrier(v);
         }
         
@@ -911,14 +931,21 @@ bool JSArray::unshiftCountWithAnyIndexingType(ExecState* exec, unsigned startInd
         // We may have to walk the entire array to do the unshift. We're willing to do so
         // only if it's not horribly slow.
         if (oldLength - startIndex >= MIN_SPARSE_ARRAY_INDEX)
-            return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->globalData()));
+            return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->vm()));
         
-        ensureLength(exec->globalData(), oldLength + count);
+        ensureLength(exec->vm(), oldLength + count);
         
+        // We have to check for holes before we start moving things around so that we don't get halfway 
+        // through shifting and then realize we should have been in ArrayStorage mode.
         for (unsigned i = oldLength; i-- > startIndex;) {
             double v = m_butterfly->contiguousDouble()[i];
             if (UNLIKELY(v != v))
-                return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->globalData()));
+                return unshiftCountWithArrayStorage(exec, startIndex, count, ensureArrayStorage(exec->vm()));
+        }
+
+        for (unsigned i = oldLength; i-- > startIndex;) {
+            double v = m_butterfly->contiguousDouble()[i];
+            ASSERT(v == v);
             m_butterfly->contiguousDouble()[i + count] = v;
         }
         
@@ -1064,9 +1091,9 @@ void JSArray::sortNumeric(ExecState* exec, JSValue compareFunction, CallType cal
 template <IndexingType> struct ContiguousTypeAccessor {
     typedef WriteBarrier<Unknown> Type;
     static JSValue getAsValue(ContiguousData<Type> data, size_t i) { return data[i].get(); }
-    static void setWithValue(JSGlobalData& globalData, JSArray* thisValue, ContiguousData<Type> data, size_t i, JSValue value)
+    static void setWithValue(VM& vm, JSArray* thisValue, ContiguousData<Type> data, size_t i, JSValue value)
     {
-        data[i].set(globalData, thisValue, value);
+        data[i].set(vm, thisValue, value);
     }
     static void replaceDataReference(ContiguousData<Type>* outData, ContiguousJSValues inData)
     {
@@ -1077,7 +1104,7 @@ template <IndexingType> struct ContiguousTypeAccessor {
 template <> struct ContiguousTypeAccessor<ArrayWithDouble> {
     typedef double Type;
     static JSValue getAsValue(ContiguousData<Type> data, size_t i) { ASSERT(data[i] == data[i]); return JSValue(JSValue::EncodeAsDouble, data[i]); }
-    static void setWithValue(JSGlobalData&, JSArray*, ContiguousData<Type> data, size_t i, JSValue value)
+    static void setWithValue(VM&, JSArray*, ContiguousData<Type> data, size_t i, JSValue value)
     {
         data[i] = value.asNumber();
     }
@@ -1094,14 +1121,14 @@ void JSArray::sortCompactedVector(ExecState* exec, ContiguousData<StorageType> d
     if (!relevantLength)
         return;
     
-    JSGlobalData& globalData = exec->globalData();
+    VM& vm = exec->vm();
 
     // Converting JavaScript values to strings can be expensive, so we do it once up front and sort based on that.
     // This is a considerable improvement over doing it twice per comparison, though it requires a large temporary
     // buffer. Besides, this protects us from crashing if some objects have custom toString methods that return
     // random or otherwise changing results, effectively making compare function inconsistent.
         
-    Vector<ValueStringPair> values(relevantLength);
+    Vector<ValueStringPair, 0, UnsafeVectorOverflow> values(relevantLength);
     if (!values.begin()) {
         throwOutOfMemoryError(exec);
         return;
@@ -1151,12 +1178,12 @@ void JSArray::sortCompactedVector(ExecState* exec, ContiguousData<StorageType> d
     case ArrayWithInt32:
     case ArrayWithDouble:
     case ArrayWithContiguous:
-        ensureLength(globalData, relevantLength);
+        ensureLength(vm, relevantLength);
         break;
         
     case ArrayWithArrayStorage:
         if (arrayStorage()->vectorLength() < relevantLength) {
-            increaseVectorLength(exec->globalData(), relevantLength);
+            increaseVectorLength(exec->vm(), relevantLength);
             ContiguousTypeAccessor<indexingType>::replaceDataReference(&data, arrayStorage()->vector());
         }
         if (arrayStorage()->length() < relevantLength)
@@ -1168,7 +1195,7 @@ void JSArray::sortCompactedVector(ExecState* exec, ContiguousData<StorageType> d
     }
 
     for (size_t i = 0; i < relevantLength; i++)
-        ContiguousTypeAccessor<indexingType>::setWithValue(globalData, this, data, i, values[i].first);
+        ContiguousTypeAccessor<indexingType>::setWithValue(vm, this, data, i, values[i].first);
     
     Heap::heap(this)->popTempSortVector(&values);
 }
@@ -1247,7 +1274,7 @@ struct AVLTreeAbstractorForArrayCompare {
     typedef JSValue key;
     typedef int32_t size;
 
-    Vector<AVLTreeNodeForArrayCompare> m_nodes;
+    Vector<AVLTreeNodeForArrayCompare, 0, UnsafeVectorOverflow> m_nodes;
     ExecState* m_exec;
     JSValue m_compareFunction;
     CallType m_compareCallType;
@@ -1293,7 +1320,7 @@ struct AVLTreeAbstractorForArrayCompare {
             m_cachedCall->setThis(jsUndefined());
             m_cachedCall->setArgument(0, va);
             m_cachedCall->setArgument(1, vb);
-            compareResult = m_cachedCall->call().toNumber(m_cachedCall->newCallFrame(m_exec));
+            compareResult = m_cachedCall->call().toNumber(m_exec);
         } else {
             MarkedArgumentBuffer arguments;
             arguments.append(va);
@@ -1387,13 +1414,13 @@ void JSArray::sortVector(ExecState* exec, JSValue compareFunction, CallType call
     // Copy the values back into m_storage.
     AVLTree<AVLTreeAbstractorForArrayCompare, 44>::Iterator iter;
     iter.start_iter_least(tree);
-    JSGlobalData& globalData = exec->globalData();
+    VM& vm = exec->vm();
     for (unsigned i = 0; i < elementsToExtractThreshold; ++i) {
         ASSERT(i < butterfly()->vectorLength());
         if (structure()->indexingType() == ArrayWithDouble)
             butterfly()->contiguousDouble()[i] = tree.abstractor().m_nodes[*iter].value.asNumber();
         else
-            currentIndexingData()[i].set(globalData, this, tree.abstractor().m_nodes[*iter].value);
+            currentIndexingData()[i].set(vm, this, tree.abstractor().m_nodes[*iter].value);
         ++iter;
     }
     // Put undefined values back in.

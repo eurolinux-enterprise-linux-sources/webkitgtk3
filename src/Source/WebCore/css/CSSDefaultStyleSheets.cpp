@@ -31,6 +31,8 @@
 
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "HTMLAnchorElement.h"
+#include "HTMLAudioElement.h"
 #include "MediaQueryEvaluator.h"
 #include "Page.h"
 #include "RenderTheme.h"
@@ -57,11 +59,11 @@ StyleSheetContents* CSSDefaultStyleSheets::fullscreenStyleSheet;
 StyleSheetContents* CSSDefaultStyleSheets::plugInsStyleSheet;
 
 // FIXME: It would be nice to use some mechanism that guarantees this is in sync with the real UA stylesheet.
-static const char* simpleUserAgentStyleSheet = "html,body,div{display:block}head{display:none}body{margin:8px}div:focus,span:focus{outline:auto 5px -webkit-focus-ring-color}a:-webkit-any-link{color:-webkit-link;text-decoration:underline}a:-webkit-any-link:active{color:-webkit-activelink}";
+static const char* simpleUserAgentStyleSheet = "html,body,div{display:block}head{display:none}body{margin:8px}div:focus,span:focus,a:focus{outline:auto 5px -webkit-focus-ring-color}a:-webkit-any-link{color:-webkit-link;text-decoration:underline}a:-webkit-any-link:active{color:-webkit-activelink}";
 
 static inline bool elementCanUseSimpleDefaultStyle(Element* e)
 {
-    return e->hasTagName(htmlTag) || e->hasTagName(headTag) || e->hasTagName(bodyTag) || e->hasTagName(divTag) || e->hasTagName(spanTag) || e->hasTagName(brTag) || e->hasTagName(aTag);
+    return e->hasTagName(htmlTag) || e->hasTagName(headTag) || e->hasTagName(bodyTag) || e->hasTagName(divTag) || e->hasTagName(spanTag) || e->hasTagName(brTag) || isHTMLAnchorElement(e);
 }
 
 static const MediaQueryEvaluator& screenEval()
@@ -78,9 +80,9 @@ static const MediaQueryEvaluator& printEval()
 
 static StyleSheetContents* parseUASheet(const String& str)
 {
-    StyleSheetContents* sheet = StyleSheetContents::create().leakRef(); // leak the sheet on purpose
-    sheet->parseString(str);
-    return sheet;
+    StyleSheetContents& sheet = StyleSheetContents::create().leakRef(); // leak the sheet on purpose
+    sheet.parseString(str);
+    return &sheet;
 }
 
 static StyleSheetContents* parseUASheet(const char* characters, unsigned size)
@@ -146,8 +148,9 @@ void CSSDefaultStyleSheets::loadSimpleDefaultStyle()
 RuleSet* CSSDefaultStyleSheets::viewSourceStyle()
 {
     if (!defaultViewSourceStyle) {
+        static StyleSheetContents* viewSourceStyleSheet = parseUASheet(sourceUserAgentStyleSheet, sizeof(sourceUserAgentStyleSheet));
         defaultViewSourceStyle = RuleSet::create().leakPtr();
-        defaultViewSourceStyle->addRulesFromSheet(parseUASheet(sourceUserAgentStyleSheet, sizeof(sourceUserAgentStyleSheet)), screenEval());
+        defaultViewSourceStyle->addRulesFromSheet(viewSourceStyleSheet, screenEval());
     }
     return defaultViewSourceStyle;
 }
@@ -181,8 +184,10 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
 #endif
 
 #if ENABLE(VIDEO)
-    if (!mediaControlsStyleSheet && (element->hasTagName(videoTag) || element->hasTagName(audioTag))) {
-        String mediaRules = String(mediaControlsUserAgentStyleSheet, sizeof(mediaControlsUserAgentStyleSheet)) + RenderTheme::themeForPage(element->document()->page())->extraMediaControlsStyleSheet();
+    if (!mediaControlsStyleSheet && (element->hasTagName(videoTag) || isHTMLAudioElement(element))) {
+        String mediaRules = RenderTheme::themeForPage(element->document().page())->mediaControlsStyleSheet();
+        if (mediaRules.isEmpty())
+            mediaRules = String(mediaControlsUserAgentStyleSheet, sizeof(mediaControlsUserAgentStyleSheet)) + RenderTheme::themeForPage(element->document().page())->extraMediaControlsStyleSheet();
         mediaControlsStyleSheet = parseUASheet(mediaRules);
         defaultStyle->addRulesFromSheet(mediaControlsStyleSheet, screenEval());
         defaultPrintStyle->addRulesFromSheet(mediaControlsStyleSheet, printEval());
@@ -191,7 +196,7 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
 #endif
 
 #if ENABLE(FULLSCREEN_API)
-    if (!fullscreenStyleSheet && element->document()->webkitIsFullScreen()) {
+    if (!fullscreenStyleSheet && element->document().webkitIsFullScreen()) {
         String fullscreenRules = String(fullscreenUserAgentStyleSheet, sizeof(fullscreenUserAgentStyleSheet)) + RenderTheme::defaultTheme()->extraFullScreenStyleSheet();
         fullscreenStyleSheet = parseUASheet(fullscreenRules);
         defaultStyle->addRulesFromSheet(fullscreenStyleSheet, screenEval());
@@ -201,7 +206,9 @@ void CSSDefaultStyleSheets::ensureDefaultStyleSheetsForElement(Element* element,
 #endif
 
     if (!plugInsStyleSheet && (element->hasTagName(objectTag) || element->hasTagName(embedTag))) {
-        String plugInsRules = String(plugInsUserAgentStyleSheet, sizeof(plugInsUserAgentStyleSheet)) + RenderTheme::themeForPage(element->document()->page())->extraPlugInsStyleSheet() + element->document()->page()->chrome()->client()->plugInExtraStyleSheet();
+        String plugInsRules = RenderTheme::themeForPage(element->document().page())->extraPlugInsStyleSheet() + element->document().page()->chrome().client().plugInExtraStyleSheet();
+        if (plugInsRules.isEmpty())
+            plugInsRules = String(plugInsUserAgentStyleSheet, sizeof(plugInsUserAgentStyleSheet));
         plugInsStyleSheet = parseUASheet(plugInsRules);
         defaultStyle->addRulesFromSheet(plugInsStyleSheet, screenEval());
         changedDefaultStyle = true;

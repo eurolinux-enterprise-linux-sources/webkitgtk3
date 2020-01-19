@@ -30,16 +30,7 @@
 
 #include <wtf/Platform.h>
 #include <wtf/ExportMacros.h>
-#if USE(JSC)
 #include <runtime/JSExportMacros.h>
-#endif
-
-// On MSW, wx headers need to be included before windows.h is.
-// The only way we can always ensure this is if we include wx here.
-#if PLATFORM(WX)
-#include <wx/defs.h>
-#endif
-
 
 #ifdef __cplusplus
 #undef new
@@ -64,15 +55,6 @@
 #define TARGETING_LION ERROR_PLEASE_COMPARE_WITH_MAC_OS_X_VERSION_MAX_ALLOWED
 
 #endif // PLATFORM(MAC)
-
-#if OS(WINDOWS)
-// If we don't define these, they get defined in windef.h. 
-// We want to use std::min and std::max
-#undef max
-#define max max
-#undef min
-#define min min
-#endif
 
 #if PLATFORM(WIN)
 #define WTF_USE_CF 1 

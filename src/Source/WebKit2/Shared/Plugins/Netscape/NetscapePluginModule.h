@@ -35,6 +35,10 @@
 #include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
+namespace WebCore {
+struct MimeClassInfo;
+}
+
 namespace WebKit {
 
 class RawPluginMetaData;
@@ -67,6 +71,8 @@ public:
 
 #if PLUGIN_ARCHITECTURE(X11)
     static bool scanPlugin(const String& pluginPath);
+    static void parseMIMEDescription(const String& mimeDescription, Vector<WebCore::MimeClassInfo>& result);
+    static String buildMIMEDescription(const Vector<WebCore::MimeClassInfo>&);
 #endif
 
 private:
@@ -96,7 +102,7 @@ private:
     NPP_ShutdownProcPtr m_shutdownProcPtr;
     NPPluginFuncs m_pluginFuncs;
 
-    OwnPtr<Module> m_module;
+    std::unique_ptr<Module> m_module;
 };
     
 } // namespace WebKit

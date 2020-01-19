@@ -26,9 +26,9 @@
 
 #include "AffineTransform.h"
 #include "FloatConversion.h"
+#include "SVGElement.h"
 #include "SVGNames.h"
 #include "SVGParserUtilities.h"
-#include "SVGStyledElement.h"
 #include "SVGTransformList.h"
 
 namespace WebCore {
@@ -173,7 +173,7 @@ static inline bool parseAndSkipType(const UChar*& currTransform, const UChar* en
 SVGTransform::SVGTransformType SVGTransformable::parseTransformType(const String& typeString)
 {
     unsigned short type = SVGTransform::SVG_TRANSFORM_UNKNOWN;
-    const UChar* characters = typeString.characters();
+    const UChar* characters = typeString.deprecatedCharacters();
     parseAndSkipType(characters, characters + typeString.length(), type);
     return static_cast<SVGTransform::SVGTransformType>(type);
 }

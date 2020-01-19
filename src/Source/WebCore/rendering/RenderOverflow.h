@@ -22,6 +22,7 @@
 #define RenderOverflow_h
 
 #include "LayoutRect.h"
+#include <wtf/RefCounted.h>
 
 namespace WebCore
 {
@@ -37,7 +38,7 @@ namespace WebCore
 // Examples of visual overflow are shadows, text stroke (and eventually outline and border-image).
 
 // This object is allocated only when some of these fields have non-default values in the owning box.
-class RenderOverflow {
+class RenderOverflow : public WTF::RefCounted<RenderOverflow> {
     WTF_MAKE_NONCOPYABLE(RenderOverflow); WTF_MAKE_FAST_ALLOCATED;
 public:
     RenderOverflow(const LayoutRect& layoutRect, const LayoutRect& visualRect) 
@@ -48,16 +49,6 @@ public:
    
     const LayoutRect layoutOverflowRect() const { return m_layoutOverflow; }
     const LayoutRect visualOverflowRect() const { return m_visualOverflow; }
-
-    void setMinYLayoutOverflow(LayoutUnit overflow) { m_layoutOverflow.setY(overflow); }
-    void setMaxYLayoutOverflow(LayoutUnit overflow) { m_layoutOverflow.setHeight(overflow - m_layoutOverflow.y()); }
-    void setMinXLayoutOverflow(LayoutUnit overflow) { m_layoutOverflow.setX(overflow); }
-    void setMaxXLayoutOverflow(LayoutUnit overflow) { m_layoutOverflow.setWidth(overflow - m_layoutOverflow.x()); }
-    
-    void setMinYVisualOverflow(LayoutUnit overflow) { m_visualOverflow.setY(overflow); }
-    void setMaxYVisualOverflow(LayoutUnit overflow) { m_visualOverflow.setHeight(overflow - m_layoutOverflow.y()); }
-    void setMinXVisualOverflow(LayoutUnit overflow) { m_visualOverflow.setX(overflow); }
-    void setMaxXVisualOverflow(LayoutUnit overflow) { m_visualOverflow.setWidth(overflow - m_layoutOverflow.x()); }
     
     void move(LayoutUnit dx, LayoutUnit dy);
     

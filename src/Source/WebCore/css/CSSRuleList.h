@@ -22,7 +22,6 @@
 #ifndef CSSRuleList_h
 #define CSSRuleList_h
 
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
@@ -46,8 +45,6 @@ public:
     virtual CSSRule* item(unsigned index) const = 0;
     
     virtual CSSStyleSheet* styleSheet() const = 0;
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const = 0;
     
 protected:
     CSSRuleList();
@@ -60,11 +57,9 @@ public:
     virtual void ref() { ++m_refCount; }
     virtual void deref();
 
-    Vector<RefPtr<CSSRule> >& rules() { return m_rules; }
+    Vector<RefPtr<CSSRule>>& rules() { return m_rules; }
     
     virtual CSSStyleSheet* styleSheet() const { return 0; }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
 
 private:    
     StaticCSSRuleList();
@@ -73,7 +68,7 @@ private:
     virtual unsigned length() const { return m_rules.size(); }
     virtual CSSRule* item(unsigned index) const { return index < m_rules.size() ? m_rules[index].get() : 0; }
 
-    Vector<RefPtr<CSSRule> > m_rules;
+    Vector<RefPtr<CSSRule>> m_rules;
     unsigned m_refCount;
 };
 
@@ -86,12 +81,6 @@ public:
     virtual void ref() { m_rule->ref(); }
     virtual void deref() { m_rule->deref(); }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const OVERRIDE
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-        info.addMember(m_rule, "rule");
-    }
-    
 private:
     virtual unsigned length() const { return m_rule->length(); }
     virtual CSSRule* item(unsigned index) const  { return m_rule->item(index); }

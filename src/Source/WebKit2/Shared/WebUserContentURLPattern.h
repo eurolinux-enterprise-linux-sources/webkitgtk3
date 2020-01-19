@@ -28,16 +28,14 @@
 
 #include "APIObject.h"
 
-#include <WebCore/KURL.h>
+#include <WebCore/URL.h>
 #include <WebCore/UserContentURLPattern.h>
 #include <wtf/RefPtr.h>
 
 namespace WebKit {
 
-class WebUserContentURLPattern : public APIObject {
+class WebUserContentURLPattern : public API::ObjectImpl<API::Object::Type::UserContentURLPattern> {
 public:
-    static const Type APIType = TypeUserContentURLPattern;
-
     static PassRefPtr<WebUserContentURLPattern> create(const String& pattern)
     {
         return adoptRef(new WebUserContentURLPattern(pattern));
@@ -46,7 +44,7 @@ public:
     const String& host() const { return m_pattern.host(); }
     const String& scheme() const { return m_pattern.scheme(); }
     bool isValid() const { return m_pattern.isValid(); };
-    bool matchesURL(const String& url) const { return m_pattern.matches(WebCore::KURL(WebCore::ParsedURLString, url)); }
+    bool matchesURL(const String& url) const { return m_pattern.matches(WebCore::URL(WebCore::ParsedURLString, url)); }
     bool matchesSubdomains() const { return m_pattern.matchSubdomains(); }
 
     const String& patternString() const { return m_patternString; }
@@ -57,8 +55,6 @@ private:
         , m_patternString(pattern)
     {
     }
-
-    virtual Type type() const { return APIType; }
 
     WebCore::UserContentURLPattern m_pattern;
     String m_patternString;

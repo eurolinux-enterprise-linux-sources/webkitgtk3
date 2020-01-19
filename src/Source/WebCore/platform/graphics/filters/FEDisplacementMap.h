@@ -50,6 +50,9 @@ public:
     float scale() const;
     bool setScale(float);
 
+    void setResultColorSpace(ColorSpace) override;
+    virtual void transformResultColorSpace(FilterEffect*, const int) override;
+
     virtual void platformApplySoftware();
     virtual void dump();
 

@@ -32,12 +32,12 @@
 #include "FloatPoint.h"
 #include "FloatRect.h"
 #include "PathTraversalState.h"
+#include "RoundedRect.h"
 #include <math.h>
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
 
-#if !PLATFORM(OPENVG) && !PLATFORM(QT)
 static void pathLengthApplierFunction(void* info, const PathElement* element)
 {
     PathTraversalState& traversalState = *static_cast<PathTraversalState*>(info);
@@ -90,7 +90,6 @@ float Path::normalAngleAtLength(float length, bool& ok) const
     ok = traversalState.m_success;
     return traversalState.m_normalAngle;
 }
-#endif
 
 void Path::addRoundedRect(const RoundedRect& r)
 {
@@ -144,16 +143,14 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius,
 
 void Path::addPathForRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy strategy)
 {
-    if (strategy == PreferBezierRoundedRect) {
-        addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
+    if (strategy == PreferNativeRoundedRect) {
+#if USE(CG)
+        platformAddPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
         return;
+#endif
     }
 
-#if USE(CG)
-    platformAddPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
-#else
     addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
-#endif
 }
 
 // Approximation of control point positions on a bezier to simulate a quarter of a circle.
@@ -188,7 +185,7 @@ void Path::addBeziersForRoundedRect(const FloatRect& rect, const FloatSize& topL
     closeSubpath();
 }
 
-#if !USE(CG) && !PLATFORM(QT)
+#if !USE(CG)
 FloatRect Path::fastBoundingRect() const
 {
     return boundingRect();

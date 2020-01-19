@@ -22,6 +22,7 @@
 #define CSSParserValues_h
 
 #include "CSSSelector.h"
+#include "CSSValueKeywords.h"
 #include "CSSValueList.h"
 #include <wtf/text/AtomicString.h>
 #include <wtf/text/WTFString.h>
@@ -49,11 +50,11 @@ struct CSSParserString {
     void init(const String& string)
     {
         m_length = string.length();
-        if (m_length && string.is8Bit()) {
+        if (!m_length || string.is8Bit()) {
             m_data.characters8 = const_cast<LChar*>(string.characters8());
             m_is8Bit = true;
         } else {
-            m_data.characters16 = const_cast<UChar*>(string.characters());
+            m_data.characters16 = const_cast<UChar*>(string.characters16());
             m_is8Bit = false;
         }
     }
@@ -62,7 +63,7 @@ struct CSSParserString {
     {
         m_data.characters8 = 0;
         m_length = 0;
-        m_is8Bit = false;
+        m_is8Bit = true;
     }
 
     bool is8Bit() const { return m_is8Bit; }
@@ -76,7 +77,7 @@ struct CSSParserString {
 
     void lower();
 
-    UChar operator[](unsigned i)
+    UChar operator[](unsigned i) const
     {
         ASSERT_WITH_SECURITY_IMPLICATION(i < m_length);
         if (is8Bit())
@@ -84,7 +85,7 @@ struct CSSParserString {
         return m_data.characters16[i];
     }
 
-    bool equalIgnoringCase(const char* str)
+    bool equalIgnoringCase(const char* str) const
     {
         if (is8Bit())
             return WTF::equalIgnoringCase(str, characters8(), length());
@@ -93,8 +94,6 @@ struct CSSParserString {
 
     operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : String(m_data.characters16, m_length); }
     operator AtomicString() const { return is8Bit() ? AtomicString(m_data.characters8, m_length) : AtomicString(m_data.characters16, m_length); }
-
-    AtomicString lowerSubstring(unsigned position, unsigned length) const;
 
     union {
         LChar* characters8;
@@ -107,7 +106,7 @@ struct CSSParserString {
 struct CSSParserFunction;
 
 struct CSSParserValue {
-    int id;
+    CSSValueID id;
     bool isInt;
     union {
         double fValue;
@@ -122,9 +121,10 @@ struct CSSParserValue {
     };
     int unit;
 
-
     PassRefPtr<CSSValue> createCSSValue();
 };
+
+void destroy(const CSSParserValue&);
 
 class CSSParserValueList {
     WTF_MAKE_FAST_ALLOCATED;
@@ -178,19 +178,13 @@ public:
     PassOwnPtr<CSSSelector> releaseSelector() { return m_selector.release(); }
 
     void setValue(const AtomicString& value) { m_selector->setValue(value); }
-    void setAttribute(const QualifiedName& value) { m_selector->setAttribute(value); }
+    void setAttribute(const QualifiedName& value, bool isCaseInsensitive) { m_selector->setAttribute(value, isCaseInsensitive); }
     void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
     void setMatch(CSSSelector::Match value) { m_selector->m_match = value; }
     void setRelation(CSSSelector::Relation value) { m_selector->m_relation = value; }
     void setForPage() { m_selector->setForPage(); }
 
-    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
-
-#if ENABLE(SHADOW_DOM)
-    CSSParserSelector* functionArgumentSelector() const { return m_functionArgumentSelector; }
-    void setFunctionArgumentSelector(CSSParserSelector* selector) { m_functionArgumentSelector = selector; }
-    bool isDistributedPseudoElement() const { return m_selector->isDistributedPseudoElement(); }
-#endif
+    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
 
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
@@ -200,6 +194,7 @@ public:
 
     CSSParserSelector* tagHistory() const { return m_tagHistory.get(); }
     void setTagHistory(PassOwnPtr<CSSParserSelector> selector) { m_tagHistory = selector; }
+    void clearTagHistory() { m_tagHistory.clear(); }
     void insertTagHistory(CSSSelector::Relation before, PassOwnPtr<CSSParserSelector>, CSSSelector::Relation after);
     void appendTagHistory(CSSSelector::Relation, PassOwnPtr<CSSParserSelector>);
     void prependTagSelector(const QualifiedName&, bool tagIsForNamespaceRule = false);
@@ -207,9 +202,6 @@ public:
 private:
     OwnPtr<CSSSelector> m_selector;
     OwnPtr<CSSParserSelector> m_tagHistory;
-#if ENABLE(SHADOW_DOM)
-    CSSParserSelector* m_functionArgumentSelector;
-#endif
 };
 
 inline bool CSSParserSelector::hasShadowDescendant() const

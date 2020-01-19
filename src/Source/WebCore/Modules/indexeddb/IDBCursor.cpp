@@ -31,19 +31,19 @@
 #include "IDBAny.h"
 #include "IDBBindingUtilities.h"
 #include "IDBCallbacks.h"
-#include "IDBCursorBackendInterface.h"
+#include "IDBCursorBackend.h"
 #include "IDBKey.h"
 #include "IDBObjectStore.h"
 #include "IDBRequest.h"
-#include "IDBTracing.h"
 #include "IDBTransaction.h"
+#include "Logging.h"
 #include "ScriptCallStack.h"
 #include "ScriptExecutionContext.h"
 #include <limits>
 
 namespace WebCore {
 
-PassRefPtr<IDBCursor> IDBCursor::create(PassRefPtr<IDBCursorBackendInterface> backend, Direction direction, IDBRequest* request, IDBAny* source, IDBTransaction* transaction)
+PassRefPtr<IDBCursor> IDBCursor::create(PassRefPtr<IDBCursorBackend> backend, IndexedDB::CursorDirection direction, IDBRequest* request, IDBAny* source, IDBTransaction* transaction)
 {
     return adoptRef(new IDBCursor(backend, direction, request, source, transaction));
 }
@@ -73,7 +73,7 @@ const AtomicString& IDBCursor::directionPrevUnique()
 }
 
 
-IDBCursor::IDBCursor(PassRefPtr<IDBCursorBackendInterface> backend, Direction direction, IDBRequest* request, IDBAny* source, IDBTransaction* transaction)
+IDBCursor::IDBCursor(PassRefPtr<IDBCursorBackend> backend, IndexedDB::CursorDirection direction, IDBRequest* request, IDBAny* source, IDBTransaction* transaction)
     : m_backend(backend)
     , m_request(request)
     , m_direction(direction)
@@ -94,25 +94,25 @@ IDBCursor::~IDBCursor()
 
 const String& IDBCursor::direction() const
 {
-    IDB_TRACE("IDBCursor::direction");
+    LOG(StorageAPI, "IDBCursor::direction");
     return directionToString(m_direction);
 }
 
-const ScriptValue& IDBCursor::key() const
+const Deprecated::ScriptValue& IDBCursor::key() const
 {
-    IDB_TRACE("IDBCursor::key");
+    LOG(StorageAPI, "IDBCursor::key");
     return m_currentKeyValue;
 }
 
-const ScriptValue& IDBCursor::primaryKey() const
+const Deprecated::ScriptValue& IDBCursor::primaryKey() const
 {
-    IDB_TRACE("IDBCursor::primaryKey");
+    LOG(StorageAPI, "IDBCursor::primaryKey");
     return m_currentPrimaryKeyValue;
 }
 
-const ScriptValue& IDBCursor::value() const
+const Deprecated::ScriptValue& IDBCursor::value() const
 {
-    IDB_TRACE("IDBCursor::value");
+    LOG(StorageAPI, "IDBCursor::value");
     return m_currentValue;
 }
 
@@ -121,9 +121,9 @@ IDBAny* IDBCursor::source() const
     return m_source.get();
 }
 
-PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value, ExceptionCode& ec)
+PassRefPtr<IDBRequest> IDBCursor::update(JSC::ExecState* state, Deprecated::ScriptValue& value, ExceptionCode& ec)
 {
-    IDB_TRACE("IDBCursor::update");
+    LOG(StorageAPI, "IDBCursor::update");
 
     if (!m_gotValue || isKeyCursor()) {
         ec = IDBDatabaseException::InvalidStateError;
@@ -149,13 +149,13 @@ PassRefPtr<IDBRequest> IDBCursor::update(ScriptState* state, ScriptValue& value,
         }
     }
 
-    return objectStore->put(IDBDatabaseBackendInterface::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, ec);
+    return objectStore->put(IDBDatabaseBackend::CursorUpdate, IDBAny::create(this), state, value, m_currentPrimaryKey, ec);
 }
 
-void IDBCursor::advance(long long count, ExceptionCode& ec)
+void IDBCursor::advance(unsigned long count, ExceptionCode& ec)
 {
     ec = 0;
-    IDB_TRACE("IDBCursor::advance");
+    LOG(StorageAPI, "IDBCursor::advance");
     if (!m_gotValue) {
         ec = IDBDatabaseException::InvalidStateError;
         return;
@@ -166,8 +166,7 @@ void IDBCursor::advance(long long count, ExceptionCode& ec)
         return;
     }
 
-    // FIXME: This should only need to check for 0 once webkit.org/b/96798 lands.
-    if (count < 1 || count > UINT_MAX) {
+    if (!count) {
         ec = TypeError;
         return;
     }
@@ -178,7 +177,7 @@ void IDBCursor::advance(long long count, ExceptionCode& ec)
     ASSERT(!ec);
 }
 
-void IDBCursor::continueFunction(ScriptExecutionContext* context, const ScriptValue& keyValue, ExceptionCode& ec)
+void IDBCursor::continueFunction(ScriptExecutionContext* context, const Deprecated::ScriptValue& keyValue, ExceptionCode& ec)
 {
     DOMRequestState requestState(context);
     RefPtr<IDBKey> key = scriptValueToIDBKey(&requestState, keyValue);
@@ -188,7 +187,7 @@ void IDBCursor::continueFunction(ScriptExecutionContext* context, const ScriptVa
 void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
 {
     ec = 0;
-    IDB_TRACE("IDBCursor::continue");
+    LOG(StorageAPI, "IDBCursor::continue");
     if (key && !key->isValid()) {
         ec = IDBDatabaseException::DataError;
         return;
@@ -206,7 +205,7 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
 
     if (key) {
         ASSERT(m_currentKey);
-        if (m_direction == IDBCursor::NEXT || m_direction == IDBCursor::NEXT_NO_DUPLICATE) {
+        if (m_direction == IndexedDB::CursorDirection::Next || m_direction == IndexedDB::CursorDirection::NextNoDuplicate) {
             if (!m_currentKey->isLessThan(key.get())) {
                 ec = IDBDatabaseException::DataError;
                 return;
@@ -230,7 +229,7 @@ void IDBCursor::continueFunction(PassRefPtr<IDBKey> key, ExceptionCode& ec)
 PassRefPtr<IDBRequest> IDBCursor::deleteFunction(ScriptExecutionContext* context, ExceptionCode& ec)
 {
     ec = 0;
-    IDB_TRACE("IDBCursor::delete");
+    LOG(StorageAPI, "IDBCursor::delete");
     if (!m_transaction->isActive()) {
         ec = IDBDatabaseException::TransactionInactiveError;
         return 0;
@@ -264,7 +263,7 @@ void IDBCursor::close()
     }
 }
 
-void IDBCursor::setValueReady(DOMRequestState* state, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, ScriptValue& value)
+void IDBCursor::setValueReady(DOMRequestState* state, PassRefPtr<IDBKey> key, PassRefPtr<IDBKey> primaryKey, Deprecated::ScriptValue& value)
 {
     m_currentKey = key;
     m_currentKeyValue = idbKeyToScriptValue(state, m_currentKey);
@@ -298,34 +297,34 @@ PassRefPtr<IDBObjectStore> IDBCursor::effectiveObjectStore()
     return index->objectStore();
 }
 
-IDBCursor::Direction IDBCursor::stringToDirection(const String& directionString, ScriptExecutionContext* context, ExceptionCode& ec)
+IndexedDB::CursorDirection IDBCursor::stringToDirection(const String& directionString, ExceptionCode& ec)
 {
     if (directionString == IDBCursor::directionNext())
-        return IDBCursor::NEXT;
+        return IndexedDB::CursorDirection::Next;
     if (directionString == IDBCursor::directionNextUnique())
-        return IDBCursor::NEXT_NO_DUPLICATE;
+        return IndexedDB::CursorDirection::NextNoDuplicate;
     if (directionString == IDBCursor::directionPrev())
-        return IDBCursor::PREV;
+        return IndexedDB::CursorDirection::Prev;
     if (directionString == IDBCursor::directionPrevUnique())
-        return IDBCursor::PREV_NO_DUPLICATE;
+        return IndexedDB::CursorDirection::PrevNoDuplicate;
 
     ec = TypeError;
-    return IDBCursor::NEXT;
+    return IndexedDB::CursorDirection::Next;
 }
 
-const AtomicString& IDBCursor::directionToString(unsigned short direction)
+const AtomicString& IDBCursor::directionToString(IndexedDB::CursorDirection direction)
 {
     switch (direction) {
-    case IDBCursor::NEXT:
+    case IndexedDB::CursorDirection::Next:
         return IDBCursor::directionNext();
 
-    case IDBCursor::NEXT_NO_DUPLICATE:
+    case IndexedDB::CursorDirection::NextNoDuplicate:
         return IDBCursor::directionNextUnique();
 
-    case IDBCursor::PREV:
+    case IndexedDB::CursorDirection::Prev:
         return IDBCursor::directionPrev();
 
-    case IDBCursor::PREV_NO_DUPLICATE:
+    case IndexedDB::CursorDirection::PrevNoDuplicate:
         return IDBCursor::directionPrevUnique();
 
     default:

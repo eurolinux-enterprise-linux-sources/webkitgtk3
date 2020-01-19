@@ -34,14 +34,13 @@
 #include <wtf/PageAllocation.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
-#include <wtf/UnusedParam.h>
 #include <wtf/Vector.h>
 
 #if OS(IOS)
 #include <libkern/OSCacheControl.h>
 #endif
 
-#if OS(IOS) || OS(QNX)
+#if OS(IOS)
 #include <sys/mman.h>
 #endif
 
@@ -74,8 +73,8 @@ extern "C" __declspec(dllimport) void CacheRangeFlush(LPVOID pAddr, DWORD dwLeng
 
 namespace JSC {
 
-class JSGlobalData;
-void releaseExecutableMemory(JSGlobalData&);
+class VM;
+void releaseExecutableMemory(VM&);
 
 static const unsigned jitAllocationGranule = 32;
 
@@ -103,7 +102,7 @@ class DemandExecutableAllocator;
 #endif
 
 #if ENABLE(EXECUTABLE_ALLOCATOR_FIXED)
-#if CPU(ARM)
+#if CPU(ARM) || CPU(ARM64)
 static const size_t fixedExecutableMemoryPoolSize = 16 * 1024 * 1024;
 #elif CPU(X86_64)
 static const size_t fixedExecutableMemoryPoolSize = 1024 * 1024 * 1024;
@@ -118,7 +117,7 @@ class ExecutableAllocator {
     enum ProtectionSetting { Writable, Executable };
 
 public:
-    ExecutableAllocator(JSGlobalData&);
+    ExecutableAllocator(VM&);
     ~ExecutableAllocator();
     
     static void initializeAllocator();
@@ -135,7 +134,7 @@ public:
     static void dumpProfile() { }
 #endif
 
-    PassRefPtr<ExecutableMemoryHandle> allocate(JSGlobalData&, size_t sizeInBytes, void* ownerUID, JITCompilationEffort);
+    PassRefPtr<ExecutableMemoryHandle> allocate(VM&, size_t sizeInBytes, void* ownerUID, JITCompilationEffort);
 
 #if ENABLE(ASSEMBLER_WX_EXCLUSIVE)
     static void makeWritable(void* start, size_t size)

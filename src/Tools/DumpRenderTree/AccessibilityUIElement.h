@@ -45,7 +45,8 @@ typedef struct objc_object* PlatformUIElement;
 #include <oleacc.h>
 
 typedef COMPtr<IAccessible> PlatformUIElement;
-#elif PLATFORM(GTK)
+#elif HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
+#include "AccessibilityNotificationHandlerAtk.h"
 #include <atk/atk.h>
 typedef AtkObject* PlatformUIElement;
 #else
@@ -66,7 +67,7 @@ public:
     AccessibilityUIElement(const AccessibilityUIElement&);
     ~AccessibilityUIElement();
 
-    PlatformUIElement platformUIElement() { return m_element; }
+    PlatformUIElement platformUIElement() const { return m_element; }
 
     static JSObjectRef makeJSAccessibilityUIElement(JSContextRef, const AccessibilityUIElement&);
 
@@ -105,6 +106,7 @@ public:
     // Attributes - platform-independent implementations
     JSStringRef stringAttributeValue(JSStringRef attribute);
     double numberAttributeValue(JSStringRef attribute);
+    void uiElementArrayAttributeValue(JSStringRef attribute, Vector<AccessibilityUIElement>& elements) const;
     AccessibilityUIElement uiElementAttributeValue(JSStringRef attribute) const;    
     bool boolAttributeValue(JSStringRef attribute);
     bool isAttributeSupported(JSStringRef attribute);
@@ -129,6 +131,7 @@ public:
     double intValue() const;
     double minValue();
     double maxValue();
+    JSStringRef pathDescription() const;
     JSStringRef valueDescription();
     int insertionPointLineNumber();
     JSStringRef selectedTextRange();
@@ -151,6 +154,7 @@ public:
     bool isOffScreen() const;
     bool isCollapsed() const;
     bool isIgnored() const;
+    bool isIndeterminate() const;
     bool hasPopup() const;
     int hierarchicalLevel() const;
     double clickPointX();
@@ -158,6 +162,7 @@ public:
     JSStringRef documentEncoding();
     JSStringRef documentURI();
     JSStringRef url();
+    JSStringRef classList() const;
 
     // CSS3-speech properties.
     JSStringRef speak();
@@ -174,6 +179,8 @@ public:
     JSStringRef columnIndexRange();
     int rowCount();
     int columnCount();
+    void rowHeaders(Vector<AccessibilityUIElement>& elements) const;
+    void columnHeaders(Vector<AccessibilityUIElement>& elements) const;
     
     // Tree/Outline specific attributes
     AccessibilityUIElement selectedRowAtIndex(unsigned);
@@ -199,8 +206,24 @@ public:
     JSStringRef stringForRange(unsigned location, unsigned length);
     JSStringRef attributedStringForRange(unsigned location, unsigned length);
     bool attributedStringRangeIsMisspelled(unsigned location, unsigned length);
-    AccessibilityUIElement uiElementForSearchPredicate(AccessibilityUIElement* startElement, bool isDirectionNext, JSStringRef searchKey, JSStringRef searchText);
-    
+    unsigned uiElementCountForSearchPredicate(JSContextRef, AccessibilityUIElement* startElement, bool isDirectionNext, JSValueRef searchKey, JSStringRef searchText, bool visibleOnly);
+    AccessibilityUIElement uiElementForSearchPredicate(JSContextRef, AccessibilityUIElement* startElement, bool isDirectionNext, JSValueRef searchKey, JSStringRef searchText, bool visibleOnly);
+#if PLATFORM(IOS)
+    void elementsForRange(unsigned location, unsigned length, Vector<AccessibilityUIElement>& elements);
+    JSStringRef stringForSelection();
+    void increaseTextSelection();
+    void decreaseTextSelection();
+    AccessibilityUIElement linkedElement();
+#endif
+
+#if PLATFORM(GTK) || PLATFORM(EFL)
+    // Text-specific
+    JSStringRef characterAtOffset(int offset);
+    JSStringRef wordAtOffset(int offset);
+    JSStringRef lineAtOffset(int offset);
+    JSStringRef sentenceAtOffset(int offset);
+#endif
+
     // Table-specific
     AccessibilityUIElement cellForColumnAndRow(unsigned column, unsigned row);
 
@@ -213,10 +236,15 @@ public:
     AccessibilityTextMarkerRange textMarkerRangeForMarkers(AccessibilityTextMarker* startMarker, AccessibilityTextMarker* endMarker);
     AccessibilityTextMarker startTextMarkerForTextMarkerRange(AccessibilityTextMarkerRange*);
     AccessibilityTextMarker endTextMarkerForTextMarkerRange(AccessibilityTextMarkerRange*);
+    AccessibilityTextMarker endTextMarkerForBounds(int x, int y, int width, int height);
+    AccessibilityTextMarker startTextMarkerForBounds(int x, int y, int width, int height);
     AccessibilityTextMarker textMarkerForPoint(int x, int y);
     AccessibilityTextMarker previousTextMarker(AccessibilityTextMarker*);
     AccessibilityTextMarker nextTextMarker(AccessibilityTextMarker*);
     AccessibilityUIElement accessibilityElementForTextMarker(AccessibilityTextMarker*);
+    AccessibilityTextMarker startTextMarker();
+    AccessibilityTextMarker endTextMarker();
+    
     JSStringRef stringForTextMarkerRange(AccessibilityTextMarkerRange*);
     int textMarkerRangeLength(AccessibilityTextMarkerRange*);
     bool attributedStringForTextMarkerRangeContainsAttribute(JSStringRef, AccessibilityTextMarkerRange*);
@@ -234,13 +262,42 @@ public:
     // Make sure you call remove, because you can't rely on objects being deallocated in a timely fashion.
     void removeNotificationListener();
     
+#if PLATFORM(IOS)
+    JSStringRef iphoneLabel();
+    JSStringRef iphoneValue();
+    JSStringRef iphoneTraits();
+    JSStringRef iphoneHint();
+    JSStringRef iphoneIdentifier();
+    bool iphoneIsElement();
+    int iphoneElementTextPosition();
+    int iphoneElementTextLength();
+    AccessibilityUIElement headerElementAtIndex(unsigned);
+    // This will simulate the accessibilityDidBecomeFocused API in UIKit.
+    void assistiveTechnologySimulatedFocus();
+#endif // PLATFORM(IOS)
+
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    // Returns an ordered list of supported actions for an element.
+    JSStringRef supportedActions();
+    
+    // A general description of the elements making up multiscript pre/post objects.
+    JSStringRef mathPostscriptsDescription() const;
+    JSStringRef mathPrescriptsDescription() const;
+#endif
+    
 private:
     static JSClassRef getJSClass();
     PlatformUIElement m_element;
     
+#if PLATFORM(IOS) 
+    JSObjectRef m_notificationFunctionCallback;
+#elif PLATFORM(MAC)
     // A retained, platform specific object used to help manage notifications for this object.
-#if PLATFORM(MAC)
     NotificationHandler m_notificationHandler;
+#endif
+
+#if HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
+    RefPtr<AccessibilityNotificationHandler> m_notificationHandler;
 #endif
 };
 

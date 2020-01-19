@@ -1,7 +1,8 @@
 /*
  *  Copyright (C) 1999-2001 Harri Porten (porten@kde.org)
- *  Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ *  Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2013 Apple Inc. All rights reserved.
  *  Copyright (C) 2007 Samuel Weinig <sam@webkit.org>
+ *  Copyright (C) 2013 Michael Pruett <michael@68k.org>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,33 +22,42 @@
 #include "config.h"
 #include "JSDOMBinding.h"
 
-#include "BindingSecurity.h"
 #include "CachedScript.h"
+#include "DOMConstructorWithDocument.h"
 #include "DOMObjectHashTableMap.h"
 #include "DOMStringList.h"
 #include "ExceptionCode.h"
 #include "ExceptionHeaders.h"
 #include "ExceptionInterfaces.h"
 #include "Frame.h"
+#include "HTMLParserIdioms.h"
 #include "JSDOMWindowCustom.h"
 #include "JSExceptionBase.h"
+#include "SecurityOrigin.h"
 #include "ScriptCallStack.h"
+#include "ScriptCallStackFactory.h"
 #include <interpreter/Interpreter.h>
 #include <runtime/DateInstance.h>
 #include <runtime/Error.h>
 #include <runtime/ExceptionHelpers.h>
 #include <runtime/JSFunction.h>
+#include <wtf/MathExtras.h>
 
 using namespace JSC;
 
 namespace WebCore {
 
-ASSERT_HAS_TRIVIAL_DESTRUCTOR(DOMConstructorObject);
-ASSERT_HAS_TRIVIAL_DESTRUCTOR(DOMConstructorWithDocument);
+STATIC_ASSERT_IS_TRIVIALLY_DESTRUCTIBLE(DOMConstructorObject);
+STATIC_ASSERT_IS_TRIVIALLY_DESTRUCTIBLE(DOMConstructorWithDocument);
 
-const JSC::HashTable* getHashTableForGlobalData(JSGlobalData& globalData, const JSC::HashTable* staticTable)
+void addImpureProperty(const AtomicString& propertyName)
 {
-    return DOMObjectHashTableMap::mapFor(globalData).get(staticTable);
+    JSDOMWindow::commonVM()->addImpureProperty(propertyName);
+}
+
+const JSC::HashTable& getHashTableForGlobalData(VM& vm, const JSC::HashTable& staticTable)
+{
+    return DOMObjectHashTableMap::mapFor(vm).get(staticTable);
 }
 
 JSValue jsStringOrNull(ExecState* exec, const String& s)
@@ -71,19 +81,19 @@ JSValue jsStringOrUndefined(ExecState* exec, const String& s)
     return jsStringWithCache(exec, s);
 }
 
-JSValue jsString(ExecState* exec, const KURL& url)
+JSValue jsString(ExecState* exec, const URL& url)
 {
     return jsStringWithCache(exec, url.string());
 }
 
-JSValue jsStringOrNull(ExecState* exec, const KURL& url)
+JSValue jsStringOrNull(ExecState* exec, const URL& url)
 {
     if (url.isNull())
         return jsNull();
     return jsStringWithCache(exec, url.string());
 }
 
-JSValue jsStringOrUndefined(ExecState* exec, const KURL& url)
+JSValue jsStringOrUndefined(ExecState* exec, const URL& url)
 {
     if (url.isNull())
         return jsUndefined();
@@ -117,14 +127,14 @@ JSValue jsDateOrNull(ExecState* exec, double value)
 {
     if (!std::isfinite(value))
         return jsNull();
-    return DateInstance::create(exec, exec->lexicalGlobalObject()->dateStructure(), value);
+    return DateInstance::create(exec->vm(), exec->lexicalGlobalObject()->dateStructure(), value);
 }
 
 double valueToDate(ExecState* exec, JSValue value)
 {
     if (value.isNumber())
         return value.asNumber();
-    if (!value.inherits(&DateInstance::s_info))
+    if (!value.inherits(DateInstance::info()))
         return std::numeric_limits<double>::quiet_NaN();
     return static_cast<DateInstance*>(value.toObject(exec))->internalNumber();
 }
@@ -145,22 +155,49 @@ void reportException(ExecState* exec, JSValue exception, CachedScript* cachedScr
         return;
 
     Interpreter::ErrorHandlingMode mode(exec);
-    String errorMessage = exception.toString(exec)->value(exec);
-    JSObject* exceptionObject = exception.toObject(exec);
-    int lineNumber = exceptionObject->get(exec, Identifier(exec, "line")).toInt32(exec);
-    String exceptionSourceURL = exceptionObject->get(exec, Identifier(exec, "sourceURL")).toString(exec)->value(exec);
-    exec->clearException();
 
-    if (ExceptionBase* exceptionBase = toExceptionBase(exception))
-        errorMessage = exceptionBase->message() + ": "  + exceptionBase->description();
+    RefPtr<ScriptCallStack> callStack(createScriptCallStackFromException(exec, exception, ScriptCallStack::maxCallStackSizeToCapture));
+    exec->clearException();
+    exec->clearSupplementaryExceptionInfo();
 
     JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject());
     if (JSDOMWindow* window = jsDynamicCast<JSDOMWindow*>(globalObject)) {
-        if (!window->impl()->isCurrentlyDisplayedInFrame())
+        if (!window->impl().isCurrentlyDisplayedInFrame())
             return;
     }
+
+    int lineNumber = 0;
+    int columnNumber = 0;
+    String exceptionSourceURL;
+    if (callStack->size()) {
+        const ScriptCallFrame& frame = callStack->at(0);
+        lineNumber = frame.lineNumber();
+        columnNumber = frame.columnNumber();
+        exceptionSourceURL = frame.sourceURL();
+    } else {
+        // There may not be an exceptionStack for a <script> SyntaxError. Fallback to getting at least the line and sourceURL from the exception.
+        JSObject* exceptionObject = exception.toObject(exec);
+        JSValue lineValue = exceptionObject->getDirect(exec->vm(), Identifier(exec, "line"));
+        lineNumber = lineValue && lineValue.isNumber() ? int(lineValue.toNumber(exec)) : 0;
+        JSValue columnValue = exceptionObject->getDirect(exec->vm(), Identifier(exec, "column"));
+        columnNumber = columnValue && columnValue.isNumber() ? int(columnValue.toNumber(exec)) : 0;
+        JSValue sourceURLValue = exceptionObject->getDirect(exec->vm(), Identifier(exec, "sourceURL"));
+        exceptionSourceURL = sourceURLValue && sourceURLValue.isString() ? sourceURLValue.toString(exec)->value(exec) : ASCIILiteral("undefined");
+    }
+
+    String errorMessage;
+    if (ExceptionBase* exceptionBase = toExceptionBase(exception))
+        errorMessage = exceptionBase->message() + ": "  + exceptionBase->description();
+    else {
+        // FIXME: <http://webkit.org/b/115087> Web Inspector: WebCore::reportException should not evaluate JavaScript handling exceptions
+        // If this is a custon exception object, call toString on it to try and get a nice string representation for the exception.
+        errorMessage = exception.toString(exec)->value(exec);
+        exec->clearException();
+        exec->clearSupplementaryExceptionInfo();
+    }
+
     ScriptExecutionContext* scriptExecutionContext = globalObject->scriptExecutionContext();
-    scriptExecutionContext->reportException(errorMessage, lineNumber, exceptionSourceURL, 0, cachedScript);
+    scriptExecutionContext->reportException(errorMessage, lineNumber, columnNumber, exceptionSourceURL, callStack->size() ? callStack : 0, cachedScript);
 }
 
 void reportCurrentException(ExecState* exec)
@@ -199,7 +236,7 @@ void setDOMException(ExecState* exec, ExceptionCode ec)
     }
 
     ASSERT(errorObject);
-    throwError(exec, errorObject);
+    exec->vm().throwException(exec, errorObject);
 }
 
 #undef TRY_TO_CREATE_EXCEPTION
@@ -224,13 +261,11 @@ bool shouldAllowAccessToFrame(ExecState* exec, Frame* frame, String& message)
     return false;
 }
 
-bool shouldAllowAccessToDOMWindow(ExecState* exec, DOMWindow* target, String& message)
+bool shouldAllowAccessToDOMWindow(ExecState* exec, DOMWindow& target, String& message)
 {
-    if (!target)
-        return false;
     if (BindingSecurity::shouldAllowAccessToDOMWindow(exec, target, DoNotReportSecurityError))
         return true;
-    message = target->crossDomainAccessErrorMessage(activeDOMWindow(exec));
+    message = target.crossDomainAccessErrorMessage(activeDOMWindow(exec));
     return false;
 }
 
@@ -241,9 +276,9 @@ void printErrorMessageForFrame(Frame* frame, const String& message)
     frame->document()->domWindow()->printErrorMessage(message);
 }
 
-JSValue objectToStringFunctionGetter(ExecState* exec, JSValue, PropertyName propertyName)
+EncodedJSValue objectToStringFunctionGetter(ExecState* exec, EncodedJSValue, EncodedJSValue, PropertyName propertyName)
 {
-    return JSFunction::create(exec, exec->lexicalGlobalObject(), 0, propertyName.publicName(), objectProtoFuncToString);
+    return JSValue::encode(JSFunction::create(exec->vm(), exec->lexicalGlobalObject(), 0, propertyName.publicName(), objectProtoFuncToString));
 }
 
 Structure* getCachedDOMStructure(JSDOMGlobalObject* globalObject, const ClassInfo* classInfo)
@@ -256,7 +291,246 @@ Structure* cacheDOMStructure(JSDOMGlobalObject* globalObject, Structure* structu
 {
     JSDOMStructureMap& structures = globalObject->structures();
     ASSERT(!structures.contains(classInfo));
-    return structures.set(classInfo, WriteBarrier<Structure>(globalObject->globalData(), globalObject, structure)).iterator->value.get();
+    return structures.set(classInfo, WriteBarrier<Structure>(globalObject->vm(), globalObject, structure)).iterator->value.get();
+}
+
+static const int32_t kMaxInt32 = 0x7fffffff;
+static const int32_t kMinInt32 = -kMaxInt32 - 1;
+static const uint32_t kMaxUInt32 = 0xffffffffU;
+static const int64_t kJSMaxInteger = 0x20000000000000LL - 1; // 2^53 - 1, largest integer exactly representable in ECMAScript.
+
+static double enforceRange(ExecState* exec, double x, double minimum, double maximum)
+{
+    if (std::isnan(x) || std::isinf(x)) {
+        throwTypeError(exec);
+        return 0;
+    }
+    x = trunc(x);
+    if (x < minimum || x > maximum) {
+        throwTypeError(exec);
+        return 0;
+    }
+    return x;
+}
+
+template <typename T>
+struct IntTypeLimits {
+};
+
+template <>
+struct IntTypeLimits<int8_t> {
+    static const int8_t minValue = -128;
+    static const int8_t maxValue = 127;
+    static const unsigned numberOfValues = 256; // 2^8
+};
+
+template <>
+struct IntTypeLimits<uint8_t> {
+    static const uint8_t maxValue = 255;
+    static const unsigned numberOfValues = 256; // 2^8
+};
+
+template <>
+struct IntTypeLimits<int16_t> {
+    static const short minValue = -32768;
+    static const short maxValue = 32767;
+    static const unsigned numberOfValues = 65536; // 2^16
+};
+
+template <>
+struct IntTypeLimits<uint16_t> {
+    static const unsigned short maxValue = 65535;
+    static const unsigned numberOfValues = 65536; // 2^16
+};
+
+template <typename T>
+static inline T toSmallerInt(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    typedef IntTypeLimits<T> LimitsTrait;
+    // Fast path if the value is already a 32-bit signed integer in the right range.
+    if (value.isInt32()) {
+        int32_t d = value.asInt32();
+        if (d >= LimitsTrait::minValue && d <= LimitsTrait::maxValue)
+            return static_cast<T>(d);
+        if (configuration == EnforceRange) {
+            throwTypeError(exec);
+            return 0;
+        }
+        d %= LimitsTrait::numberOfValues;
+        return static_cast<T>(d > LimitsTrait::maxValue ? d - LimitsTrait::numberOfValues : d);
+    }
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+
+    if (configuration == EnforceRange)
+        return enforceRange(exec, x, LimitsTrait::minValue, LimitsTrait::maxValue);
+
+    if (std::isnan(x) || std::isinf(x) || !x)
+        return 0;
+
+    x = x < 0 ? -floor(fabs(x)) : floor(fabs(x));
+    x = fmod(x, LimitsTrait::numberOfValues);
+
+    return static_cast<T>(x > LimitsTrait::maxValue ? x - LimitsTrait::numberOfValues : x);
+}
+
+template <typename T>
+static inline T toSmallerUInt(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    typedef IntTypeLimits<T> LimitsTrait;
+    // Fast path if the value is already a 32-bit unsigned integer in the right range.
+    if (value.isUInt32()) {
+        uint32_t d = value.asUInt32();
+        if (d <= LimitsTrait::maxValue)
+            return static_cast<T>(d);
+        if (configuration == EnforceRange) {
+            throwTypeError(exec);
+            return 0;
+        }
+        return static_cast<T>(d);
+    }
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+
+    if (configuration == EnforceRange)
+        return enforceRange(exec, x, 0, LimitsTrait::maxValue);
+
+    if (std::isnan(x) || std::isinf(x) || !x)
+        return 0;
+
+    x = x < 0 ? -floor(fabs(x)) : floor(fabs(x));
+    return static_cast<T>(fmod(x, LimitsTrait::numberOfValues));
+}
+
+// http://www.w3.org/TR/WebIDL/#es-byte
+int8_t toInt8(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    return toSmallerInt<int8_t>(exec, value, configuration);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-octet
+uint8_t toUInt8(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    return toSmallerUInt<uint8_t>(exec, value, configuration);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-short
+int16_t toInt16(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    return toSmallerInt<int16_t>(exec, value, configuration);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-unsigned-short
+uint16_t toUInt16(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    return toSmallerUInt<uint16_t>(exec, value, configuration);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-long
+int32_t toInt32EnforceRange(ExecState* exec, JSValue value)
+{
+    if (value.isInt32())
+        return value.asInt32();
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+    return enforceRange(exec, x, kMinInt32, kMaxInt32);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-unsigned-long
+uint32_t toUInt32EnforceRange(ExecState* exec, JSValue value)
+{
+    if (value.isUInt32())
+        return value.asUInt32();
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+    return enforceRange(exec, x, 0, kMaxUInt32);
+}
+
+// http://www.w3.org/TR/WebIDL/#es-long-long
+int64_t toInt64(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    if (value.isInt32())
+        return value.asInt32();
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+
+    if (configuration == EnforceRange)
+        return enforceRange(exec, x, -kJSMaxInteger, kJSMaxInteger);
+
+    // Map NaNs and +/-Infinity to 0; convert finite values modulo 2^64.
+    unsigned long long n;
+    doubleToInteger(x, n);
+    return n;
+}
+
+// http://www.w3.org/TR/WebIDL/#es-unsigned-long-long
+uint64_t toUInt64(ExecState* exec, JSValue value, IntegerConversionConfiguration configuration)
+{
+    if (value.isUInt32())
+        return value.asUInt32();
+
+    double x = value.toNumber(exec);
+    if (exec->hadException())
+        return 0;
+
+    if (configuration == EnforceRange)
+        return enforceRange(exec, x, 0, kJSMaxInteger);
+
+    // Map NaNs and +/-Infinity to 0; convert finite values modulo 2^64.
+    unsigned long long n;
+    doubleToInteger(x, n);
+    return n;
+}
+
+DOMWindow& activeDOMWindow(ExecState* exec)
+{
+    return asJSDOMWindow(exec->lexicalGlobalObject())->impl();
+}
+
+DOMWindow& firstDOMWindow(ExecState* exec)
+{
+    return asJSDOMWindow(exec->vmEntryGlobalObject())->impl();
+}
+
+static inline bool canAccessDocument(JSC::ExecState* state, Document* targetDocument, SecurityReportingOption reportingOption = ReportSecurityError)
+{
+    if (!targetDocument)
+        return false;
+
+    DOMWindow& active = activeDOMWindow(state);
+
+    if (active.document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
+        return true;
+
+    if (reportingOption == ReportSecurityError)
+        printErrorMessageForFrame(targetDocument->frame(), targetDocument->domWindow()->crossDomainAccessErrorMessage(active));
+
+    return false;
+}
+
+bool BindingSecurity::shouldAllowAccessToDOMWindow(JSC::ExecState* state, DOMWindow& target, SecurityReportingOption reportingOption)
+{
+    return canAccessDocument(state, target.document(), reportingOption);
+}
+
+bool BindingSecurity::shouldAllowAccessToFrame(JSC::ExecState* state, Frame* target, SecurityReportingOption reportingOption)
+{
+    return target && canAccessDocument(state, target->document(), reportingOption);
+}
+
+bool BindingSecurity::shouldAllowAccessToNode(JSC::ExecState* state, Node* target)
+{
+    return target && canAccessDocument(state, &target->document());
 }
 
 } // namespace WebCore

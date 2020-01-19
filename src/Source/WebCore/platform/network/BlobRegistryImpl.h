@@ -31,34 +31,26 @@
 #ifndef BlobRegistryImpl_h
 #define BlobRegistryImpl_h
 
-#include "BlobData.h"
 #include "BlobRegistry.h"
 #include "BlobStorageData.h"
 #include <wtf/HashMap.h>
-#include <wtf/text/CString.h>
 #include <wtf/text/StringHash.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-class KURL;
-class ResourceError;
+class URL;
 class ResourceHandle;
 class ResourceHandleClient;
 class ResourceRequest;
-class ResourceResponse;
 
 // BlobRegistryImpl is not thread-safe. It should only be called from main thread.
 class BlobRegistryImpl : public BlobRegistry {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    virtual ~BlobRegistryImpl() { }
+    virtual ~BlobRegistryImpl();
 
-    virtual void registerBlobURL(const KURL&, PassOwnPtr<BlobData>);
-    virtual void registerBlobURL(const KURL&, const KURL& srcURL);
-    virtual void unregisterBlobURL(const KURL&);
-
-    PassRefPtr<BlobStorageData> getBlobDataFromURL(const KURL&) const;
+    BlobStorageData* getBlobDataFromURL(const URL&) const;
 
     PassRefPtr<ResourceHandle> createResourceHandle(const ResourceRequest&, ResourceHandleClient*);
 
@@ -66,7 +58,12 @@ private:
     void appendStorageItems(BlobStorageData*, const BlobDataItemList&);
     void appendStorageItems(BlobStorageData*, const BlobDataItemList&, long long offset, long long length);
 
-    HashMap<String, RefPtr<BlobStorageData> > m_blobs;
+    virtual void registerBlobURL(const URL&, std::unique_ptr<BlobData>) override;
+    virtual void registerBlobURL(const URL&, const URL& srcURL) override;
+    virtual void unregisterBlobURL(const URL&) override;
+    virtual bool isBlobRegistryImpl() const override { return true; }
+
+    HashMap<String, RefPtr<BlobStorageData>> m_blobs;
 };
 
 } // namespace WebCore

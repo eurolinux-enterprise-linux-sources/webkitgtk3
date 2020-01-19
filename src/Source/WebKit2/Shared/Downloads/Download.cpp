@@ -39,20 +39,12 @@ using namespace WebCore;
 
 namespace WebKit {
 
-PassOwnPtr<Download> Download::create(DownloadManager& downloadManager, uint64_t downloadID, const ResourceRequest& request)
-{
-    return adoptPtr(new Download(downloadManager, downloadID, request));
-}
-
 Download::Download(DownloadManager& downloadManager, uint64_t downloadID, const ResourceRequest& request)
     : m_downloadManager(downloadManager)
     , m_downloadID(downloadID)
     , m_request(request)
 #if USE(CFNETWORK)
     , m_allowOverwrite(false)
-#endif
-#if PLATFORM(QT)
-    , m_qtDownloader(0)
 #endif
 {
     ASSERT(m_downloadID);
@@ -65,11 +57,6 @@ Download::~Download()
     platformInvalidate();
 
     m_downloadManager.didDestroyDownload();
-}
-
-CoreIPC::Connection* Download::connection() const
-{
-    return m_downloadManager.downloadProxyConnection();
 }
 
 void Download::didStart()
@@ -135,28 +122,44 @@ void Download::didFinish()
 
     send(Messages::DownloadProxy::DidFinish());
 
-    if (m_sandboxExtension)
-        m_sandboxExtension->invalidate();
+    if (m_sandboxExtension) {
+        m_sandboxExtension->revoke();
+        m_sandboxExtension = nullptr;
+    }
 
     m_downloadManager.downloadFinished(this);
 }
 
-void Download::didFail(const ResourceError& error, const CoreIPC::DataReference& resumeData)
+void Download::didFail(const ResourceError& error, const IPC::DataReference& resumeData)
 {
     send(Messages::DownloadProxy::DidFail(error, resumeData));
 
-    if (m_sandboxExtension)
-        m_sandboxExtension->invalidate();
+    if (m_sandboxExtension) {
+        m_sandboxExtension->revoke();
+        m_sandboxExtension = nullptr;
+    }
     m_downloadManager.downloadFinished(this);
 }
 
-void Download::didCancel(const CoreIPC::DataReference& resumeData)
+void Download::didCancel(const IPC::DataReference& resumeData)
 {
     send(Messages::DownloadProxy::DidCancel(resumeData));
 
-    if (m_sandboxExtension)
-        m_sandboxExtension->invalidate();
+    if (m_sandboxExtension) {
+        m_sandboxExtension->revoke();
+        m_sandboxExtension = nullptr;
+    }
     m_downloadManager.downloadFinished(this);
+}
+
+IPC::Connection* Download::messageSenderConnection()
+{
+    return m_downloadManager.downloadProxyConnection();
+}
+
+uint64_t Download::messageSenderDestinationID()
+{
+    return m_downloadID;
 }
 
 } // namespace WebKit

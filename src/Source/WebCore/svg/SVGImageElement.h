@@ -26,46 +26,42 @@
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGExternalResourcesRequired.h"
+#include "SVGGraphicsElement.h"
 #include "SVGImageLoader.h"
-#include "SVGLangSpace.h"
-#include "SVGStyledTransformableElement.h"
-#include "SVGTests.h"
 #include "SVGURIReference.h"
 
 namespace WebCore {
 
-class SVGImageElement : public SVGStyledTransformableElement,
-                        public SVGTests,
-                        public SVGLangSpace,
-                        public SVGExternalResourcesRequired,
-                        public SVGURIReference {
+class SVGImageElement final : public SVGGraphicsElement,
+                              public SVGExternalResourcesRequired,
+                              public SVGURIReference {
 public:
-    static PassRefPtr<SVGImageElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGImageElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGImageElement(const QualifiedName&, Document*);
+    SVGImageElement(const QualifiedName&, Document&);
     
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const { return true; }
+    virtual bool isValid() const override { return SVGTests::isValid(); }
+    virtual bool supportsFocus() const override { return true; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStyleProperties&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual void attach();
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didAttachRenderers() override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode&) override;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
- 
-    virtual const QualifiedName& imageSourceAttributeName() const;       
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
 
-    virtual bool haveLoadedRequiredResources();
+    virtual const AtomicString& imageSourceURL() const override;
+    virtual void addSubresourceAttributeURLs(ListHashSet<URL>&) const override;
 
-    virtual bool selfHasRelativeLengths() const;
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    virtual bool haveLoadedRequiredResources() override;
+
+    virtual bool selfHasRelativeLengths() const override;
+    virtual void didMoveToNewDocument(Document* oldDocument) override;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGImageElement)
         DECLARE_ANIMATED_LENGTH(X, x)
@@ -77,13 +73,10 @@ private:
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
 
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
-
     SVGImageLoader m_imageLoader;
 };
+
+NODE_TYPE_CASTS(SVGImageElement)
 
 } // namespace WebCore
 

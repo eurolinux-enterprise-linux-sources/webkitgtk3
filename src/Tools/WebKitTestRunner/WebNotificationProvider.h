@@ -36,7 +36,8 @@ namespace WTR {
 class WebNotificationProvider {
 public:
     WebNotificationProvider();
-    WKNotificationProvider provider();
+    ~WebNotificationProvider();
+    WKNotificationProviderV0 provider();
 
     void showWebNotification(WKPageRef, WKNotificationRef);
     void closeWebNotification(WKNotificationRef);

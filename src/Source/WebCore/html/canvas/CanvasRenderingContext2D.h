@@ -29,9 +29,9 @@
 #include "AffineTransform.h"
 #include "CanvasPathMethods.h"
 #include "CanvasRenderingContext.h"
+#include "CanvasStyle.h"
 #include "Color.h"
 #include "ColorSpace.h"
-#include "DashArray.h"
 #include "FloatSize.h"
 #include "Font.h"
 #include "GraphicsTypes.h"
@@ -48,10 +48,7 @@ namespace WebCore {
 
 class CanvasGradient;
 class CanvasPattern;
-class CanvasStyle;
-#if ENABLE(CANVAS_PATH)
 class DOMPath;
-#endif
 class FloatRect;
 class GraphicsContext;
 class HTMLCanvasElement;
@@ -64,17 +61,17 @@ typedef int ExceptionCode;
 
 class CanvasRenderingContext2D : public CanvasRenderingContext, public CanvasPathMethods {
 public:
-    static PassOwnPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, bool usesCSSCompatibilityParseMode, bool usesDashboardCompatibilityMode)
+    static OwnPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, bool usesCSSCompatibilityParseMode, bool usesDashboardCompatibilityMode)
     {
         return adoptPtr(new CanvasRenderingContext2D(canvas, usesCSSCompatibilityParseMode, usesDashboardCompatibilityMode));
     }
     virtual ~CanvasRenderingContext2D();
 
-    CanvasStyle* strokeStyle() const;
-    void setStrokeStyle(PassRefPtr<CanvasStyle>);
+    const CanvasStyle& strokeStyle() const { return state().m_strokeStyle; }
+    void setStrokeStyle(CanvasStyle);
 
-    CanvasStyle* fillStyle() const;
-    void setFillStyle(PassRefPtr<CanvasStyle>);
+    const CanvasStyle& fillStyle() const { return state().m_fillStyle; }
+    void setFillStyle(CanvasStyle);
 
     float lineWidth() const;
     void setLineWidth(float);
@@ -144,6 +141,7 @@ public:
     PassRefPtr<DOMPath> currentPath();
     void setCurrentPath(DOMPath*);
 #endif
+
     void fill(const String& winding = "nonzero");
     void stroke();
     void clip(const String& winding = "nonzero");
@@ -154,7 +152,6 @@ public:
     void clearRect(float x, float y, float width, float height);
     void fillRect(float x, float y, float width, float height);
     void strokeRect(float x, float y, float width, float height);
-    void strokeRect(float x, float y, float width, float height, float lineWidth);
 
     void setShadow(float width, float height, float blur);
     void setShadow(float width, float height, float blur, const String& color);
@@ -236,12 +233,12 @@ private:
         State(const State&);
         State& operator=(const State&);
 
-        virtual void fontsNeedUpdate(FontSelector*) OVERRIDE;
+        virtual void fontsNeedUpdate(FontSelector*) override;
 
         String m_unparsedStrokeColor;
         String m_unparsedFillColor;
-        RefPtr<CanvasStyle> m_strokeStyle;
-        RefPtr<CanvasStyle> m_fillStyle;
+        CanvasStyle m_strokeStyle;
+        CanvasStyle m_fillStyle;
         float m_lineWidth;
         LineCap m_lineCap;
         LineJoin m_lineJoin;
@@ -253,7 +250,7 @@ private:
         CompositeOperator m_globalComposite;
         BlendMode m_globalBlend;
         AffineTransform m_transform;
-        bool m_invertibleCTM;
+        bool m_hasInvertibleTransform;
         Vector<float> m_lineDash;
         float m_lineDashOffset;
         bool m_imageSmoothingEnabled;
@@ -315,7 +312,7 @@ private:
     bool rectContainsCanvas(const FloatRect&) const;
 
     template<class T> IntRect calculateCompositingBufferRect(const T&, IntSize*);
-    PassOwnPtr<ImageBuffer> createCompositingBuffer(const IntRect&);
+    std::unique_ptr<ImageBuffer> createCompositingBuffer(const IntRect&);
     void compositeBuffer(ImageBuffer*, const IntRect&, CompositeOperator);
 
     void inflateStrokeRect(FloatRect&) const;
@@ -328,13 +325,13 @@ private:
     PassRefPtr<ImageData> getImageData(ImageBuffer::CoordinateSystem, float sx, float sy, float sw, float sh, ExceptionCode&) const;
     void putImageData(ImageData*, ImageBuffer::CoordinateSystem, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight, ExceptionCode&);
 
-    virtual bool is2d() const OVERRIDE { return true; }
-    virtual bool isAccelerated() const OVERRIDE;
+    virtual bool is2d() const override { return true; }
+    virtual bool isAccelerated() const override;
 
-    virtual bool isTransformInvertible() const { return state().m_invertibleCTM; }
+    virtual bool hasInvertibleTransform() const override { return state().m_hasInvertibleTransform; }
 
 #if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING)
-    virtual PlatformLayer* platformLayer() const OVERRIDE;
+    virtual PlatformLayer* platformLayer() const override;
 #endif
 
     Vector<State, 1> m_stateStack;

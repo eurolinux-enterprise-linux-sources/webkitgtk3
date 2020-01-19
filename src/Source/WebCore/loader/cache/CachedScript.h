@@ -33,27 +33,30 @@ namespace WebCore {
     class CachedResourceLoader;
     class TextResourceDecoder;
 
-    class CachedScript : public CachedResource {
+    class CachedScript final : public CachedResource {
     public:
         CachedScript(const ResourceRequest&, const String& charset);
         virtual ~CachedScript();
 
         const String& script();
 
-        virtual void setEncoding(const String&);
-        virtual String encoding() const;
-        virtual void data(PassRefPtr<ResourceBuffer> data, bool allDataReceived);
         String mimeType() const;
 
-        virtual void destroyDecodedData();
 #if ENABLE(NOSNIFF)
         bool mimeTypeAllowedByNosniff() const;
 #endif
 
-        virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
     private:
-        virtual PurgePriority purgePriority() const { return PurgeLast; }
+        virtual PurgePriority purgePriority() const override { return PurgeLast; }
+        virtual bool mayTryReplaceEncodedData() const override { return true; }
+
+        virtual bool shouldIgnoreHTTPStatusCodeErrors() const override;
+
+        virtual void setEncoding(const String&) override;
+        virtual String encoding() const override;
+        virtual void finishLoading(ResourceBuffer*) override;
+
+        virtual void destroyDecodedData() override;
 
         String m_script;
         RefPtr<TextResourceDecoder> m_decoder;

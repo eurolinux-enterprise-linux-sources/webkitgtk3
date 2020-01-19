@@ -74,8 +74,6 @@ case "$with_gtk" in
         WEBKITGTK_API_MINOR_VERSION=0
         WEBKITGTK_API_VERSION=1.0
         WEBKITGTK_PC_NAME=webkit
-        GAIL_PC_NAME=gail
-        GAIL_REQUIRED_VERSION=gail2_required_version
         ;;
     3.0) GTK_REQUIRED_VERSION=gtk3_required_version
         GTK_API_VERSION=3.0
@@ -83,8 +81,6 @@ case "$with_gtk" in
         WEBKITGTK_API_MINOR_VERSION=0
         WEBKITGTK_API_VERSION=3.0
         WEBKITGTK_PC_NAME=webkitgtk
-        GAIL_PC_NAME=gail-3.0
-        GAIL_REQUIRED_VERSION=gail3_required_version
         ;;
 esac
 AC_SUBST([WEBKITGTK_API_MAJOR_VERSION])
@@ -113,8 +109,15 @@ case "$host" in
         UNICODE_LIBS="-licucore"
         ;;
     *-*-mingw*)
-        UNICODE_CFLAGS=""
-        UNICODE_LIBS="-licui18n -licuuc"
+	PKG_CHECK_MODULES(ICU, icu-i18n, ,)
+	if test "x$ICU_LIBS" = "x" ; then
+           UNICODE_CFLAGS=""
+           UNICODE_LIBS="-licui18n -licuuc"
+	else
+           UNICODE_CFLAGS="$ICU_CFLAGS"
+           UNICODE_LIBS="$ICU_LIBS"
+	fi
+        AC_CHECK_HEADERS([unicode/uchar.h], [], [AC_MSG_ERROR([Could not find ICU headers.])])
         ;;
     *)
         AC_PATH_PROG(icu_config, icu-config, no)
@@ -124,7 +127,7 @@ case "$host" in
 
         # We don't use --cflags as this gives us a lot of things that we don't necessarily want,
         # like debugging and optimization flags. See man (1) icu-config for more info.
-        UNICODE_CFLAGS=`$icu_config --cppflags`
+        UNICODE_CFLAGS=`$icu_config --cppflags-searchpath`
         UNICODE_LIBS=`$icu_config --ldflags-libsonly`
         ;;
 esac
@@ -132,7 +135,10 @@ esac
 AC_SUBST([UNICODE_CFLAGS])
 AC_SUBST([UNICODE_LIBS])
 
-PKG_CHECK_MODULES([ZLIB], [zlib])
+PKG_CHECK_MODULES([ZLIB], [zlib], [], [
+	AC_CHECK_LIB([z], [gzread], ,
+	  [AC_MSG_ERROR([unable to find the libz library])]
+	)])
 AC_SUBST([ZLIB_CFLAGS])
 AC_SUBST([ZLIB_LIBS])
 
@@ -153,19 +159,30 @@ if test "$enable_spellcheck" = "yes"; then
     AC_SUBST(ENCHANT_LIBS)
 fi
 
-PKG_CHECK_MODULES(GAIL, $GAIL_PC_NAME >= $GAIL_REQUIRED_VERSION)
-AC_SUBST(GAIL_CFLAGS)
-AC_SUBST(GAIL_LIBS)
+PKG_CHECK_MODULES(CAIRO, cairo >= cairo_required_version)
+PKG_CHECK_MODULES(GTK, gtk+-$GTK_API_VERSION >= $GTK_REQUIRED_VERSION)
+GTK_ACTUAL_VERSION=`pkg-config --modversion gtk+-$GTK_API_VERSION`
 
-# Check for target-specific dependencies.
-if test "$with_target" = "directfb"; then
-    PKG_CHECK_MODULES(CAIRO, cairo-directfb >= cairo_required_version)
-    PKG_CHECK_MODULES(GTK, gtk+-directfb-2.0 >= $GTK_REQUIRED_VERSION)
-else
-    PKG_CHECK_MODULES(CAIRO, cairo >= cairo_required_version)
-    PKG_CHECK_MODULES(GTK, gtk+-$GTK_API_VERSION >= $GTK_REQUIRED_VERSION)
+if test "$enable_directfb_target" = "yes"; then
+    PKG_CHECK_MODULES(CAIRO_DIRECTFB, cairo-directfb >= cairo_required_version)
+    CAIRO_CFLAGS="$CAIRO_CFLAGS $CAIRO_DIRECTFB_CFLAGS"
+    CAIRO_LIBS="$CAIRO_LIBS $CAIRO_DIRECTFB_LIBS"
 
-    if test "$with_target" = "x11" && test "$os_win32" = "no"; then
+    PKG_CHECK_MODULES(GTK_DIRECTFB, gtk+-directfb-2.0 >= $GTK_REQUIRED_VERSION)
+    GTK_CFLAGS="$GTK_CFLAGS $GTK_DIRECTFB_CFLAGS"
+    GTK_LIBS="$GTK_LIBS $GTK_DIRECTFB_LIBS"
+fi
+
+AC_SUBST(GTK_CFLAGS)
+AC_SUBST(GTK_LIBS)
+AC_SUBST(CAIRO_CFLAGS)
+AC_SUBST(CAIRO_LIBS)
+
+if test "$enable_x11_target" = "yes"; then
+    # The GTK+ X11 target dependency should match the version of the master GTK+ dependency.
+    PKG_CHECK_MODULES(GTK_X11, gtk+-x11-$GTK_API_VERSION = $GTK_ACTUAL_VERSION)
+
+    if test "$os_win32" = "no"; then
         PKG_CHECK_MODULES([XT], [xt], [xt_has_pkg_config=yes], [xt_has_pkg_config=no])
 
         # Some old versions of Xt do not provide xt.pc, so try to link against Xt
@@ -179,16 +196,35 @@ else
 
         AC_SUBST([XT_CFLAGS])
         AC_SUBST([XT_LIBS])
-   fi
+    fi
+
+    # Check for XRender under Linux/Unix. Some linkers require explicit linkage (like GNU Gold),
+    # so we cannot rely on GTK+ pulling XRender.
+    if test "$enable_x11_target" = "yes"; then
+        PKG_CHECK_MODULES([XRENDER], [xrender])
+        AC_SUBST([XRENDER_CFLAGS])
+        AC_SUBST([XRENDER_LIBS])
+    fi
+elif test "enable_glx" != "no"; then
+    AC_MSG_WARN([X11 target support not enabled, disabling GLX support.])
+    enable_glx=no
 fi
-AC_SUBST(GTK_CFLAGS)
-AC_SUBST(GTK_LIBS)
-AC_SUBST(CAIRO_CFLAGS)
-AC_SUBST(CAIRO_LIBS)
 
+if test "$enable_wayland_target" != "no"; then
+     # The GTK+ Wayland target dependency should match the version of the master GTK+ dependency.
+    PKG_CHECK_MODULES([GTK_WAYLAND], [
+        gtk+-wayland-$GTK_API_VERSION = $GTK_ACTUAL_VERSION
+        gtk+-wayland-$GTK_API_VERSION >= gtk3_wayland_required_version
+    ], [enable_wayland_target=yes], [
+        if test "$enable_wayland_target" = "yes"; then
+            AC_MSG_ERROR([GTK+ Wayland dependency (gtk+-wayland-$GTK_API_VERSION >= gtk3_wayland_required_version) not found.])
+        else
+            AC_MSG_WARN([GTK+ Wayland dependency (gtk+-wayland-$GTK_API_VERSION >= gtk3_wayland_required_version) not found, disabling the Wayland target.])
+            enable_wayland_target=no
+        fi
+    ])
+fi
 
-found_opengl=no
-have_glx=no
 AC_CHECK_HEADERS([GL/glx.h], [have_glx="yes"], [have_glx="no"])
 AC_MSG_CHECKING([whether to enable GLX support])
 if test "$enable_glx" != "no"; then
@@ -204,7 +240,6 @@ if test "$enable_glx" != "no"; then
 fi
 AC_MSG_RESULT([$enable_glx])
 
-have_egl=no
 AC_CHECK_HEADERS([EGL/egl.h], [have_egl="yes"], [have_egl="no"])
 AC_MSG_CHECKING([whether to enable EGL support])
 if test "$enable_egl" != "no"; then
@@ -220,19 +255,18 @@ if test "$enable_egl" != "no"; then
 fi
 AC_MSG_RESULT([$enable_egl])
 
-have_gles2=no
 AC_CHECK_HEADERS([GLES2/gl2.h], [have_gles2="yes"], [have_gles2="no"])
 AC_MSG_CHECKING([whether to use OpenGL ES 2 support])
 if test "$enable_glx" = "yes"; then
     if test "$enable_gles2" = "yes"; then
-        AC_MSG_ERROR([Cannot enable OpenGL ES 2 support with GLX])
+        AC_MSG_ERROR([Cannot enable OpenGL ES 2 support with GLX enabled.])
     else
         enable_gles2=no
     fi
 fi
 if test "$enable_egl" = "no"; then
     if test "$enable_gles2" = "yes"; then
-        AC_MSG_ERROR([Cannot enable OpenGL ES 2 support without EGL])
+        AC_MSG_ERROR([Cannot enable OpenGL ES 2 support without EGL enabled.])
     else
         enable_gles2=no
     fi
@@ -240,63 +274,59 @@ fi
 if test "$enable_gles2" != "no"; then
     if test "$have_gles2" = "no"; then
         if test "$enable_gles2" = "yes"; then
-            AC_MSG_ERROR([--enable-gles2 specified, but not available])
+            AC_MSG_ERROR([--enable-gles2 specified, but not available.])
         else
             enable_gles2=no
         fi
-   else
+    else
         enable_gles2=yes
-        found_opengl=yes
-   fi
+    fi
 fi
 AC_MSG_RESULT([$enable_gles2])
 
-if test "$enable_gles2" != "yes"; then
+found_opengl=no
+if test "$enable_gles2" = "yes"; then
+    found_opengl=yes
+else
     AC_CHECK_HEADERS([GL/gl.h], [found_opengl="yes"], [])
 fi
 
-if test "$with_acceleration_backend" = "auto"; then
-    if test "$found_opengl" = "yes"; then
-        with_acceleration_backend="opengl";
-    else
-        with_acceleration_backend="none";
-    fi
-fi
-
-if test "$with_acceleration_backend" = "opengl"; then
-    PKG_CHECK_MODULES([XCOMPOSITE], [xcomposite]);
-    PKG_CHECK_MODULES([XDAMAGE], [xdamage]);
+if test "$enable_x11_target" = "yes" && test "$found_opengl" = "yes"; then
+    PKG_CHECK_MODULES([XCOMPOSITE], [xcomposite])
+    PKG_CHECK_MODULES([XDAMAGE], [xdamage])
     AC_SUBST(XCOMPOSITE_CFLAGS)
     AC_SUBST(XCOMPOSITE_LIBS)
     AC_SUBST(XDAMAGE_CFLAGS)
     AC_SUBST(XDAMAGE_LIBS)
 fi
 
-# OpenGL is turned on by default (along with WebGL and accelerated compositing), but if Clutter is chosen
-# as the accelerated drawing backend, we want to disable it. COGL does not play well with OpenGL.
-if test "$enable_webgl" = "auto"; then
-    if test "$with_acceleration_backend" = "opengl"; then
-        enable_webgl="yes";
+if test "$enable_webgl" != "no"; then
+    if test "$found_opengl" = "yes"; then
+        enable_webgl=yes
     else
-        enable_webgl="no";
+        if test "$enable_webgl" = "yes"; then
+            AC_MSG_ERROR([OpenGL support must be present to enable WebGL.])
+        fi
+        enable_webgl=no
     fi
 fi
 
-if test "$enable_webgl" = "yes" && test "$with_acceleration_backend" != "opengl"; then
-    AC_MSG_ERROR([OpenGL must be active (and Clutter disabled) to use WebGL.])
-fi;
-
-if test "$enable_accelerated_compositing" = "yes" && test "$with_acceleration_backend" = "none"; then
-    AC_MSG_ERROR([OpenGL or Clutter must be active to use accelerated compositing.])
+if test "$enable_x11_target" != "yes" && test "$enable_wayland_target" = "yes" && test "enable_accelerated_compositing" != "no"; then
+    AC_MSG_WARN([Accelerated compositing for Wayland is not yet implemented, disabling due to the Wayland-only target.])
+    enable_accelerated_compositing=no
 fi
 
-if test "$enable_accelerated_compositing" = "auto"; then
-    if test "$with_acceleration_backend" != "none"; then
-        enable_accelerated_compositing="yes";
+if test "$enable_accelerated_compositing" != "no"; then
+    if test "$found_opengl" = "yes"; then
+        enable_accelerated_compositing=yes
     else
-        enable_accelerated_compositing="no";
+        if test "$enable_accelerated_compositing" = "yes"; then
+            AC_MSG_ERROR([OpenGL support must be present to enable accelerated compositing.])
+        fi
+        enable_accelerated_compositing=no
     fi
 fi
+
 if test "$enable_gamepad" = "yes" && test "$os_linux" = no; then
     AC_MSG_WARN([Gamepad support is only available on Linux. Disabling Gamepad support.])
     enable_gamepad=no;
@@ -319,21 +349,11 @@ if test "$enable_opcode_stats" = "yes"; then
     fi
 fi
 
-case "$enable_jit" in
-    yes) JSC_CPPFLAGS="-DENABLE_JIT=1" ;;
-    no) JSC_CPPFLAGS="-DENABLE_JIT=0" ;;
-    *) enable_jit="autodetect" ;;
-esac
-AC_SUBST(JSC_CPPFLAGS)
-
-
-# Enable CSS Filters and Shaders if accelerated_compositing is turned on.
+# Enable CSS Filters if accelerated_compositing is turned on.
 enable_css_filters=no;
-enable_css_shaders=no;
-AC_MSG_CHECKING([whether to enable CSS Filters and Shaders])
-if test "$enable_accelerated_compositing" = "yes" && test "$with_acceleration_backend" = "opengl"; then
+AC_MSG_CHECKING([whether to enable CSS Filters])
+if test "$enable_accelerated_compositing" = "yes" && test "$found_opengl" = "yes"; then
     enable_css_filters=yes;
-    enable_css_shaders=yes;
 fi
 AC_MSG_RESULT([$enable_css_filters])
 
@@ -366,7 +386,7 @@ if test "$enable_credential_storage" = "yes"; then
 fi
 
 # Check if FreeType/FontConfig are available.
-if test "$with_target" = "directfb"; then
+if test "$enable_directfb_target" = "yes"; then
     PKG_CHECK_MODULES([FREETYPE],
         [fontconfig >= fontconfig_required_version freetype2 >= freetype2_required_version harfbuzz >= harfbuzz_required_version])
 else
@@ -376,7 +396,7 @@ fi
 # HarfBuzz 0.9.18 splits harbuzz-icu into a separate library.
 # Since we support earlier HarfBuzz versions we keep this conditional for now.
 if $PKG_CONFIG --atleast-version 0.9.18 harfbuzz; then
-    PKG_CHECK_MODULES(HARFBUZZ_ICU, harfbuzz-icu >= $harfbuzz_required_version)
+    PKG_CHECK_MODULES([HARFBUZZ_ICU], [harfbuzz-icu >= harfbuzz_required_version])
     FREETYPE_CFLAGS="$FREETYPE_CFLAGS $HARFBUZZ_ICU_CFLAGS"
     FREETYPE_LIBS="$FREETYPE_LIBS $HARFBUZZ_ICU_LIBS"
 fi
@@ -397,26 +417,26 @@ if (test "$sqlite3_found" = "no"); then
     AC_MSG_ERROR([SQLite3 is required for the Database related features])
 fi
 
-# Check if libxslt is available.
-if test "$enable_xslt" = "yes"; then
-    PKG_CHECK_MODULES([LIBXSLT],[libxslt >= libxslt_required_version])
-    AC_SUBST([LIBXSLT_CFLAGS])
-    AC_SUBST([LIBXSLT_LIBS])
-fi
+PKG_CHECK_MODULES([LIBXSLT],[libxslt >= libxslt_required_version])
+AC_SUBST([LIBXSLT_CFLAGS])
+AC_SUBST([LIBXSLT_LIBS])
 
-# Check if geoclue is available.
+# Check if geoclue is available, with a preference over Geoclue2 if present.
+geolocation_description="none"
 if test "$enable_geolocation" = "yes"; then
-    PKG_CHECK_MODULES([GEOCLUE], [geoclue])
+    PKG_CHECK_MODULES([GEOCLUE2], [gio-unix-2.0 geoclue-2.0 >= geoclue2_required_version], [found_geoclue2=yes], [found_geoclue2=no])
+    if test "$found_geoclue2" = "yes"; then
+        GEOCLUE_CFLAGS="$GEOCLUE2_CFLAGS"
+        GEOCLUE_LIBS="$GEOCLUE2_LIBS"
+        GEOCLUE_DBUS_INTERFACE=`$PKG_CONFIG --variable dbus_interface geoclue-2.0`
+        AC_SUBST(GEOCLUE_DBUS_INTERFACE)
+        geolocation_description="Geoclue 2"
+    else
+        PKG_CHECK_MODULES([GEOCLUE], [geoclue])
+        geolocation_description="Geoclue"
+    fi
     AC_SUBST([GEOCLUE_CFLAGS])
     AC_SUBST([GEOCLUE_LIBS])
-fi
-
-# Check for XRender under Linux/Unix. Some linkers require explicit linkage (like GNU Gold),
-# so we cannot rely on GTK+ pulling XRender.
-if test "$with_target" = "x11"; then
-    PKG_CHECK_MODULES([XRENDER], [xrender])
-    AC_SUBST([XRENDER_CFLAGS])
-    AC_SUBST([XRENDER_LIBS])
 fi
 
 if test "$enable_video" = "yes" || test "$enable_web_audio" = "yes"; then
@@ -433,52 +453,64 @@ if test "$enable_video" = "yes" || test "$enable_web_audio" = "yes"; then
     AC_SUBST([GSTREAMER_LIBS])
 fi
 
-acceleration_backend_description=$with_acceleration_backend
-if test "$with_acceleration_backend" = "clutter"; then
-    PKG_CHECK_MODULES(CLUTTER, clutter-1.0 >= clutter_required_version)
-    PKG_CHECK_MODULES([CLUTTER_GTK], [clutter-gtk-1.0 >= clutter_gtk_required_version])
-
-    AC_SUBST(CLUTTER_CFLAGS)
-    AC_SUBST(CLUTTER_LIBS)
-    AC_SUBST(CLUTTER_GTK_CFLAGS)
-    AC_SUBST(CLUTTER_GTK_LIBS)
-
-    enable_gles2=no
-    enable_glx=no
-    enable_egl=no
-fi
-
-if test "$with_acceleration_backend" = "opengl"; then
+acceleration_description=
+if test "$found_opengl" = "yes"; then
+    acceleration_description="OpenGL"
     if test "$enable_gles2" = "yes"; then
-        acceleration_backend_description="$acceleration_backend_description (gles2"
+        acceleration_description="$acceleration_description (gles2"
         OPENGL_LIBS="-lGLESv2"
+    elif test "$os_win32" = "yes"; then
+        acceleration_description="$acceleration_description (gl"
+        OPENGL_LIBS="-lopengl32"
     else
-        acceleration_backend_description="$acceleration_backend_description (gl"
+        acceleration_description="$acceleration_description (gl"
         OPENGL_LIBS="-lGL"
     fi
     if test "$enable_egl" = "yes"; then
-        acceleration_backend_description="$acceleration_backend_description, egl"
+        acceleration_description="$acceleration_description, egl"
         OPENGL_LIBS="$OPENGL_LIBS -lEGL"
     fi
     if test "$enable_glx" = "yes"; then
-        acceleration_backend_description="$acceleration_backend_description, glx"
+        acceleration_description="$acceleration_description, glx"
     fi
 
     # Check whether dlopen() is in the core libc like on FreeBSD, or in a separate
     # libdl like on GNU/Linux (in which case we want to link to libdl).
-    AC_CHECK_FUNC([dlopen], [], [AC_CHECK_LIB([dl], [dlopen], [DLOPEN_LIBS="-ldl"])])
-    AC_SUBST([DLOPEN_LIBS])
+    if test "$os_win32" = "no"; then
+        AC_CHECK_FUNC([dlopen], [], [AC_CHECK_LIB([dl], [dlopen], [OPENGL_LIBS="$OPENGL_LIBS -ldl"])])
+    fi
 
-    OPENGL_LIBS="$OPENGL_LIBS $DLOPEN_LIBS"
-    acceleration_backend_description="$acceleration_backend_description)"
+    acceleration_description="$acceleration_description)"
 fi
 AC_SUBST([OPENGL_LIBS])
+
+enable_accelerated_canvas=no
+if test "$enable_accelerated_compositing" = "yes" && test "$found_opengl" = "yes"; then
+    CAIRO_GL_LIBS="cairo-gl"
+    if test "$enable_glx" = "yes"; then
+        CAIRO_GL_LIBS="$CAIRO_GL_LIBS cairo-glx"
+    fi
+    if test "$enable_egl" = "yes"; then
+        CAIRO_GL_LIBS="$CAIRO_GL_LIBS cairo-egl"
+    fi
+
+    # At the moment CairoGL does not add any extra cflags and libraries, so we can
+    # safely ignore CAIRO_GL_LIBS and CAIRO_GL_CFLAGS for the moment.
+    PKG_CHECK_MODULES(CAIRO_GL, $CAIRO_GL_LIBS, [enable_accelerated_canvas=yes], [enable_accelerated_canvas=no])
+fi
 
 if test "$enable_gamepad" = "yes"; then
     PKG_CHECK_MODULES([GAMEPAD], [gio-unix-2.0 gudev-1.0])
 
     AC_SUBST(GAMEPAD_CFLAGS)
     AC_SUBST(GAMEPAD_LIBS)
+fi
+
+if test "$enable_battery_status" = "yes"; then
+    PKG_CHECK_MODULES([UPOWER_GLIB], [upower-glib])
+
+    AC_SUBST(UPOWER_GLIB_CFLAGS)
+    AC_SUBST(UPOWER_GLIB_LIBS)
 fi
 
 # Check whether to enable code coverage support.
@@ -495,7 +527,7 @@ if test "$enable_webkit2" = "yes"; then
     fi
 
     # Make sure we have GTK+ 2.x to build the plugin process.
-    PKG_CHECK_MODULES(GTK2, gtk+-2.0 >= gtk2_required_version gail >= gail2_required_version)
+    PKG_CHECK_MODULES(GTK2, gtk+-2.0 >= gtk2_required_version)
     AC_SUBST(GTK2_CFLAGS)
     AC_SUBST(GTK2_LIBS)
 
@@ -516,6 +548,48 @@ if test "$enable_webkit2" = "yes"; then
    PKG_CHECK_MODULES([ATSPI2], [atspi-2 >= atspi2_required_version], [have_atspi2=yes], [have_atspi2=no])
    AC_SUBST([ATSPI2_CFLAGS])
    AC_SUBST([ATSPI2_LIBS])
+fi
+
+if test "$enable_jit" = "no"; then
+    AC_MSG_NOTICE([JIT compilation is disabled, also disabling FTL JIT support.])
+    enable_ftl_jit=no
+fi
+
+if test "$enable_ftl_jit" != no && test "$cxx_compiler" != "clang++"; then
+    if test "$enable_ftl_jit" = "yes"; then
+        AC_MSG_ERROR([Clang C++ compiler is required for FTL JIT support.])
+    else
+        AC_MSG_WARN([Clang C++ compiler is not used, disabling FTL JIT support.])
+        enable_ftl_jit=no
+    fi
+fi
+
+if test "$enable_ftl_jit" != "no"; then
+    AC_PATH_PROG(llvm_config, llvm-config, no)
+    if test "$llvm_config" = "no"; then
+        if test "$enable_ftl_jit" = "yes"; then
+            AC_MSG_ERROR([Cannot find llvm-config. LLVM >= 3.4 is needed for FTL JIT support.])
+        else
+            AC_MSG_WARN([Cannot find llvm-config. LLVM >= 3.4 is not present, disabling FTL JIT support.])
+            enable_ftl_jit=no
+        fi
+    else
+        LLVM_VERSION=`$llvm_config --version`
+        AX_COMPARE_VERSION([$LLVM_VERSION], [ge], [3.4], [have_llvm=yes], [have_llvm=no])
+        if test "$have_llvm" = "no"; then
+            if test "$enable_ftl_jit" = "yes"; then
+                AC_MSG_ERROR([LLVM >= 3.4 is needed for FTL JIT support.])
+            else
+                AC_MSG_WARN([LLVM >= 3.4 is not present, disabling FTL JIT support.])
+                enable_ftl_jit=no
+            fi
+        else
+            LLVM_CFLAGS=`$llvm_config --cppflags`
+            LLVM_LIBS="`$llvm_config --ldflags` `$llvm_config --libs`"
+            AC_SUBST([LLVM_CFLAGS])
+            AC_SUBST([LLVM_LIBS])
+        fi
+    fi
 fi
 
 m4_ifdef([GTK_DOC_CHECK], [

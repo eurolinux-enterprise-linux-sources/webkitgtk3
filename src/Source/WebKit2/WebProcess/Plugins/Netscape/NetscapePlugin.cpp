@@ -36,13 +36,13 @@
 #include <WebCore/GraphicsContext.h>
 #include <WebCore/HTTPHeaderMap.h>
 #include <WebCore/IntRect.h>
-#include <WebCore/KURL.h>
+#include <WebCore/URL.h>
+#include <WebCore/SharedBuffer.h>
 #include <runtime/JSObject.h>
 #include <utility>
 #include <wtf/text/CString.h>
 
 using namespace WebCore;
-using namespace std;
 
 namespace WebKit {
 
@@ -71,6 +71,7 @@ NetscapePlugin::NetscapePlugin(PassRefPtr<NetscapePluginModule> pluginModule)
     , m_inNPPNew(false)
     , m_shouldUseManualLoader(false)
     , m_hasCalledSetWindow(false)
+    , m_isVisible(false)
     , m_nextTimerID(0)
 #if PLATFORM(MAC)
     , m_drawingModel(static_cast<NPDrawingModel>(-1))
@@ -187,7 +188,7 @@ void NetscapePlugin::loadURL(const String& method, const String& urlString, cons
         // Eventually we are going to get a frameDidFinishLoading or frameDidFail call for this request.
         // Keep track of the notification data so we can call NPP_URLNotify.
         ASSERT(!m_pendingURLNotifications.contains(requestID));
-        m_pendingURLNotifications.set(requestID, make_pair(urlString, notificationData));
+        m_pendingURLNotifications.set(requestID, std::make_pair(urlString, notificationData));
     }
 }
 
@@ -319,11 +320,6 @@ void NetscapePlugin::handlePluginThreadAsyncCall(void (*function)(void*), void* 
     function(userData);
 }
 
-PassOwnPtr<NetscapePlugin::Timer> NetscapePlugin::Timer::create(NetscapePlugin* netscapePlugin, unsigned timerID, unsigned interval, bool repeat, TimerFunc timerFunc)
-{
-    return adoptPtr(new Timer(netscapePlugin, timerID, interval, repeat, timerFunc));
-}
-
 NetscapePlugin::Timer::Timer(NetscapePlugin* netscapePlugin, unsigned timerID, unsigned interval, bool repeat, TimerFunc timerFunc)
     : m_netscapePlugin(netscapePlugin)
     , m_timerID(timerID)
@@ -369,18 +365,18 @@ uint32_t NetscapePlugin::scheduleTimer(unsigned interval, bool repeat, void (*ti
     // FIXME: Handle wrapping around.
     unsigned timerID = ++m_nextTimerID;
 
-    OwnPtr<Timer> timer = Timer::create(this, timerID, interval, repeat, timerFunc);
+    auto timer = std::make_unique<Timer>(this, timerID, interval, repeat, timerFunc);
     
     // FIXME: Based on the plug-in visibility, figure out if we should throttle the timer, or if we should start it at all.
     timer->start();
-    m_timers.set(timerID, timer.release());
+    m_timers.set(timerID, std::move(timer));
 
     return timerID;
 }
 
 void NetscapePlugin::unscheduleTimer(unsigned timerID)
 {
-    if (OwnPtr<Timer> timer = m_timers.take(timerID))
+    if (auto timer = m_timers.take(timerID))
         timer->stop();
 }
 
@@ -517,6 +513,12 @@ void NetscapePlugin::callSetWindowInvisible()
 
 bool NetscapePlugin::shouldLoadSrcURL()
 {
+#if PLUGIN_ARCHITECTURE(X11)
+    // Flash crashes when NPP_GetValue is called for NPPVpluginCancelSrcStream in windowed mode.
+    if (m_isWindowed && m_pluginModule->pluginQuirks().contains(PluginQuirks::DoNotCancelSrcStreamInWindowedMode))
+        return true;
+#endif
+
     // Check if we should cancel the load
     NPBool cancelSrcStream = false;
 
@@ -528,12 +530,12 @@ bool NetscapePlugin::shouldLoadSrcURL()
 
 NetscapePluginStream* NetscapePlugin::streamFromID(uint64_t streamID)
 {
-    return m_streams.get(streamID).get();
+    return m_streams.get(streamID);
 }
 
 void NetscapePlugin::stopAllStreams()
 {
-    Vector<RefPtr<NetscapePluginStream> > streams;
+    Vector<RefPtr<NetscapePluginStream>> streams;
     copyValuesToVector(m_streams, streams);
 
     for (size_t i = 0; i < streams.size(); ++i)
@@ -702,7 +704,7 @@ PassRefPtr<ShareableBitmap> NetscapePlugin::snapshot()
     backingStoreSize.scale(contentsScaleFactor());
 
     RefPtr<ShareableBitmap> bitmap = ShareableBitmap::createShareable(backingStoreSize, ShareableBitmap::SupportsAlpha);
-    OwnPtr<GraphicsContext> context = bitmap->createGraphicsContext();
+    auto context = bitmap->createGraphicsContext();
 
     // FIXME: We should really call applyDeviceScaleFactor instead of scale, but that ends up calling into WKSI
     // which we currently don't have initiated in the plug-in process.
@@ -753,10 +755,14 @@ void NetscapePlugin::geometryDidChange(const IntSize& pluginSize, const IntRect&
     callSetWindow();
 }
 
-void NetscapePlugin::visibilityDidChange()
+void NetscapePlugin::visibilityDidChange(bool isVisible)
 {
     ASSERT(m_isStarted);
 
+    if (m_isVisible == isVisible)
+        return;
+
+    m_isVisible = isVisible;
     platformVisibilityDidChange();
 }
 
@@ -764,32 +770,22 @@ void NetscapePlugin::frameDidFinishLoading(uint64_t requestID)
 {
     ASSERT(m_isStarted);
     
-    PendingURLNotifyMap::iterator it = m_pendingURLNotifications.find(requestID);
-    if (it == m_pendingURLNotifications.end())
+    auto notification = m_pendingURLNotifications.take(requestID);
+    if (notification.first.isEmpty())
         return;
 
-    String url = it->value.first;
-    void* notificationData = it->value.second;
-
-    m_pendingURLNotifications.remove(it);
-    
-    NPP_URLNotify(url.utf8().data(), NPRES_DONE, notificationData);
+    NPP_URLNotify(notification.first.utf8().data(), NPRES_DONE, notification.second);
 }
 
 void NetscapePlugin::frameDidFail(uint64_t requestID, bool wasCancelled)
 {
     ASSERT(m_isStarted);
     
-    PendingURLNotifyMap::iterator it = m_pendingURLNotifications.find(requestID);
-    if (it == m_pendingURLNotifications.end())
+    auto notification = m_pendingURLNotifications.take(requestID);
+    if (notification.first.isNull())
         return;
-
-    String url = it->value.first;
-    void* notificationData = it->value.second;
-
-    m_pendingURLNotifications.remove(it);
     
-    NPP_URLNotify(url.utf8().data(), wasCancelled ? NPRES_USER_BREAK : NPRES_NETWORK_ERR, notificationData);
+    NPP_URLNotify(notification.first.utf8().data(), wasCancelled ? NPRES_USER_BREAK : NPRES_NETWORK_ERR, notification.second);
 }
 
 void NetscapePlugin::didEvaluateJavaScript(uint64_t requestID, const String& result)
@@ -800,7 +796,7 @@ void NetscapePlugin::didEvaluateJavaScript(uint64_t requestID, const String& res
         pluginStream->sendJavaScriptStream(result);
 }
 
-void NetscapePlugin::streamDidReceiveResponse(uint64_t streamID, const KURL& responseURL, uint32_t streamLength, 
+void NetscapePlugin::streamDidReceiveResponse(uint64_t streamID, const URL& responseURL, uint32_t streamLength, 
                                               uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& /* suggestedFileName */)
 {
     ASSERT(m_isStarted);
@@ -833,7 +829,7 @@ void NetscapePlugin::streamDidFail(uint64_t streamID, bool wasCancelled)
         pluginStream->didFail(wasCancelled);
 }
 
-void NetscapePlugin::manualStreamDidReceiveResponse(const KURL& responseURL, uint32_t streamLength, uint32_t lastModifiedTime, 
+void NetscapePlugin::manualStreamDidReceiveResponse(const URL& responseURL, uint32_t streamLength, uint32_t lastModifiedTime, 
                                                     const String& mimeType, const String& headers, const String& /* suggestedFileName */)
 {
     ASSERT(m_isStarted);
@@ -1048,6 +1044,11 @@ bool NetscapePlugin::supportsSnapshotting() const
     return m_pluginModule && m_pluginModule->pluginQuirks().contains(PluginQuirks::SupportsSnapshotting);
 #endif
     return false;
+}
+
+PassRefPtr<WebCore::SharedBuffer> NetscapePlugin::liveResourceData() const
+{
+    return 0;
 }
 
 IntPoint NetscapePlugin::convertToRootView(const IntPoint& pointInPluginCoordinates) const

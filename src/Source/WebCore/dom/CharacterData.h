@@ -47,11 +47,9 @@ public:
     // Returns how much could be added before length limit was met.
     unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
-    CharacterData(Document* document, const String& text, ConstructionType type)
-        : Node(document, type)
+    CharacterData(Document& document, const String& text, ConstructionType type)
+        : Node(&document, type)
         , m_data(!text.isNull() ? text : emptyString())
     {
         ASSERT(type == CreateOther || type == CreateText || type == CreateEditingText);
@@ -65,16 +63,22 @@ protected:
     void dispatchModifiedEvent(const String& oldValue);
 
 private:
-    virtual String nodeValue() const;
-    virtual void setNodeValue(const String&, ExceptionCode&);
-    virtual bool isCharacterDataNode() const { return true; }
-    virtual int maxCharacterOffset() const;
-    virtual bool offsetInCharacters() const;
+    virtual String nodeValue() const override final;
+    virtual void setNodeValue(const String&, ExceptionCode&) override final;
+    virtual bool isCharacterDataNode() const override final { return true; }
+    virtual int maxCharacterOffset() const override final;
+    virtual bool offsetInCharacters() const override final;
     void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
     void checkCharDataOperation(unsigned offset, ExceptionCode&);
 
     String m_data;
 };
+
+inline bool isCharacterData(const Node& node) { return node.isCharacterDataNode(); }
+void isCharacterData(const CharacterData&); // Catch unnecessary runtime check of type known at compile time.
+void isCharacterData(const ContainerNode&); // Catch unnecessary runtime check of type known at compile time.
+
+NODE_TYPE_CASTS(CharacterData)
 
 } // namespace WebCore
 

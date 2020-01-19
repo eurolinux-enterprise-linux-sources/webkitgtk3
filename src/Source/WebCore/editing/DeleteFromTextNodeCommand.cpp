@@ -57,8 +57,8 @@ void DeleteFromTextNodeCommand::doApply()
         return;
     
     // Need to notify this before actually deleting the text
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
 
     m_node->deleteData(m_offset, m_count, ec);
 }
@@ -67,13 +67,13 @@ void DeleteFromTextNodeCommand::doUnapply()
 {
     ASSERT(m_node);
 
-    if (!m_node->rendererIsEditable())
+    if (!m_node->hasEditableStyle())
         return;
 
     m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION);
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
 }
 
 #ifndef NDEBUG

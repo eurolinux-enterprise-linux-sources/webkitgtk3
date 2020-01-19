@@ -29,65 +29,57 @@
 #ifndef InspectorDOMStorageAgent_h
 #define InspectorDOMStorageAgent_h
 
-#include "InspectorBaseAgent.h"
+#include "InspectorWebAgentBase.h"
+#include "InspectorWebBackendDispatchers.h"
 #include "StorageArea.h"
 #include <wtf/HashMap.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/WTFString.h>
 
+namespace Inspector {
+class InspectorArray;
+class InspectorDOMStorageFrontendDispatcher;
+}
+
 namespace WebCore {
 
 class Frame;
-class InspectorArray;
-class InspectorDOMStorageResource;
-class InspectorFrontend;
-class InspectorState;
+class InspectorPageAgent;
 class InstrumentingAgents;
 class Page;
+class SecurityOrigin;
 class Storage;
-class StorageArea;
 
 typedef String ErrorString;
 
-class InspectorDOMStorageAgent : public InspectorBaseAgent<InspectorDOMStorageAgent>, public InspectorBackendDispatcher::DOMStorageCommandHandler {
+class InspectorDOMStorageAgent : public InspectorAgentBase, public Inspector::InspectorDOMStorageBackendDispatcherHandler {
 public:
-    static PassOwnPtr<InspectorDOMStorageAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state)
-    {
-        return adoptPtr(new InspectorDOMStorageAgent(instrumentingAgents, state));
-    }
+    InspectorDOMStorageAgent(InstrumentingAgents*, InspectorPageAgent*);
     ~InspectorDOMStorageAgent();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    void restore();
-
-    void clearResources();
+    virtual void didCreateFrontendAndBackend(Inspector::InspectorFrontendChannel*, Inspector::InspectorBackendDispatcher*) override;
+    virtual void willDestroyFrontendAndBackend(Inspector::InspectorDisconnectReason) override;
 
     // Called from the front-end.
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void getDOMStorageEntries(ErrorString*, const String& storageId, RefPtr<TypeBuilder::Array<TypeBuilder::Array<String> > >& entries);
-    virtual void setDOMStorageItem(ErrorString*, const String& storageId, const String& key, const String& value, bool* success);
-    virtual void removeDOMStorageItem(ErrorString*, const String& storageId, const String& key, bool* success);
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+    virtual void getDOMStorageItems(ErrorString*, const RefPtr<Inspector::InspectorObject>& storageId, RefPtr<Inspector::TypeBuilder::Array<Inspector::TypeBuilder::Array<String>>>& items) override;
+    virtual void setDOMStorageItem(ErrorString*, const RefPtr<Inspector::InspectorObject>& storageId, const String& key, const String& value) override;
+    virtual void removeDOMStorageItem(ErrorString*, const RefPtr<Inspector::InspectorObject>& storageId, const String& key) override;
 
     // Called from the injected script.
     String storageId(Storage*);
-    String storageId(SecurityOrigin*, bool isLocalStorage);
+    PassRefPtr<Inspector::TypeBuilder::DOMStorage::StorageId> storageId(SecurityOrigin*, bool isLocalStorage);
 
     // Called from InspectorInstrumentation
-    void didUseDOMStorage(StorageArea*, bool isLocalStorage, Frame*);
     void didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*, Page*);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
-    InspectorDOMStorageAgent(InstrumentingAgents*, InspectorCompositeState*);
+    PassRefPtr<StorageArea> findStorageArea(ErrorString*, const RefPtr<Inspector::InspectorObject>&, Frame*&);
 
-    InspectorDOMStorageResource* getDOMStorageResourceForId(const String& storageId);
-
-    typedef HashMap<String, RefPtr<InspectorDOMStorageResource> > DOMStorageResourcesMap;
-    DOMStorageResourcesMap m_resources;
-    InspectorFrontend* m_frontend;
+    InspectorPageAgent* m_pageAgent;
+    std::unique_ptr<Inspector::InspectorDOMStorageFrontendDispatcher> m_frontendDispatcher;
+    RefPtr<Inspector::InspectorDOMStorageBackendDispatcher> m_backendDispatcher;
     bool m_enabled;
 };
 

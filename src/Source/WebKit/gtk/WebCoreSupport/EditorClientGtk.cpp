@@ -37,6 +37,8 @@
 #include "Page.h"
 #include "PasteboardHelper.h"
 #include "PlatformKeyboardEvent.h"
+#include "Settings.h"
+#include "StyleProperties.h"
 #include "UndoStep.h"
 #include "WebKitDOMCSSStyleDeclarationPrivate.h"
 #include "WebKitDOMHTMLElementPrivate.h"
@@ -175,10 +177,11 @@ bool EditorClient::shouldChangeSelectedRange(Range* fromRange, Range* toRange, E
     return accept;
 }
 
-bool EditorClient::shouldApplyStyle(WebCore::StylePropertySet* set, WebCore::Range* range)
+bool EditorClient::shouldApplyStyle(WebCore::StyleProperties* set, WebCore::Range* range)
 {
     gboolean accept = TRUE;
-    GRefPtr<WebKitDOMCSSStyleDeclaration> kitDeclaration(kit(set->ensureCSSStyleDeclaration()));
+    Ref<MutableStyleProperties> mutableStyle(set->mutableCopy());
+    GRefPtr<WebKitDOMCSSStyleDeclaration> kitDeclaration(kit(mutableStyle->ensureCSSStyleDeclaration()));
     GRefPtr<WebKitDOMRange> kitRange(adoptGRef(kit(range)));
     g_signal_emit_by_name(m_webView, "should-apply-style", kitDeclaration.get(), kitRange.get(), &accept);
     return accept;
@@ -207,14 +210,13 @@ static void collapseSelection(GtkClipboard* clipboard, WebKitWebView* webView)
         return;
 
     WebCore::Page* corePage = core(webView);
-    if (!corePage || !corePage->focusController())
+    if (!corePage)
         return;
 
-    Frame* frame = corePage->focusController()->focusedOrMainFrame();
+    Frame& frame = corePage->focusController().focusedOrMainFrame();
 
     // Collapse the selection without clearing it
-    ASSERT(frame);
-    frame->selection()->setBase(frame->selection()->extent(), frame->selection()->affinity());
+    frame.selection().setBase(frame.selection().extent(), frame.selection().affinity());
 }
 
 #if PLATFORM(X11)
@@ -226,13 +228,13 @@ static void setSelectionPrimaryClipboardIfNeeded(WebKitWebView* webView)
     GtkClipboard* clipboard = gtk_widget_get_clipboard(GTK_WIDGET(webView), GDK_SELECTION_PRIMARY);
     DataObjectGtk* dataObject = DataObjectGtk::forClipboard(clipboard);
     WebCore::Page* corePage = core(webView);
-    Frame* targetFrame = corePage->focusController()->focusedOrMainFrame();
+    Frame& targetFrame = corePage->focusController().focusedOrMainFrame();
 
-    if (!targetFrame->selection()->isRange())
+    if (!targetFrame.selection().isRange())
         return;
 
     dataObject->clearAll();
-    dataObject->setRange(targetFrame->selection()->toNormalizedRange());
+    dataObject->setRange(targetFrame.selection().toNormalizedRange());
 
     viewSettingClipboard = webView;
     GClosure* callback = g_cclosure_new_object(G_CALLBACK(collapseSelection), G_OBJECT(webView));
@@ -253,7 +255,7 @@ void EditorClient::respondToChangedSelection(Frame* frame)
     setSelectionPrimaryClipboardIfNeeded(m_webView);
 #endif
 
-    if (frame->editor()->cancelCompositionIfSelectionIsInvalid())
+    if (frame->editor().cancelCompositionIfSelectionIsInvalid())
         m_webView->priv->imFilter.resetContext();
 }
 
@@ -273,11 +275,6 @@ void EditorClient::willWriteSelectionToPasteboard(WebCore::Range*)
 
 void EditorClient::getClientPasteboardDataForRange(WebCore::Range*, Vector<String>&, Vector<RefPtr<WebCore::SharedBuffer> >&)
 {
-}
-
-void EditorClient::didSetSelectionTypesForPasteboard()
-{
-    notImplemented();
 }
 
 void EditorClient::registerUndoStep(WTF::PassRefPtr<WebCore::UndoStep> step)
@@ -358,21 +355,20 @@ void EditorClient::pageDestroyed()
     delete this;
 }
 
-void EditorClient::setSmartInsertDeleteEnabled(bool enabled)
-{
-    m_smartInsertDeleteEnabled = enabled;
-}
-
 bool EditorClient::smartInsertDeleteEnabled()
 {
-    return m_smartInsertDeleteEnabled;
+    WebCore::Page* corePage = core(m_webView);
+    if (!corePage)
+        return false;
+    return corePage->settings().smartInsertDeleteEnabled();
 }
 
 bool EditorClient::isSelectTrailingWhitespaceEnabled()
 {
-    if (!DumpRenderTreeSupportGtk::dumpRenderTreeModeEnabled())
+    WebCore::Page* corePage = core(m_webView);
+    if (!corePage)
         return false;
-    return DumpRenderTreeSupportGtk::selectTrailingWhitespaceEnabled();
+    return corePage->settings().selectTrailingWhitespaceEnabled();
 }
 
 void EditorClient::toggleContinuousSpellChecking()
@@ -393,7 +389,7 @@ bool EditorClient::executePendingEditorCommands(Frame* frame, bool allowTextInse
 {
     Vector<Editor::Command> commands;
     for (size_t i = 0; i < m_pendingEditorCommands.size(); i++) {
-        Editor::Command command = frame->editor()->command(m_pendingEditorCommands.at(i).utf8().data());
+        Editor::Command command = frame->editor().command(m_pendingEditorCommands.at(i).utf8().data());
         if (command.isTextInsertion() && !allowTextInsertion)
             return false;
 
@@ -428,7 +424,7 @@ void EditorClient::handleKeyboardEvent(KeyboardEvent* event)
 {
     Node* node = event->target()->toNode();
     ASSERT(node);
-    Frame* frame = node->document()->frame();
+    Frame* frame = node->document().frame();
     ASSERT(frame);
 
     const PlatformKeyboardEvent* platformEvent = event->keyEvent();
@@ -454,7 +450,7 @@ void EditorClient::handleKeyboardEvent(KeyboardEvent* event)
         }
 
         // Only allow text insertion commands if the current node is editable.
-        if (executePendingEditorCommands(frame, frame->editor()->canEdit())) {
+        if (executePendingEditorCommands(frame, frame->editor().canEdit())) {
             event->setDefaultHandled();
             return;
         }
@@ -462,7 +458,7 @@ void EditorClient::handleKeyboardEvent(KeyboardEvent* event)
     }
 
     // Don't allow text insertion for nodes that cannot edit.
-    if (!frame->editor()->canEdit())
+    if (!frame->editor().canEdit())
         return;
 
     // This is just a normal text insertion, so wait to execute the insertion
@@ -479,7 +475,7 @@ void EditorClient::handleKeyboardEvent(KeyboardEvent* event)
     if (platformEvent->ctrlKey() || platformEvent->altKey())
         return;
 
-    if (frame->editor()->insertText(platformEvent->text(), event))
+    if (frame->editor().insertText(platformEvent->text(), event))
         event->setDefaultHandled();
 }
 
@@ -499,7 +495,6 @@ EditorClient::EditorClient(WebKitWebView* webView)
     , m_textCheckerClient(WEBKIT_SPELL_CHECKER(webkit_get_text_checker()))
 #endif
     , m_webView(webView)
-    , m_smartInsertDeleteEnabled(false)
 {
 }
 

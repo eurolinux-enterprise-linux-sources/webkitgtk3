@@ -26,7 +26,7 @@
 #include "config.h"
 #include "WKBundleBackForwardListItem.h"
 
-#include "ImmutableArray.h"
+#include "APIArray.h"
 #include "InjectedBundleBackForwardListItem.h"
 #include "WKBundleAPICast.h"
 
@@ -70,6 +70,11 @@ bool WKBundleBackForwardListItemIsTargetItem(WKBundleBackForwardListItemRef item
 bool WKBundleBackForwardListItemIsInPageCache(WKBundleBackForwardListItemRef itemRef)
 {
     return toImpl(itemRef)->isInPageCache();
+}
+
+bool WKBundleBackForwardListItemHasCachedPageExpired(WKBundleBackForwardListItemRef itemRef)
+{
+    return toImpl(itemRef)->hasCachedPageExpired();
 }
 
 WKArrayRef WKBundleBackForwardListItemCopyChildren(WKBundleBackForwardListItemRef itemRef)

@@ -20,14 +20,8 @@
 #ifndef OpenGLShims_h
 #define OpenGLShims_h
 
-#if PLATFORM(QT)
-#include <qglobal.h>
-#include <qopenglfunctions.h>
-#include <QOpenGLContext>
-#include <QSurface>
-#else
 #include <GL/gl.h>
-#endif
+#include <GL/glext.h>
 
 #if defined(GL_ES_VERSION_2_0)
 // Some openGL ES systems miss this typedef.
@@ -63,6 +57,8 @@ typedef void (GLAPIENTRY *glBufferDataType) (GLenum, GLsizeiptr, const GLvoid*, 
 typedef void (GLAPIENTRY *glBufferSubDataType) (GLenum, GLintptr, GLsizeiptr, const GLvoid*);
 typedef GLenum (GLAPIENTRY *glCheckFramebufferStatusType) (GLenum);
 typedef void (GLAPIENTRY *glCompileShaderType) (GLuint);
+typedef void (GLAPIENTRY *glCompressedTexImage2DType) (GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const GLvoid*);
+typedef void (GLAPIENTRY *glCompressedTexSubImage2DType) (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLsizei, const GLvoid*);
 typedef GLuint (GLAPIENTRY *glCreateProgramType) ();
 typedef GLuint (GLAPIENTRY *glCreateShaderType) (GLenum);
 typedef void (GLAPIENTRY *glDeleteBuffersType) (GLsizei, const GLuint*);
@@ -163,6 +159,8 @@ typedef struct _OpenGLFunctionTable {
     FUNCTION_TABLE_ENTRY(glBufferSubData);
     FUNCTION_TABLE_ENTRY(glCheckFramebufferStatus);
     FUNCTION_TABLE_ENTRY(glCompileShader);
+    FUNCTION_TABLE_ENTRY(glCompressedTexImage2D);
+    FUNCTION_TABLE_ENTRY(glCompressedTexSubImage2D);
     FUNCTION_TABLE_ENTRY(glCreateProgram);
     FUNCTION_TABLE_ENTRY(glCreateShader);
     FUNCTION_TABLE_ENTRY(glDeleteBuffers);
@@ -269,6 +267,8 @@ typedef struct _OpenGLFunctionTable {
 #define glCheckFramebufferStatusEXT            glCheckFramebufferStatus
 #define glCheckFramebufferStatus               LOOKUP_GL_FUNCTION(glCheckFramebufferStatus)
 #define glCompileShader                        LOOKUP_GL_FUNCTION(glCompileShader)
+#define glCompressedTexImage2D                 LOOKUP_GL_FUNCTION(glCompressedTexImage2D)
+#define glCompressedTexSubImage2D              LOOKUP_GL_FUNCTION(glCompressedTexSubImage2D)
 #define glCreateProgram                        LOOKUP_GL_FUNCTION(glCreateProgram)
 #define glCreateShader                         LOOKUP_GL_FUNCTION(glCreateShader)
 #define glDeleteBuffers                        LOOKUP_GL_FUNCTION(glDeleteBuffers)

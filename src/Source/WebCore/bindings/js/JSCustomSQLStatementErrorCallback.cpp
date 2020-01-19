@@ -36,6 +36,7 @@
 #include "JSSQLTransaction.h"
 #include "ScriptExecutionContext.h"
 #include <runtime/JSLock.h>
+#include <wtf/Ref.h>
 
 namespace WebCore {
 
@@ -46,9 +47,9 @@ bool JSSQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
     if (!m_data || !m_data->globalObject() || !canInvokeCallback())
         return true;
 
-    RefPtr<JSSQLStatementErrorCallback> protect(this);
+    Ref<JSSQLStatementErrorCallback> protect(*this);
 
-    JSC::JSLockHolder lock(m_data->globalObject()->globalData());
+    JSC::JSLockHolder lock(m_data->globalObject()->vm());
 
     ExecState* exec = m_data->globalObject()->globalExec();
     MarkedArgumentBuffer args;

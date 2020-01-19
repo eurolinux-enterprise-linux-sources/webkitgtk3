@@ -33,19 +33,56 @@ class Document;
 
 class HTMLNameCollection : public HTMLCollection {
 public:
-    static PassRefPtr<HTMLNameCollection> create(Node* document, CollectionType type, const AtomicString& name)
-    {
-        return adoptRef(new HTMLNameCollection(document, type, name));
-    }
-
     ~HTMLNameCollection();
 
-private:
-    HTMLNameCollection(Node*, CollectionType, const AtomicString& name);
+    Document& document() { return toDocument(ownerNode()); }
 
-    virtual Element* virtualItemAfter(unsigned& offsetInArray, Element*) const OVERRIDE;
+protected:
+    HTMLNameCollection(Document&, CollectionType, const AtomicString& name);
 
     AtomicString m_name;
+};
+
+class WindowNameCollection final : public HTMLNameCollection {
+public:
+    static PassRef<WindowNameCollection> create(Document& document, CollectionType type, const AtomicString& name)
+    {
+        return adoptRef(*new WindowNameCollection(document, type, name));
+    }
+
+    bool nodeMatches(Element* element) const { return nodeMatches(element, m_name.impl()); }
+
+    static bool nodeMatchesIfIdAttributeMatch(Element*) { return true; }
+    static bool nodeMatchesIfNameAttributeMatch(Element*);
+    static bool nodeMatches(Element*, const AtomicStringImpl*);
+
+private:
+    WindowNameCollection(Document& document, CollectionType type, const AtomicString& name)
+        : HTMLNameCollection(document, type, name)
+    {
+        ASSERT(type == WindowNamedItems);
+    }
+};
+
+class DocumentNameCollection final : public HTMLNameCollection {
+public:
+    static PassRef<DocumentNameCollection> create(Document& document, CollectionType type, const AtomicString& name)
+    {
+        return adoptRef(*new DocumentNameCollection(document, type, name));
+    }
+
+    static bool nodeMatchesIfIdAttributeMatch(Element*);
+    static bool nodeMatchesIfNameAttributeMatch(Element*);
+    bool nodeMatches(Element* element) const { return nodeMatches(element, m_name.impl()); }
+
+    static bool nodeMatches(Element*, const AtomicStringImpl*);
+
+private:
+    DocumentNameCollection(Document& document, CollectionType type, const AtomicString& name)
+        : HTMLNameCollection(document, type, name)
+    {
+        ASSERT(type == DocumentNamedItems);
+    }
 };
 
 }

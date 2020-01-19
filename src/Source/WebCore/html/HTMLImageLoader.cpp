@@ -31,11 +31,9 @@
 #include "HTMLParserIdioms.h"
 #include "Settings.h"
 
-#if USE(JSC)
 #include "JSDOMWindowBase.h"
 #include <runtime/JSLock.h>
 #include <runtime/Operations.h>
-#endif
 
 namespace WebCore {
 
@@ -51,19 +49,19 @@ HTMLImageLoader::~HTMLImageLoader()
 void HTMLImageLoader::dispatchLoadEvent()
 {
     // HTMLVideoElement uses this class to load the poster image, but it should not fire events for loading or failure.
-    if (element()->hasTagName(HTMLNames::videoTag))
+    if (isHTMLVideoElement(element()))
         return;
 
     bool errorOccurred = image()->errorOccurred();
     if (!errorOccurred && image()->response().httpStatusCode() >= 400)
-        errorOccurred = element()->hasTagName(HTMLNames::objectTag); // An <object> considers a 404 to be an error and should fire onerror.
+        errorOccurred = isHTMLObjectElement(element()); // An <object> considers a 404 to be an error and should fire onerror.
     element()->dispatchEvent(Event::create(errorOccurred ? eventNames().errorEvent : eventNames().loadEvent, false, false));
 }
 
 String HTMLImageLoader::sourceURI(const AtomicString& attr) const
 {
 #if ENABLE(DASHBOARD_SUPPORT)
-    Settings* settings = element()->document()->settings();
+    Settings* settings = element()->document().settings();
     if (settings && settings->usesDashboardBackwardCompatibilityMode() && attr.length() > 7 && attr.startsWith("url(\"") && attr.endsWith("\")"))
         return attr.string().substring(5, attr.length() - 7);
 #endif
@@ -79,18 +77,16 @@ void HTMLImageLoader::notifyFinished(CachedResource*)
     ImageLoader::notifyFinished(cachedImage);
 
     bool loadError = cachedImage->errorOccurred() || cachedImage->response().httpStatusCode() >= 400;
-#if USE(JSC)
     if (!loadError) {
         if (!element->inDocument()) {
-            JSC::JSGlobalData* globalData = JSDOMWindowBase::commonJSGlobalData();
-            JSC::JSLockHolder lock(globalData);
-            globalData->heap.reportExtraMemoryCost(cachedImage->encodedSize());
+            JSC::VM* vm = JSDOMWindowBase::commonVM();
+            JSC::JSLockHolder lock(vm);
+            vm->heap.reportExtraMemoryCost(cachedImage->encodedSize());
         }
     }
-#endif
 
-    if (loadError && element->hasTagName(HTMLNames::objectTag))
-        static_cast<HTMLObjectElement*>(element.get())->renderFallbackContent();
+    if (loadError && isHTMLObjectElement(element.get()))
+        toHTMLObjectElement(element.get())->renderFallbackContent();
 }
 
 }

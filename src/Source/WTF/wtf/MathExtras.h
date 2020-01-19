@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,13 +43,6 @@
 #include <machine/ieee.h>
 #endif
 
-#if OS(QNX)
-// FIXME: Look into a way to have cmath import its functions into both the standard and global
-// namespace. For now, we include math.h since the QNX cmath header only imports its functions
-// into the standard namespace.
-#include <math.h>
-#endif
-
 #ifndef M_PI
 const double piDouble = 3.14159265358979323846;
 const float piFloat = 3.14159265358979323846f;
@@ -72,6 +65,12 @@ const float piOverFourFloat = 0.785398163397448309616f;
 #else
 const double piOverFourDouble = M_PI_4;
 const float piOverFourFloat = static_cast<float>(M_PI_4);
+#endif
+
+#ifndef M_SQRT2
+const double sqrtOfTwoDouble = 1.41421356237309504880;
+#else
+const double sqrtOfTwoDouble = M_SQRT2;
 #endif
 
 #if OS(DARWIN)
@@ -118,71 +117,8 @@ inline bool signbit(double x) { struct ieee_double *p = (struct ieee_double *)&x
 
 #if COMPILER(MSVC)
 
-// We must not do 'num + 0.5' or 'num - 0.5' because they can cause precision loss.
-static double round(double num)
-{
-    double integer = ceil(num);
-    if (num > 0)
-        return integer - num > 0.5 ? integer - 1.0 : integer;
-    return integer - num >= 0.5 ? integer - 1.0 : integer;
-}
-static float roundf(float num)
-{
-    float integer = ceilf(num);
-    if (num > 0)
-        return integer - num > 0.5f ? integer - 1.0f : integer;
-    return integer - num >= 0.5f ? integer - 1.0f : integer;
-}
-inline long long llround(double num) { return static_cast<long long>(round(num)); }
-inline long long llroundf(float num) { return static_cast<long long>(roundf(num)); }
-inline long lround(double num) { return static_cast<long>(round(num)); }
-inline long lroundf(float num) { return static_cast<long>(roundf(num)); }
-inline double trunc(double num) { return num > 0 ? floor(num) : ceil(num); }
-
-#endif
-
-#if COMPILER(GCC) && OS(QNX)
-// The stdlib on QNX doesn't contain long abs(long). See PR #104666.
-inline long long abs(long num) { return labs(num); }
-#endif
-
-#if OS(ANDROID) || COMPILER(MSVC)
-// ANDROID and MSVC's math.h does not currently supply log2 or log2f.
-inline double log2(double num)
-{
-    // This constant is roughly M_LN2, which is not provided by default on Windows and Android.
-    return log(num) / 0.693147180559945309417232121458176568;
-}
-
-inline float log2f(float num)
-{
-    // This constant is roughly M_LN2, which is not provided by default on Windows and Android.
-    return logf(num) / 0.693147180559945309417232121458176568f;
-}
-#endif
-
-#if COMPILER(MSVC)
-// The 64bit version of abs() is already defined in stdlib.h which comes with VC10
-#if COMPILER(MSVC9_OR_LOWER)
-inline long long abs(long long num) { return _abs64(num); }
-#endif
-
-namespace std {
-
-inline bool isinf(double num) { return !_finite(num) && !_isnan(num); }
-inline bool isnan(double num) { return !!_isnan(num); }
-inline bool isfinite(double x) { return _finite(x); }
-inline bool signbit(double num) { return _copysign(1.0, num) < 0; }
-
-} // namespace std
-
-inline double nextafter(double x, double y) { return _nextafter(x, y); }
-inline float nextafterf(float x, float y) { return x > y ? x - FLT_EPSILON : x + FLT_EPSILON; }
-
-inline double copysign(double x, double y) { return _copysign(x, y); }
-
 // Work around a bug in Win, where atan2(+-infinity, +-infinity) yields NaN instead of specific values.
-inline double wtf_atan2(double x, double y)
+extern "C" inline double wtf_atan2(double x, double y)
 {
     double posInf = std::numeric_limits<double>::infinity();
     double negInf = -std::numeric_limits<double>::infinity();
@@ -205,10 +141,10 @@ inline double wtf_atan2(double x, double y)
 }
 
 // Work around a bug in the Microsoft CRT, where fmod(x, +-infinity) yields NaN instead of x.
-inline double wtf_fmod(double x, double y) { return (!std::isinf(x) && std::isinf(y)) ? x : fmod(x, y); }
+extern "C" inline double wtf_fmod(double x, double y) { return (!std::isinf(x) && std::isinf(y)) ? x : fmod(x, y); }
 
 // Work around a bug in the Microsoft CRT, where pow(NaN, 0) yields NaN instead of 1.
-inline double wtf_pow(double x, double y) { return y == 0 ? 1 : pow(x, y); }
+extern "C" inline double wtf_pow(double x, double y) { return y == 0 ? 1 : pow(x, y); }
 
 #define atan2(x, y) wtf_atan2(x, y)
 #define fmod(x, y) wtf_fmod(x, y)
@@ -277,6 +213,11 @@ inline int clampToInteger(double value)
     return clampTo<int>(value);
 }
 
+inline unsigned clampToUnsigned(double value)
+{
+    return clampTo<unsigned>(value);
+}
+
 inline float clampToFloat(double value)
 {
     return clampTo<float>(value);
@@ -331,6 +272,11 @@ template <typename T> inline unsigned getLSBSet(T value)
     return result;
 }
 
+template<typename T> inline T divideRoundedUp(T a, T b)
+{
+    return (a + b - 1) / b;
+}
+
 template<typename T> inline T timesThreePlusOneDividedByTwo(T value)
 {
     // Mathematically equivalent to:
@@ -339,6 +285,23 @@ template<typename T> inline T timesThreePlusOneDividedByTwo(T value)
     //   (unsigned)ceil(value * 1.5));
     // This form is not prone to internal overflow.
     return value + (value >> 1) + (value & 1);
+}
+
+template<typename T> inline bool isNotZeroAndOrdered(T value)
+{
+    return value > 0.0 || value < 0.0;
+}
+
+template<typename T> inline bool isZeroOrUnordered(T value)
+{
+    return !isNotZeroAndOrdered(value);
+}
+
+template<typename T> inline bool isGreaterThanNonZeroPowerOfTwo(T value, unsigned power)
+{
+    // The crazy way of testing of index >= 2 ** power
+    // (where I use ** to denote pow()).
+    return !!((value >> 1) >> (power - 1));
 }
 
 #ifndef UINT64_C
@@ -429,6 +392,24 @@ inline uint32_t roundUpToPowerOfTwo(uint32_t v)
     v |= v >> 16;
     v++;
     return v;
+}
+
+inline unsigned fastLog2(unsigned i)
+{
+    unsigned log2 = 0;
+    if (i & (i - 1))
+        log2 += 1;
+    if (i >> 16)
+        log2 += 16, i >>= 16;
+    if (i >> 8)
+        log2 += 8, i >>= 8;
+    if (i >> 4)
+        log2 += 4, i >>= 4;
+    if (i >> 2)
+        log2 += 2, i >>= 2;
+    if (i >> 1)
+        log2 += 1;
+    return log2;
 }
 
 } // namespace WTF

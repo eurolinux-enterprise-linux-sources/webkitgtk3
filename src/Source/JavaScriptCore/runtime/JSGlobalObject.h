@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2007 Eric Seidel <eric@webkit.org>
- *  Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ *  Copyright (C) 2007, 2008, 2009, 2014 Apple Inc. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Library General Public
@@ -23,8 +23,10 @@
 #define JSGlobalObject_h
 
 #include "ArrayAllocationProfile.h"
+#include "ConstantMode.h"
 #include "JSArray.h"
-#include "JSGlobalData.h"
+#include "JSArrayBufferPrototype.h"
+#include "JSClassRef.h"
 #include "JSSegmentedVariableObject.h"
 #include "JSWeakObjectMapRefInternal.h"
 #include "NumberPrototype.h"
@@ -32,16 +34,22 @@
 #include "StringPrototype.h"
 #include "StructureChain.h"
 #include "StructureRareDataInlines.h"
+#include "VM.h"
 #include "Watchpoint.h"
+#include <JavaScriptCore/JSBase.h>
+#include <array>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
+#include <wtf/PassRefPtr.h>
 #include <wtf/RandomNumber.h>
+
+struct OpaqueJSClass;
+struct OpaqueJSClassContextData;
 
 namespace JSC {
 
 class ArrayPrototype;
 class BooleanPrototype;
-class DatePrototype;
 class Debugger;
 class ErrorConstructor;
 class ErrorPrototype;
@@ -52,8 +60,12 @@ class FunctionExecutable;
 class FunctionPrototype;
 class GetterSetter;
 class GlobalCodeBlock;
+class JSGlobalObjectDebuggable;
+class JSPromiseConstructor;
+class JSPromisePrototype;
 class JSStack;
 class LLIntOffsetsExtractor;
+class Microtask;
 class NativeErrorConstructor;
 class ProgramCodeBlock;
 class ProgramExecutable;
@@ -63,8 +75,35 @@ class SourceCode;
 struct ActivationStackNode;
 struct HashTable;
 
-typedef Vector<ExecState*, 16> ExecStateStack;
+#define DEFINE_STANDARD_BUILTIN(macro, upperName, lowerName) macro(upperName, lowerName, lowerName, JS ## upperName, upperName)
     
+#define FOR_EACH_SIMPLE_BUILTIN_TYPE(macro) \
+    macro(Set, set, set, JSSet, Set) \
+    macro(Map, map, map, JSMap, Map) \
+    macro(Date, date, date, DateInstance, Date) \
+    macro(String, string, stringObject, StringObject, String) \
+    macro(Boolean, boolean, booleanObject, BooleanObject, Boolean) \
+    macro(Number, number, numberObject, NumberObject, Number) \
+    macro(Error, error, error, ErrorInstance, Error) \
+    macro(JSArrayBuffer, arrayBuffer, arrayBuffer, JSArrayBuffer, ArrayBuffer) \
+    DEFINE_STANDARD_BUILTIN(macro, WeakMap, weakMap) \
+    DEFINE_STANDARD_BUILTIN(macro, ArrayIterator, arrayIterator) \
+    DEFINE_STANDARD_BUILTIN(macro, ArgumentsIterator, argumentsIterator) \
+    DEFINE_STANDARD_BUILTIN(macro, MapIterator, mapIterator) \
+    DEFINE_STANDARD_BUILTIN(macro, SetIterator, setIterator) \
+
+
+#define DECLARE_SIMPLE_BUILTIN_TYPE(capitalName, lowerName, properName, instanceType, jsName) \
+    class JS ## capitalName; \
+    class capitalName ## Prototype; \
+    class capitalName ## Constructor;
+
+FOR_EACH_SIMPLE_BUILTIN_TYPE(DECLARE_SIMPLE_BUILTIN_TYPE)
+
+#undef DECLARE_SIMPLE_BUILTIN_TYPE
+
+typedef Vector<ExecState*, 16> ExecStateStack;
+
 struct GlobalObjectMethodTable {
     typedef bool (*AllowsAccessFromFunctionPtr)(const JSGlobalObject*, ExecState*);
     AllowsAccessFromFunctionPtr allowsAccessFrom;
@@ -80,11 +119,18 @@ struct GlobalObjectMethodTable {
 
     typedef bool (*JavaScriptExperimentsEnabledFunctionPtr)(const JSGlobalObject*);
     JavaScriptExperimentsEnabledFunctionPtr javaScriptExperimentsEnabled;
+
+    typedef void (*QueueTaskToEventLoopFunctionPtr)(const JSGlobalObject*, PassRefPtr<Microtask>);
+    QueueTaskToEventLoopFunctionPtr queueTaskToEventLoop;
+
+    typedef bool (*ShouldInterruptScriptBeforeTimeoutPtr)(const JSGlobalObject*);
+    ShouldInterruptScriptBeforeTimeoutPtr shouldInterruptScriptBeforeTimeout;
 };
 
 class JSGlobalObject : public JSSegmentedVariableObject {
 private:
-    typedef HashSet<RefPtr<OpaqueJSWeakObjectMap> > WeakMapSet;
+    typedef HashSet<RefPtr<OpaqueJSWeakObjectMap>> WeakMapSet;
+    typedef HashMap<OpaqueJSClass*, std::unique_ptr<OpaqueJSClassContextData>> OpaqueJSClassDataMap;
 
     struct JSGlobalObjectRareData {
         JSGlobalObjectRareData()
@@ -94,10 +140,11 @@ private:
 
         WeakMapSet weakMaps;
         unsigned profileGroup;
+        
+        OpaqueJSClassDataMap opaqueJSClassData;
     };
 
 protected:
-
     Register m_globalCallFrame[JSStack::CallFrameHeaderSize];
 
     WriteBarrier<JSObject> m_globalThis;
@@ -110,6 +157,7 @@ protected:
     WriteBarrier<NativeErrorConstructor> m_syntaxErrorConstructor;
     WriteBarrier<NativeErrorConstructor> m_typeErrorConstructor;
     WriteBarrier<NativeErrorConstructor> m_URIErrorConstructor;
+    WriteBarrier<JSPromiseConstructor> m_promiseConstructor;
 
     WriteBarrier<JSFunction> m_evalFunction;
     WriteBarrier<JSFunction> m_callFunction;
@@ -119,12 +167,8 @@ protected:
     WriteBarrier<ObjectPrototype> m_objectPrototype;
     WriteBarrier<FunctionPrototype> m_functionPrototype;
     WriteBarrier<ArrayPrototype> m_arrayPrototype;
-    WriteBarrier<BooleanPrototype> m_booleanPrototype;
-    WriteBarrier<StringPrototype> m_stringPrototype;
-    WriteBarrier<NumberPrototype> m_numberPrototype;
-    WriteBarrier<DatePrototype> m_datePrototype;
     WriteBarrier<RegExpPrototype> m_regExpPrototype;
-    WriteBarrier<ErrorPrototype> m_errorPrototype;
+    WriteBarrier<JSPromisePrototype> m_promisePrototype;
 
     WriteBarrier<Structure> m_withScopeStructure;
     WriteBarrier<Structure> m_strictEvalActivationStructure;
@@ -136,31 +180,58 @@ protected:
     WriteBarrier<Structure> m_originalArrayStructureForIndexingShape[NumberOfIndexingShapes];
     // Lists the structures we should use during allocation for these particular indexing shapes.
     WriteBarrier<Structure> m_arrayStructureForIndexingShapeDuringAllocation[NumberOfIndexingShapes];
-        
-    WriteBarrier<Structure> m_booleanObjectStructure;
+
     WriteBarrier<Structure> m_callbackConstructorStructure;
     WriteBarrier<Structure> m_callbackFunctionStructure;
     WriteBarrier<Structure> m_callbackObjectStructure;
-    WriteBarrier<Structure> m_dateStructure;
+#if JSC_OBJC_API_ENABLED
+    WriteBarrier<Structure> m_objcCallbackFunctionStructure;
+    WriteBarrier<Structure> m_objcWrapperObjectStructure;
+#endif
     WriteBarrier<Structure> m_nullPrototypeObjectStructure;
-    WriteBarrier<Structure> m_errorStructure;
     WriteBarrier<Structure> m_functionStructure;
     WriteBarrier<Structure> m_boundFunctionStructure;
     WriteBarrier<Structure> m_namedFunctionStructure;
     PropertyOffset m_functionNameOffset;
-    WriteBarrier<Structure> m_numberObjectStructure;
     WriteBarrier<Structure> m_privateNameStructure;
     WriteBarrier<Structure> m_regExpMatchesArrayStructure;
     WriteBarrier<Structure> m_regExpStructure;
-    WriteBarrier<Structure> m_stringObjectStructure;
     WriteBarrier<Structure> m_internalFunctionStructure;
+    
+    WriteBarrier<Structure> m_iteratorResultStructure;
+
+#if ENABLE(PROMISES)
+    WriteBarrier<Structure> m_promiseStructure;
+#endif // ENABLE(PROMISES)
+
+#define DEFINE_STORAGE_FOR_SIMPLE_TYPE(capitalName, lowerName, properName, instanceType, jsName) \
+    WriteBarrier<capitalName ## Prototype> m_ ## lowerName ## Prototype; \
+    WriteBarrier<Structure> m_ ## properName ## Structure;
+
+    FOR_EACH_SIMPLE_BUILTIN_TYPE(DEFINE_STORAGE_FOR_SIMPLE_TYPE)
+
+#undef DEFINE_STORAGE_FOR_SIMPLE_TYPE
+
+    struct TypedArrayData {
+        WriteBarrier<JSObject> prototype;
+        WriteBarrier<Structure> structure;
+    };
+    
+    std::array<TypedArrayData, NUMBER_OF_TYPED_ARRAY_TYPES> m_typedArrays;
         
     void* m_specialPointers[Special::TableSize]; // Special pointers used by the LLInt and JIT.
 
+    String m_name;
+
     Debugger* m_debugger;
+
+#if ENABLE(REMOTE_INSPECTOR)
+    std::unique_ptr<JSGlobalObjectDebuggable> m_inspectorDebuggable;
+#endif
 
     RefPtr<WatchpointSet> m_masqueradesAsUndefinedWatchpoint;
     RefPtr<WatchpointSet> m_havingABadTimeWatchpoint;
+    RefPtr<WatchpointSet> m_varInjectionWatchpoint;
 
     OwnPtr<JSGlobalObjectRareData> m_rareData;
 
@@ -183,39 +254,43 @@ protected:
 public:
     typedef JSSegmentedVariableObject Base;
 
-    static JSGlobalObject* create(JSGlobalData& globalData, Structure* structure)
+    static JSGlobalObject* create(VM& vm, Structure* structure)
     {
-        JSGlobalObject* globalObject = new (NotNull, allocateCell<JSGlobalObject>(globalData.heap)) JSGlobalObject(globalData, structure);
-        globalObject->finishCreation(globalData);
-        globalData.heap.addFinalizer(globalObject, destroy);
+        JSGlobalObject* globalObject = new (NotNull, allocateCell<JSGlobalObject>(vm.heap)) JSGlobalObject(vm, structure);
+        globalObject->finishCreation(vm);
+        vm.heap.addFinalizer(globalObject, destroy);
         return globalObject;
     }
 
-    static JS_EXPORTDATA const ClassInfo s_info;
+    DECLARE_EXPORT_INFO;
 
     bool hasDebugger() const { return m_debugger; }
     bool hasProfiler() const { return globalObjectMethodTable()->supportsProfiling(this); }
 
-    void* m_apiData;
-
 protected:
-    JS_EXPORT_PRIVATE explicit JSGlobalObject(JSGlobalData&, Structure*, const GlobalObjectMethodTable* = 0);
+    JS_EXPORT_PRIVATE explicit JSGlobalObject(VM&, Structure*, const GlobalObjectMethodTable* = 0);
 
-    void finishCreation(JSGlobalData& globalData)
+    void finishCreation(VM& vm)
     {
-        Base::finishCreation(globalData);
-        structure()->setGlobalObject(globalData, this);
+        Base::finishCreation(vm);
+        structure()->setGlobalObject(vm, this);
         m_experimentsEnabled = m_globalObjectMethodTable->javaScriptExperimentsEnabled(this);
         init(this);
     }
 
-    void finishCreation(JSGlobalData& globalData, JSObject* thisValue)
+    void finishCreation(VM& vm, JSObject* thisValue)
     {
-        Base::finishCreation(globalData);
-        structure()->setGlobalObject(globalData, this);
+        Base::finishCreation(vm);
+        structure()->setGlobalObject(vm, this);
         m_experimentsEnabled = m_globalObjectMethodTable->javaScriptExperimentsEnabled(this);
         init(thisValue);
     }
+
+    struct NewGlobalVar {
+        int registerNumber;
+        VariableWatchpointSet* set;
+    };
+    NewGlobalVar addGlobalVar(const Identifier&, ConstantMode);
 
 public:
     JS_EXPORT_PRIVATE ~JSGlobalObject();
@@ -225,20 +300,29 @@ public:
 
     JS_EXPORT_PRIVATE static void visitChildren(JSCell*, SlotVisitor&);
 
-    JS_EXPORT_PRIVATE static bool getOwnPropertySlot(JSCell*, ExecState*, PropertyName, PropertySlot&);
-    JS_EXPORT_PRIVATE static bool getOwnPropertyDescriptor(JSObject*, ExecState*, PropertyName, PropertyDescriptor&);
+    JS_EXPORT_PRIVATE static bool getOwnPropertySlot(JSObject*, ExecState*, PropertyName, PropertySlot&);
     bool hasOwnPropertyForWrite(ExecState*, PropertyName);
     JS_EXPORT_PRIVATE static void put(JSCell*, ExecState*, PropertyName, JSValue, PutPropertySlot&);
 
-    JS_EXPORT_PRIVATE static void putDirectVirtual(JSObject*, ExecState*, PropertyName, JSValue, unsigned attributes);
-
     JS_EXPORT_PRIVATE static void defineGetter(JSObject*, ExecState*, PropertyName, JSObject* getterFunc, unsigned attributes);
     JS_EXPORT_PRIVATE static void defineSetter(JSObject*, ExecState*, PropertyName, JSObject* setterFunc, unsigned attributes);
-    JS_EXPORT_PRIVATE static bool defineOwnProperty(JSObject*, ExecState*, PropertyName, PropertyDescriptor&, bool shouldThrow);
+    JS_EXPORT_PRIVATE static bool defineOwnProperty(JSObject*, ExecState*, PropertyName, const PropertyDescriptor&, bool shouldThrow);
 
     // We use this in the code generator as we perform symbol table
     // lookups prior to initializing the properties
     bool symbolTableHasProperty(PropertyName);
+
+    void addVar(ExecState* exec, const Identifier& propertyName)
+    {
+        if (!hasProperty(exec, propertyName))
+            addGlobalVar(propertyName, IsVariable);
+    }
+    void addConst(ExecState* exec, const Identifier& propertyName)
+    {
+        if (!hasProperty(exec, propertyName))
+            addGlobalVar(propertyName, IsConstant);
+    }
+    void addFunction(ExecState*, const Identifier&, JSValue);
 
     // The following accessors return pristine values, even if a script 
     // replaces the global object's associated property.
@@ -252,14 +336,15 @@ public:
     NativeErrorConstructor* syntaxErrorConstructor() const { return m_syntaxErrorConstructor.get(); }
     NativeErrorConstructor* typeErrorConstructor() const { return m_typeErrorConstructor.get(); }
     NativeErrorConstructor* URIErrorConstructor() const { return m_URIErrorConstructor.get(); }
+    JSPromiseConstructor* promiseConstructor() const { return m_promiseConstructor.get(); }
 
     JSFunction* evalFunction() const { return m_evalFunction.get(); }
     JSFunction* callFunction() const { return m_callFunction.get(); }
     JSFunction* applyFunction() const { return m_applyFunction.get(); }
-    GetterSetter* throwTypeErrorGetterSetter(ExecState* exec)
+    GetterSetter* throwTypeErrorGetterSetter(VM& vm)
     {
         if (!m_throwTypeErrorGetterSetter)
-            createThrowTypeError(exec);
+            createThrowTypeError(vm);
         return m_throwTypeErrorGetterSetter.get();
     }
 
@@ -272,6 +357,7 @@ public:
     DatePrototype* datePrototype() const { return m_datePrototype.get(); }
     RegExpPrototype* regExpPrototype() const { return m_regExpPrototype.get(); }
     ErrorPrototype* errorPrototype() const { return m_errorPrototype.get(); }
+    JSPromisePrototype* promisePrototype() const { return m_promisePrototype.get(); }
 
     Structure* withScopeStructure() const { return m_withScopeStructure.get(); }
     Structure* strictEvalActivationStructure() const { return m_strictEvalActivationStructure.get(); }
@@ -302,6 +388,10 @@ public:
     Structure* callbackConstructorStructure() const { return m_callbackConstructorStructure.get(); }
     Structure* callbackFunctionStructure() const { return m_callbackFunctionStructure.get(); }
     Structure* callbackObjectStructure() const { return m_callbackObjectStructure.get(); }
+#if JSC_OBJC_API_ENABLED
+    Structure* objcCallbackFunctionStructure() const { return m_objcCallbackFunctionStructure.get(); }
+    Structure* objcWrapperObjectStructure() const { return m_objcWrapperObjectStructure.get(); }
+#endif
     Structure* dateStructure() const { return m_dateStructure.get(); }
     Structure* nullPrototypeObjectStructure() const { return m_nullPrototypeObjectStructure.get(); }
     Structure* errorStructure() const { return m_errorStructure.get(); }
@@ -312,9 +402,44 @@ public:
     Structure* numberObjectStructure() const { return m_numberObjectStructure.get(); }
     Structure* privateNameStructure() const { return m_privateNameStructure.get(); }
     Structure* internalFunctionStructure() const { return m_internalFunctionStructure.get(); }
+    Structure* mapStructure() const { return m_mapStructure.get(); }
     Structure* regExpMatchesArrayStructure() const { return m_regExpMatchesArrayStructure.get(); }
     Structure* regExpStructure() const { return m_regExpStructure.get(); }
+    Structure* setStructure() const { return m_setStructure.get(); }
     Structure* stringObjectStructure() const { return m_stringObjectStructure.get(); }
+    Structure* iteratorResultStructure() const { return m_iteratorResultStructure.get(); }
+    static ptrdiff_t iteratorResultStructureOffset() { return OBJECT_OFFSETOF(JSGlobalObject, m_iteratorResultStructure); }
+
+#if ENABLE(PROMISES)
+    Structure* promiseStructure() const { return m_promiseStructure.get(); }
+#endif // ENABLE(PROMISES)
+
+    JS_EXPORT_PRIVATE void setRemoteDebuggingEnabled(bool);
+    JS_EXPORT_PRIVATE bool remoteDebuggingEnabled() const;
+
+    void setName(const String&);
+    const String& name() const { return m_name; }
+
+    JSArrayBufferPrototype* arrayBufferPrototype() const { return m_arrayBufferPrototype.get(); }
+
+#define DEFINE_ACCESSORS_FOR_SIMPLE_TYPE(capitalName, lowerName, properName, instanceType, jsName) \
+    Structure* properName ## Structure() { return m_ ## properName ## Structure.get(); }
+
+    FOR_EACH_SIMPLE_BUILTIN_TYPE(DEFINE_ACCESSORS_FOR_SIMPLE_TYPE)
+
+#undef DEFINE_ACCESSORS_FOR_SIMPLE_TYPE
+
+    Structure* typedArrayStructure(TypedArrayType type) const
+    {
+        return m_typedArrays[toIndex(type)].structure.get();
+    }
+    bool isOriginalTypedArrayStructure(Structure* structure)
+    {
+        TypedArrayType type = structure->classInfo()->typedArrayStorageType;
+        if (type == NotTypedArray)
+            return false;
+        return typedArrayStructure(type) == structure;
+    }
 
     void* actualPointerFor(Special::Pointer pointer)
     {
@@ -324,15 +449,18 @@ public:
 
     WatchpointSet* masqueradesAsUndefinedWatchpoint() { return m_masqueradesAsUndefinedWatchpoint.get(); }
     WatchpointSet* havingABadTimeWatchpoint() { return m_havingABadTimeWatchpoint.get(); }
+    WatchpointSet* varInjectionWatchpoint() { return m_varInjectionWatchpoint.get(); }
         
     bool isHavingABadTime() const
     {
         return m_havingABadTimeWatchpoint->hasBeenInvalidated();
     }
         
-    void haveABadTime(JSGlobalData&);
+    void haveABadTime(VM&);
         
+    bool objectPrototypeIsSane();
     bool arrayPrototypeChainIsSane();
+    bool stringPrototypeChainIsSane();
 
     void setProfileGroup(unsigned value) { createRareDataIfNeeded(); m_rareData->profileGroup = value; }
     unsigned profileGroup() const
@@ -354,9 +482,10 @@ public:
     JS_EXPORT_PRIVATE ExecState* globalExec();
 
     static bool shouldInterruptScript(const JSGlobalObject*) { return true; }
+    static bool shouldInterruptScriptBeforeTimeout(const JSGlobalObject*) { return false; }
     static bool javaScriptExperimentsEnabled(const JSGlobalObject*) { return false; }
 
-    bool isDynamicScope(bool& requiresDynamicChecks) const;
+    void queueMicrotask(PassRefPtr<Microtask>);
 
     bool evalEnabled() const { return m_evalEnabled; }
     const String& evalDisabledErrorMessage() const { return m_evalDisabledErrorMessage; }
@@ -366,14 +495,15 @@ public:
         m_evalDisabledErrorMessage = errorMessage;
     }
 
-    void resetPrototype(JSGlobalData&, JSValue prototype);
+    void resetPrototype(VM&, JSValue prototype);
 
-    JSGlobalData& globalData() const { return *Heap::heap(this)->globalData(); }
+    VM& vm() const { return *Heap::heap(this)->vm(); }
     JSObject* globalThis() const;
+    JS_EXPORT_PRIVATE void setGlobalThis(VM&, JSObject* globalThis);
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(VM& vm, JSValue prototype)
     {
-        return Structure::create(globalData, 0, prototype, TypeInfo(GlobalObjectType, StructureFlags), &s_info);
+        return Structure::create(vm, 0, prototype, TypeInfo(GlobalObjectType, StructureFlags), info());
     }
 
     void registerWeakMap(OpaqueJSWeakObjectMap* map)
@@ -388,11 +518,17 @@ public:
             m_rareData->weakMaps.remove(map);
     }
 
+    OpaqueJSClassDataMap& opaqueJSClassData()
+    {
+        createRareDataIfNeeded();
+        return m_rareData->opaqueJSClassData;
+    }
+
     double weakRandomNumber() { return m_weakRandom.get(); }
     unsigned weakRandomInteger() { return m_weakRandom.getUint32(); }
 
     UnlinkedProgramCodeBlock* createProgramCodeBlock(CallFrame*, ProgramExecutable*, JSObject** exception);
-    UnlinkedEvalCodeBlock* createEvalCodeBlock(CallFrame*, EvalExecutable*, JSObject** exception);
+    UnlinkedEvalCodeBlock* createEvalCodeBlock(CallFrame*, EvalExecutable*);
 
 protected:
 
@@ -412,9 +548,7 @@ protected:
     };
     JS_EXPORT_PRIVATE void addStaticGlobals(GlobalPropertyInfo*, int count);
 
-    JS_EXPORT_PRIVATE static JSC::JSObject* toThisObject(JSC::JSCell*, JSC::ExecState*);
-
-    JS_EXPORT_PRIVATE void setGlobalThis(JSGlobalData&, JSObject* globalThis);
+    JS_EXPORT_PRIVATE static JSC::JSValue toThis(JSC::JSCell*, JSC::ExecState*, ECMAMode);
 
 private:
     friend class LLIntOffsetsExtractor;
@@ -423,7 +557,7 @@ private:
     JS_EXPORT_PRIVATE void init(JSObject* thisValue);
     void reset(JSValue prototype);
 
-    void createThrowTypeError(ExecState*);
+    void createThrowTypeError(VM&);
 
     JS_EXPORT_PRIVATE static void clearRareData(JSCell*);
 };
@@ -438,7 +572,7 @@ inline JSGlobalObject* asGlobalObject(JSValue value)
 
 inline bool JSGlobalObject::hasOwnPropertyForWrite(ExecState* exec, PropertyName propertyName)
 {
-    PropertySlot slot;
+    PropertySlot slot(this);
     if (Base::getOwnPropertySlot(this, exec, propertyName, slot))
         return true;
     bool slotIsWriteable;
@@ -451,20 +585,9 @@ inline bool JSGlobalObject::symbolTableHasProperty(PropertyName propertyName)
     return !entry.isNull();
 }
 
-inline JSGlobalObject* ExecState::dynamicGlobalObject()
-{
-    if (this == lexicalGlobalObject()->globalExec())
-        return lexicalGlobalObject();
-
-    // For any ExecState that's not a globalExec, the 
-    // dynamic global object must be set since code is running
-    ASSERT(globalData().dynamicGlobalObject);
-    return globalData().dynamicGlobalObject;
-}
-
 inline JSArray* constructEmptyArray(ExecState* exec, ArrayAllocationProfile* profile, JSGlobalObject* globalObject, unsigned initialLength = 0)
 {
-    return ArrayAllocationProfile::updateLastAllocationFor(profile, JSArray::create(exec->globalData(), initialLength >= MIN_SPARSE_ARRAY_INDEX ? globalObject->arrayStructureForIndexingTypeDuringAllocation(ArrayWithArrayStorage) : globalObject->arrayStructureForProfileDuringAllocation(profile), initialLength));
+    return ArrayAllocationProfile::updateLastAllocationFor(profile, JSArray::create(exec->vm(), initialLength >= MIN_SPARSE_ARRAY_INDEX ? globalObject->arrayStructureForIndexingTypeDuringAllocation(ArrayWithArrayStorage) : globalObject->arrayStructureForProfileDuringAllocation(profile), initialLength));
 }
 
 inline JSArray* constructEmptyArray(ExecState* exec, ArrayAllocationProfile* profile, unsigned initialLength = 0)
@@ -492,24 +615,14 @@ inline JSArray* constructArray(ExecState* exec, ArrayAllocationProfile* profile,
     return constructArray(exec, profile, exec->lexicalGlobalObject(), values, length);
 }
 
-class DynamicGlobalObjectScope {
-    WTF_MAKE_NONCOPYABLE(DynamicGlobalObjectScope);
-public:
-    JS_EXPORT_PRIVATE DynamicGlobalObjectScope(JSGlobalData&, JSGlobalObject*);
-
-    ~DynamicGlobalObjectScope()
-    {
-        m_dynamicGlobalObjectSlot = m_savedDynamicGlobalObject;
-    }
-
-private:
-    JSGlobalObject*& m_dynamicGlobalObjectSlot;
-    JSGlobalObject* m_savedDynamicGlobalObject;
-};
-
-inline bool JSGlobalObject::isDynamicScope(bool&) const
+inline JSArray* constructArrayNegativeIndexed(ExecState* exec, ArrayAllocationProfile* profile, JSGlobalObject* globalObject, const JSValue* values, unsigned length)
 {
-    return true;
+    return ArrayAllocationProfile::updateLastAllocationFor(profile, constructArrayNegativeIndexed(exec, globalObject->arrayStructureForProfileDuringAllocation(profile), values, length));
+}
+
+inline JSArray* constructArrayNegativeIndexed(ExecState* exec, ArrayAllocationProfile* profile, const JSValue* values, unsigned length)
+{
+    return constructArrayNegativeIndexed(exec, profile, exec->lexicalGlobalObject(), values, length);
 }
 
 inline JSObject* JSScope::globalThis()

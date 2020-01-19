@@ -42,7 +42,7 @@ public:
     {
     }
 
-    ResourceResponse(const KURL& url, const String& mimeType, long long expectedLength, const String& textEncodingName, const String& filename)
+    ResourceResponse(const URL& url, const String& mimeType, long long expectedLength, const String& textEncodingName, const String& filename)
         : ResourceResponseBase(url, mimeType, expectedLength, textEncodingName, filename)
         , m_soupFlags(static_cast<SoupMessageFlags>(0))
         , m_tlsErrors(static_cast<GTlsCertificateFlags>(0))
@@ -72,6 +72,8 @@ public:
 
     GTlsCertificateFlags soupMessageTLSErrors() const { return m_tlsErrors; }
     void setSoupMessageTLSErrors(GTlsCertificateFlags tlsErrors) { m_tlsErrors = tlsErrors; }
+
+    bool platformResponseIsUpToDate() const { return false; }
 
 private:
     friend class ResourceResponseBase;

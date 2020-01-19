@@ -41,6 +41,7 @@ class Element;
 class InlineBox;
 class Node;
 class Range;
+class RenderElement;
 class RenderObject;
 class Text;
 
@@ -127,7 +128,7 @@ public:
     // will be treated as before ignoredNode (thus node() is really after the position, not containing it).
     Node* deprecatedNode() const { return m_anchorNode.get(); }
 
-    Document* document() const { return m_anchorNode ? m_anchorNode->document() : 0; }
+    Document* document() const { return m_anchorNode ? &m_anchorNode->document() : 0; }
     Element* rootEditableElement() const
     {
         Node* container = containerNode();
@@ -144,7 +145,6 @@ public:
     bool isOrphan() const { return m_anchorNode && !m_anchorNode->inDocument(); }
 
     Element* element() const;
-    PassRefPtr<CSSComputedStyleDeclaration> computedStyle() const;
 
     // Move up or down the DOM by one position.
     // Offsets are computed using render text for nodes that have renderers - but note that even when
@@ -178,7 +178,6 @@ public:
     Position downstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
     
     bool isCandidate() const;
-    bool inRenderedText() const;
     bool isRenderedCharacter() const;
     bool rendersInDifferentPosition(const Position&) const;
 
@@ -187,11 +186,14 @@ public:
 
     TextDirection primaryDirection() const;
 
-    static bool hasRenderedNonAnonymousDescendantsWithHeight(RenderObject*);
+    static bool hasRenderedNonAnonymousDescendantsWithHeight(const RenderElement&);
     static bool nodeIsUserSelectNone(Node*);
 #if ENABLE(USERSELECT_ALL)
     static bool nodeIsUserSelectAll(const Node*);
     static Node* rootUserSelectAllForNode(Node*);
+#else
+    static bool nodeIsUserSelectAll(const Node*) { return false; }
+    static Node* rootUserSelectAllForNode(Node*) { return 0; }
 #endif
     static ContainerNode* findParent(const Node*);
     
@@ -205,9 +207,6 @@ public:
     
 private:
     int offsetForPositionAfterAnchor() const;
-
-    int renderedOffset() const;
-
     
     Position previousCharacterPosition(EAffinity) const;
     Position nextCharacterPosition(EAffinity) const;
@@ -238,6 +237,30 @@ inline bool operator==(const Position& a, const Position& b)
 inline bool operator!=(const Position& a, const Position& b)
 {
     return !(a == b);
+}
+
+inline bool operator<(const Position& a, const Position& b)
+{
+    if (a.isNull() || b.isNull())
+        return false;
+    if (a.anchorNode() == b.anchorNode())
+        return a.deprecatedEditingOffset() < b.deprecatedEditingOffset();
+    return b.anchorNode()->compareDocumentPosition(a.anchorNode()) == Node::DOCUMENT_POSITION_PRECEDING;
+}
+
+inline bool operator>(const Position& a, const Position& b) 
+{
+    return !a.isNull() && !b.isNull() && a != b && b < a;
+}
+
+inline bool operator>=(const Position& a, const Position& b) 
+{
+    return !a.isNull() && !b.isNull() && (a == b || a > b);
+}
+
+inline bool operator<=(const Position& a, const Position& b) 
+{
+    return !a.isNull() && !b.isNull() && (a == b || a < b);
 }
 
 // We define position creation functions to make callsites more readable.

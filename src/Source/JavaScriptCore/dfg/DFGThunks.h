@@ -34,21 +34,11 @@
 
 namespace JSC {
 
-class JSGlobalData;
+class VM;
 
 namespace DFG {
 
-MacroAssemblerCodeRef osrExitGenerationThunkGenerator(JSGlobalData*);
-
-MacroAssemblerCodeRef throwExceptionFromCallSlowPathGenerator(JSGlobalData*);
-
-MacroAssemblerCodeRef linkCallThunkGenerator(JSGlobalData*);
-MacroAssemblerCodeRef linkConstructThunkGenerator(JSGlobalData*);
-
-MacroAssemblerCodeRef linkClosureCallThunkGenerator(JSGlobalData*);
-
-MacroAssemblerCodeRef virtualCallThunkGenerator(JSGlobalData*);
-MacroAssemblerCodeRef virtualConstructThunkGenerator(JSGlobalData*);
+MacroAssemblerCodeRef osrExitGenerationThunkGenerator(VM*);
 
 } } // namespace JSC::DFG
 

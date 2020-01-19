@@ -35,10 +35,10 @@
 #include "FloatConversion.h"
 #include "RenderObject.h"
 #include "SVGAnimateElement.h"
+#include "SVGElement.h"
 #include "SVGElementInstance.h"
 #include "SVGNames.h"
 #include "SVGParserUtilities.h"
-#include "SVGStyledElement.h"
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
@@ -51,7 +51,7 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGAnimationElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
 END_REGISTER_ANIMATED_PROPERTIES
 
-SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document* document)
+SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document& document)
     : SVGSMILElement(tagName, document)
     , m_fromPropertyValueType(RegularPropertyValue)
     , m_toPropertyValueType(RegularPropertyValue)
@@ -94,7 +94,7 @@ static void parseKeySplines(const String& parse, Vector<UnitBezier>& result)
     result.clear();
     if (parse.isEmpty())
         return;
-    const UChar* cur = parse.characters();
+    const UChar* cur = parse.deprecatedCharacters();
     const UChar* end = cur + parse.length();
 
     skipOptionalSVGSpaces(cur, end);
@@ -156,7 +156,7 @@ bool SVGAnimationElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::toAttr);
         supportedAttributes.add(SVGNames::byAttr);
     }
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGAnimationElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -351,13 +351,9 @@ bool SVGAnimationElement::isAccumulated() const
     return value == sum && animationMode() != ToAnimation;
 }
 
-bool SVGAnimationElement::isTargetAttributeCSSProperty(SVGElement* targetElement, const QualifiedName& attributeName)
+bool SVGAnimationElement::isTargetAttributeCSSProperty(SVGElement*, const QualifiedName& attributeName)
 {
-    ASSERT(targetElement);
-    if (!targetElement->isStyled())
-        return false;
-
-    return SVGStyledElement::isAnimatableCSSProperty(attributeName);
+    return SVGElement::isAnimatableCSSProperty(attributeName);
 }
 
 SVGAnimationElement::ShouldApplyAnimation SVGAnimationElement::shouldApplyAnimation(SVGElement* targetElement, const QualifiedName& attributeName)
@@ -501,8 +497,7 @@ void SVGAnimationElement::currentValuesForValuesAnimation(float percent, float& 
 
     CalcMode calcMode = this->calcMode();
     if (hasTagName(SVGNames::animateTag) || hasTagName(SVGNames::animateColorTag)) {
-        SVGAnimateElement* animateElement = static_cast<SVGAnimateElement*>(this);
-        AnimatedPropertyType attributeType = animateElement->determineAnimatedPropertyType(targetElement());
+        AnimatedPropertyType attributeType = toSVGAnimateElement(this)->determineAnimatedPropertyType(targetElement());
         // Fall back to discrete animations for Strings.
         if (attributeType == AnimatedBoolean
             || attributeType == AnimatedEnumeration
@@ -542,7 +537,7 @@ void SVGAnimationElement::currentValuesForValuesAnimation(float percent, float& 
         --index;
     from = m_values[index];
     to = m_values[index + 1];
-    ASSERT(toPercent > fromPercent);
+    ASSERT_WITH_SECURITY_IMPLICATION(toPercent > fromPercent);
     effectivePercent = (percent - fromPercent) / (toPercent - fromPercent);
 
     if (calcMode == CalcModeSpline) {
@@ -565,10 +560,11 @@ void SVGAnimationElement::startedActiveInterval()
     AnimationMode animationMode = this->animationMode();
     CalcMode calcMode = this->calcMode();
     if (calcMode == CalcModeSpline) {
-        unsigned splinesCount = m_keySplines.size() + 1;
-        if ((fastHasAttribute(SVGNames::keyPointsAttr) && m_keyPoints.size() != splinesCount)
-            || (animationMode == ValuesAnimation && m_values.size() != splinesCount)
-            || (fastHasAttribute(SVGNames::keyTimesAttr) && m_keyTimes.size() != splinesCount))
+        unsigned splinesCount = m_keySplines.size();
+        if (!splinesCount
+            || (fastHasAttribute(SVGNames::keyPointsAttr) && m_keyPoints.size() - 1 != splinesCount)
+            || (animationMode == ValuesAnimation && m_values.size() - 1 != splinesCount)
+            || (fastHasAttribute(SVGNames::keyTimesAttr) && m_keyTimes.size() - 1 != splinesCount))
             return;
     }
 
@@ -632,14 +628,14 @@ void SVGAnimationElement::updateAnimation(float percent, unsigned repeatCount, S
     calculateAnimatedValue(effectivePercent, repeatCount, resultElement);
 }
 
-void SVGAnimationElement::computeCSSPropertyValue(SVGElement* element, CSSPropertyID id, String& value)
+void SVGAnimationElement::computeCSSPropertyValue(SVGElement* element, CSSPropertyID id, String& valueString)
 {
     ASSERT(element);
-    ASSERT(element->isStyled());
 
     // Don't include any properties resulting from CSS Transitions/Animations or SMIL animations, as we want to retrieve the "base value".
     element->setUseOverrideComputedStyle(true);
-    value = CSSComputedStyleDeclaration::create(element)->getPropertyValue(id);
+    RefPtr<CSSValue> value = ComputedStyleExtractor(element).propertyValue(id);
+    valueString = value ? value->cssText() : String();
     element->setUseOverrideComputedStyle(false);
 }
 
@@ -653,20 +649,17 @@ void SVGAnimationElement::adjustForInheritance(SVGElement* targetElement, const 
     if (!parent || !parent->isSVGElement())
         return;
 
-    SVGElement* svgParent = static_cast<SVGElement*>(parent);
-    if (!svgParent->isStyled())
-        return;
+    SVGElement* svgParent = toSVGElement(parent);
     computeCSSPropertyValue(svgParent, cssPropertyID(attributeName.localName()), value);
 }
 
-static bool inheritsFromProperty(SVGElement* targetElement, const QualifiedName& attributeName, const String& value)
+static bool inheritsFromProperty(SVGElement*, const QualifiedName& attributeName, const String& value)
 {
-    ASSERT(targetElement);
     DEFINE_STATIC_LOCAL(const AtomicString, inherit, ("inherit", AtomicString::ConstructFromLiteral));
     
-    if (value.isEmpty() || value != inherit || !targetElement->isStyled())
+    if (value.isEmpty() || value != inherit)
         return false;
-    return SVGStyledElement::isAnimatableCSSProperty(attributeName);
+    return SVGElement::isAnimatableCSSProperty(attributeName);
 }
 
 void SVGAnimationElement::determinePropertyValueTypes(const String& from, const String& to)

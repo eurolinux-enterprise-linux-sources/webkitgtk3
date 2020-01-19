@@ -30,6 +30,7 @@
 
 #include "APIObject.h"
 #include "MessageReceiver.h"
+#include "WebContextSupplement.h"
 #include "WebNetworkInfoProvider.h"
 #include <wtf/Forward.h>
 
@@ -38,28 +39,32 @@ namespace WebKit {
 class WebContext;
 class WebNetworkInfo;
 
-class WebNetworkInfoManagerProxy : public APIObject, private CoreIPC::MessageReceiver {
+class WebNetworkInfoManagerProxy : public API::ObjectImpl<API::Object::Type::NetworkInfoManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeNetworkInfoManager;
+    static const char* supplementName();
 
     static PassRefPtr<WebNetworkInfoManagerProxy> create(WebContext*);
     virtual ~WebNetworkInfoManagerProxy();
 
-    void invalidate();
-    void clearContext() { m_context = 0; }
-
-    void initializeProvider(const WKNetworkInfoProvider*);
+    void initializeProvider(const WKNetworkInfoProviderBase*);
 
     void providerDidChangeNetworkInformation(const WTF::AtomicString& eventType, WebNetworkInfo*);
+
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebNetworkInfoManagerProxy(WebContext*);
 
-    virtual Type type() const { return APIType; }
+    // WebContextSupplement
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
-    virtual void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
+    virtual void didReceiveSyncMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&) override;
 
     void startUpdating();
     void stopUpdating();

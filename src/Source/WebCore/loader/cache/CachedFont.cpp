@@ -27,23 +27,17 @@
 #include "config.h"
 #include "CachedFont.h"
 
-#if !PLATFORM(WIN_CAIRO) && !PLATFORM(WX)
-#define STORE_FONT_CUSTOM_PLATFORM_DATA
-#endif
-
-#include "CachedResourceClient.h"
+#include "CachedFontClient.h"
 #include "CachedResourceClientWalker.h"
 #include "CachedResourceLoader.h"
+#include "FontCustomPlatformData.h"
 #include "FontPlatformData.h"
 #include "MemoryCache.h"
 #include "ResourceBuffer.h"
+#include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
-#include "WebCoreMemoryInstrumentation.h"
+#include "WOFFFileFormat.h"
 #include <wtf/Vector.h>
-
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
-#include "FontCustomPlatformData.h"
-#endif
 
 #if ENABLE(SVG_FONTS)
 #include "NodeList.h"
@@ -58,16 +52,13 @@ namespace WebCore {
 
 CachedFont::CachedFont(const ResourceRequest& resourceRequest)
     : CachedResource(resourceRequest, FontResource)
-    , m_fontData(0)
     , m_loadInitiated(false)
+    , m_hasCreatedFontDataWrappingResource(false)
 {
 }
 
 CachedFont::~CachedFont()
 {
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
-    delete m_fontData;
-#endif
 }
 
 void CachedFont::load(CachedResourceLoader*, const ResourceLoaderOptions& options)
@@ -84,11 +75,8 @@ void CachedFont::didAddClient(CachedResourceClient* c)
         static_cast<CachedFontClient*>(c)->fontLoaded(this);
 }
 
-void CachedFont::data(PassRefPtr<ResourceBuffer> data, bool allDataReceived)
+void CachedFont::finishLoading(ResourceBuffer* data)
 {
-    if (!allDataReceived)
-        return;
-
     m_data = data;
     setEncodedSize(m_data.get() ? m_data->size() : 0);
     setLoading(false);
@@ -105,14 +93,29 @@ void CachedFont::beginLoadIfNeeded(CachedResourceLoader* dl)
 
 bool CachedFont::ensureCustomFontData()
 {
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
     if (!m_fontData && !errorOccurred() && !isLoading() && m_data) {
-        m_fontData = createFontCustomPlatformData(m_data.get()->sharedBuffer());
-        if (!m_fontData)
+        SharedBuffer* buffer = m_data.get()->sharedBuffer();
+        ASSERT(buffer);
+
+        RefPtr<SharedBuffer> sfntBuffer;
+
+        bool fontIsWOFF = isWOFF(buffer);
+        if (fontIsWOFF) {
+            Vector<char> sfnt;
+            if (convertWOFFToSfnt(buffer, sfnt)) {
+                sfntBuffer = SharedBuffer::adoptVector(sfnt);
+                buffer = sfntBuffer.get();
+            } else
+                buffer = nullptr;
+        }
+
+        m_fontData = buffer ? createFontCustomPlatformData(*buffer) : nullptr;
+        if (m_fontData)
+            m_hasCreatedFontDataWrappingResource = !fontIsWOFF;
+        else
             setStatus(DecodeError);
     }
-#endif
-    return m_fontData;
+    return m_fontData.get();
 }
 
 FontPlatformData CachedFont::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation, FontWidthVariant widthVariant, FontRenderingMode renderingMode)
@@ -121,19 +124,15 @@ FontPlatformData CachedFont::platformDataFromCustomData(float size, bool bold, b
     if (m_externalSVGDocument)
         return FontPlatformData(size, bold, italic);
 #endif
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
     ASSERT(m_fontData);
     return m_fontData->fontPlatformData(static_cast<int>(size), bold, italic, orientation, widthVariant, renderingMode);
-#else
-    return FontPlatformData();
-#endif
 }
 
 #if ENABLE(SVG_FONTS)
 bool CachedFont::ensureSVGFontData()
 {
     if (!m_externalSVGDocument && !errorOccurred() && !isLoading() && m_data) {
-        m_externalSVGDocument = SVGDocument::create(0, KURL());
+        m_externalSVGDocument = SVGDocument::create(0, URL());
 
         RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
         String svgSource = decoder->decode(m_data->data(), m_data->size());
@@ -161,15 +160,15 @@ SVGFontElement* CachedFont::getSVGFontById(const String& fontName) const
 #ifndef NDEBUG
     for (unsigned i = 0; i < listLength; ++i) {
         ASSERT(list->item(i));
-        ASSERT(list->item(i)->hasTagName(SVGNames::fontTag));
+        ASSERT(isSVGFontElement(list->item(i)));
     }
 #endif
 
     if (fontName.isEmpty())
-        return static_cast<SVGFontElement*>(list->item(0));
+        return toSVGFontElement(list->item(0));
 
     for (unsigned i = 0; i < listLength; ++i) {
-        SVGFontElement* element = static_cast<SVGFontElement*>(list->item(i));
+        SVGFontElement* element = toSVGFontElement(list->item(i));
         if (element->getIdAttribute() == fontName)
             return element;
     }
@@ -180,12 +179,7 @@ SVGFontElement* CachedFont::getSVGFontById(const String& fontName) const
 
 void CachedFont::allClientsRemoved()
 {
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
-    if (m_fontData) {
-        delete m_fontData;
-        m_fontData = 0;
-    }
-#endif
+    m_fontData = nullptr;
 }
 
 void CachedFont::checkNotify()
@@ -198,16 +192,13 @@ void CachedFont::checkNotify()
          c->fontLoaded(this);
 }
 
-void CachedFont::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+bool CachedFont::mayTryReplaceEncodedData() const
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceFont);
-    CachedResource::reportMemoryUsage(memoryObjectInfo);
-#if ENABLE(SVG_FONTS)
-    info.addMember(m_externalSVGDocument, "externalSVGDocument");
-#endif
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
-    info.addMember(m_fontData, "fontData");
-#endif
+    // If a FontCustomPlatformData has ever been constructed to wrap the internal resource buffer then it still might be in use somewhere.
+    // That platform font object might directly reference the encoded data buffer behind this CachedFont,
+    // so replacing it is unsafe.
+
+    return !m_hasCreatedFontDataWrappingResource;
 }
 
 }

@@ -31,6 +31,7 @@
 #include "CSSValuePool.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
+#include "StyleProperties.h"
 #include <wtf/text/StringBuilder.h>
 
 using namespace WTF;
@@ -39,13 +40,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLFontElement::HTMLFontElement(const QualifiedName& tagName, Document* document)
+HTMLFontElement::HTMLFontElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(fontTag));
 }
 
-PassRefPtr<HTMLFontElement> HTMLFontElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLFontElement> HTMLFontElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLFontElement(tagName, document));
 }
@@ -70,7 +71,7 @@ static bool parseFontSize(const CharacterType* characters, unsigned length, int&
     // Step 4
     if (position == end)
         return false;
-    ASSERT(position < end);
+    ASSERT_WITH_SECURITY_IMPLICATION(position < end);
 
     // Step 5
     enum {
@@ -143,7 +144,7 @@ static bool parseFontSize(const String& input, int& size)
     return parseFontSize(input.characters16(), input.length(), size);
 }
 
-bool HTMLFontElement::cssValueFromFontSizeNumber(const String& s, int& size)
+bool HTMLFontElement::cssValueFromFontSizeNumber(const String& s, CSSValueID& size)
 {
     int num = 0;
     if (!parseFontSize(s, num))
@@ -185,19 +186,19 @@ bool HTMLFontElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLFontElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLFontElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == sizeAttr) {
-        int size = 0;
-        if (cssValueFromFontSizeNumber(attribute.value(), size))
+    if (name == sizeAttr) {
+        CSSValueID size = CSSValueInvalid;
+        if (cssValueFromFontSizeNumber(value, size))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyFontSize, size);
-    } else if (attribute.name() == colorAttr)
-        addHTMLColorToStyle(style, CSSPropertyColor, attribute.value());
-    else if (attribute.name() == faceAttr) {
-        if (RefPtr<CSSValueList> fontFaceValue = cssValuePool().createFontFaceValue(attribute.value()))
-            style->setProperty(CSSProperty(CSSPropertyFontFamily, fontFaceValue.release()));
+    } else if (name == colorAttr)
+        addHTMLColorToStyle(style, CSSPropertyColor, value);
+    else if (name == faceAttr) {
+        if (RefPtr<CSSValueList> fontFaceValue = cssValuePool().createFontFaceValue(value))
+            style.setProperty(CSSProperty(CSSPropertyFontFamily, fontFaceValue.release()));
     } else
-        HTMLElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 }

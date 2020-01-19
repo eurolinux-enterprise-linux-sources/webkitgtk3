@@ -32,19 +32,22 @@
 #include "Color.h"
 #include "FloatQuad.h"
 #include "LayoutRect.h"
-
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
+namespace Inspector {
+class InspectorObject;
+class InspectorValue;
+}
+
 namespace WebCore {
 
 class Color;
 class GraphicsContext;
 class InspectorClient;
-class InspectorValue;
 class IntRect;
 class Node;
 class Page;
@@ -59,6 +62,7 @@ public:
     Color margin;
     bool showInfo;
     bool showRulers;
+    bool usePageCoordinates;
 };
 
 enum HighlightType {
@@ -81,6 +85,7 @@ struct Highlight {
         borderColor = highlightConfig.border;
         marginColor = highlightConfig.margin;
         showRulers = highlightConfig.showRulers;
+        usePageCoordinates = highlightConfig.usePageCoordinates;
     }
 
     Color contentColor;
@@ -94,54 +99,51 @@ struct Highlight {
     HighlightType type;
     Vector<FloatQuad> quads;
     bool showRulers;
+    bool usePageCoordinates;
 };
 
 class InspectorOverlay {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<InspectorOverlay> create(Page* page, InspectorClient* client)
-    {
-        return adoptPtr(new InspectorOverlay(page, client));
-    }
+    InspectorOverlay(Page&, InspectorClient*);
     ~InspectorOverlay();
 
     void update();
     void paint(GraphicsContext&);
     void drawOutline(GraphicsContext*, const LayoutRect&, const Color&);
     void getHighlight(Highlight*) const;
-    void resize(const IntSize&);
 
     void setPausedInDebuggerMessage(const String*);
 
     void hideHighlight();
     void highlightNode(Node*, const HighlightConfig&);
-    void highlightRect(PassOwnPtr<IntRect>, const HighlightConfig&);
+    void highlightQuad(PassOwnPtr<FloatQuad>, const HighlightConfig&);
 
     Node* highlightedNode() const;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    void didSetSearchingForNode(bool enabled);
+
+    PassRefPtr<Inspector::InspectorObject> buildObjectForHighlightedNode() const;
 
     void freePage();
 private:
-    InspectorOverlay(Page*, InspectorClient*);
-
     void drawGutter();
     void drawNodeHighlight();
-    void drawRectHighlight();
+    void drawQuadHighlight();
     void drawPausedInDebuggerMessage();
     Page* overlayPage();
     void reset(const IntSize& viewportSize, const IntSize& frameViewFullSize);
     void evaluateInOverlay(const String& method, const String& argument);
-    void evaluateInOverlay(const String& method, PassRefPtr<InspectorValue> argument);
+    void evaluateInOverlay(const String& method, PassRefPtr<Inspector::InspectorValue> argument);
 
-    Page* m_page;
+    Page& m_page;
     InspectorClient* m_client;
     String m_pausedInDebuggerMessage;
     RefPtr<Node> m_highlightNode;
     HighlightConfig m_nodeHighlightConfig;
-    OwnPtr<IntRect> m_highlightRect;
+    OwnPtr<FloatQuad> m_highlightQuad;
     OwnPtr<Page> m_overlayPage;
-    HighlightConfig m_rectHighlightConfig;
+    HighlightConfig m_quadHighlightConfig;
     IntSize m_size;
 };
 

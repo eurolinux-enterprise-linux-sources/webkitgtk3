@@ -32,6 +32,7 @@
 #include "Document.h"
 #include "JSDOMBinding.h"
 #include "JSMainThreadExecState.h"
+#include "JSMainThreadExecStateInstrumentation.h"
 
 using namespace JSC;
     
@@ -70,19 +71,13 @@ JSValue JSCallbackData::invokeCallback(JSValue thisValue, MarkedArgumentBuffer& 
     if (!context)
         return JSValue();
 
-    globalObject()->globalData().timeoutChecker.start();
     InspectorInstrumentationCookie cookie = JSMainThreadExecState::instrumentFunctionCall(context, callType, callData);
 
-    bool contextIsDocument = context->isDocument();
-    JSValue result = contextIsDocument
+    JSValue result = context->isDocument()
         ? JSMainThreadExecState::call(exec, function, callType, callData, thisValue, args)
         : JSC::call(exec, function, callType, callData, thisValue, args);
 
     InspectorInstrumentation::didCallFunction(cookie);
-    globalObject()->globalData().timeoutChecker.stop();
-
-    if (contextIsDocument)
-        Document::updateStyleForAllDocuments();
 
     if (exec->hadException()) {
         reportCurrentException(exec);

@@ -43,7 +43,7 @@ public:
     explicit DownloadProxyMap(ChildProcessProxy*);
     ~DownloadProxyMap();
 
-    DownloadProxy* createDownloadProxy(WebContext*);
+    DownloadProxy* createDownloadProxy(WebContext&);
     void downloadFinished(DownloadProxy*);
 
     bool isEmpty() const { return m_downloads.isEmpty(); }
@@ -52,7 +52,7 @@ public:
 
 private:
     ChildProcessProxy* m_process;
-    HashMap<uint64_t, RefPtr<DownloadProxy> > m_downloads;
+    HashMap<uint64_t, RefPtr<DownloadProxy>> m_downloads;
 };
 
 } // namespace WebKit

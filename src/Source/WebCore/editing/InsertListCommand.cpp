@@ -25,14 +25,14 @@
 
 #include "config.h"
 #include "Element.h"
+#include "ElementTraversal.h"
 #include "InsertListCommand.h"
-#include "DocumentFragment.h"
 #include "ExceptionCodePlaceholder.h"
 #include "htmlediting.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "TextIterator.h"
-#include "visible_units.h"
+#include "VisibleUnits.h"
 
 namespace WebCore {
 
@@ -46,7 +46,7 @@ static Node* enclosingListChild(Node* node, Node* listNode)
     return listChild;
 }
 
-PassRefPtr<HTMLElement> InsertListCommand::insertList(Document* document, Type type)
+PassRefPtr<HTMLElement> InsertListCommand::insertList(Document& document, Type type)
 {
     RefPtr<InsertListCommand> insertCommand = create(document, type);
     insertCommand->apply();
@@ -70,10 +70,13 @@ PassRefPtr<HTMLElement> InsertListCommand::mergeWithNeighboringLists(PassRefPtr<
     if (canMergeLists(previousList, list.get()))
         mergeIdenticalElements(previousList, list);
 
-    if (!list || !list->nextElementSibling() || !list->nextElementSibling()->isHTMLElement())
+    if (!list)
+        return 0;
+    Element* sibling = ElementTraversal::nextSibling(list.get());
+    if (!sibling || !sibling->isHTMLElement())
         return list.release();
 
-    RefPtr<HTMLElement> nextList = toHTMLElement(list->nextElementSibling());
+    RefPtr<HTMLElement> nextList = toHTMLElement(sibling);
     if (canMergeLists(list.get(), nextList.get())) {
         mergeIdenticalElements(list, nextList);
         return nextList.release();
@@ -99,8 +102,9 @@ bool InsertListCommand::selectionHasListOfType(const VisibleSelection& selection
     return true;
 }
 
-InsertListCommand::InsertListCommand(Document* document, Type type) 
-    : CompositeEditCommand(document), m_type(type)
+InsertListCommand::InsertListCommand(Document& document, Type type)
+    : CompositeEditCommand(document)
+    , m_type(type)
 {
 }
 
@@ -219,7 +223,7 @@ void InsertListCommand::doApplyForSingleParagraph(bool forceCreateList, const Qu
             insertNodeBefore(newList, listNode);
 
             Node* firstChildInList = enclosingListChild(VisiblePosition(firstPositionInNode(listNode.get())).deepEquivalent().deprecatedNode(), listNode.get());
-            Node* outerBlock = firstChildInList->isBlockFlow() ? firstChildInList : listNode.get();
+            Node* outerBlock = isBlockFlowElement(firstChildInList) ? firstChildInList : listNode.get();
             
             moveParagraphWithClones(firstPositionInNode(listNode.get()), lastPositionInNode(listNode.get()), newList.get(), outerBlock);
 
@@ -376,9 +380,11 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         // We inserted the list at the start of the content we're about to move
         // Update the start of content, so we don't try to move the list into itself.  bug 19066
         // Layout is necessary since start's node's inline renderers may have been destroyed by the insertion
+        // The end of the content may have changed after the insertion and layout so update it as well.
         if (insertionPos == start.deepEquivalent()) {
-            listElement->document()->updateLayoutIgnorePendingStylesheets();
+            listElement->document().updateLayoutIgnorePendingStylesheets();
             start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
+            end = endOfParagraph(start, CanSkipOverEditingBoundary);
         }
     }
 

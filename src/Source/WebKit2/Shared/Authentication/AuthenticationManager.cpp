@@ -36,7 +36,6 @@
 #include "WebPageProxyMessages.h"
 #include <WebCore/AuthenticationChallenge.h>
 #include <WebCore/AuthenticationClient.h>
-#include <wtf/Atomics.h>
 
 #if ENABLE(NETWORK_PROCESS)
 #include "NetworkProcessProxyMessages.h"
@@ -48,8 +47,10 @@ namespace WebKit {
 
 static uint64_t generateAuthenticationChallengeID()
 {
+    ASSERT(isMainThread());
+
     static int64_t uniqueAuthenticationChallengeID;
-    return atomicIncrement(&uniqueAuthenticationChallengeID);
+    return ++uniqueAuthenticationChallengeID;
 }
 
 const char* AuthenticationManager::supplementName()
@@ -60,11 +61,13 @@ const char* AuthenticationManager::supplementName()
 AuthenticationManager::AuthenticationManager(ChildProcess* process)
     : m_process(process)
 {
-    m_process->addMessageReceiver(Messages::AuthenticationManager::messageReceiverName(), this);
+    m_process->addMessageReceiver(Messages::AuthenticationManager::messageReceiverName(), *this);
 }
 
 uint64_t AuthenticationManager::establishIdentifierForChallenge(const WebCore::AuthenticationChallenge& authenticationChallenge)
 {
+    ASSERT(isMainThread());
+
     uint64_t challengeID = generateAuthenticationChallengeID();
     m_challenges.set(challengeID, authenticationChallenge);
     return challengeID;
@@ -94,19 +97,21 @@ void AuthenticationManager::didReceiveAuthenticationChallenge(Download* download
 }
 
 // Currently, only Mac knows how to respond to authentication challenges with certificate info.
-#if !USE(SECURITY_FRAMEWORK)
-bool AuthenticationManager::tryUsePlatformCertificateInfoForChallenge(const WebCore::AuthenticationChallenge&, const PlatformCertificateInfo&)
+#if !HAVE(SEC_IDENTITY)
+bool AuthenticationManager::tryUseCertificateInfoForChallenge(const WebCore::AuthenticationChallenge&, const CertificateInfo&)
 {
     return false;
 }
 #endif
 
-void AuthenticationManager::useCredentialForChallenge(uint64_t challengeID, const Credential& credential, const PlatformCertificateInfo& certificateInfo)
+void AuthenticationManager::useCredentialForChallenge(uint64_t challengeID, const Credential& credential, const CertificateInfo& certificateInfo)
 {
+    ASSERT(isMainThread());
+
     AuthenticationChallenge challenge = m_challenges.take(challengeID);
     ASSERT(!challenge.isNull());
     
-    if (tryUsePlatformCertificateInfoForChallenge(challenge, certificateInfo))
+    if (tryUseCertificateInfoForChallenge(challenge, certificateInfo))
         return;
     
     AuthenticationClient* coreClient = challenge.authenticationClient();
@@ -121,6 +126,8 @@ void AuthenticationManager::useCredentialForChallenge(uint64_t challengeID, cons
 
 void AuthenticationManager::continueWithoutCredentialForChallenge(uint64_t challengeID)
 {
+    ASSERT(isMainThread());
+
     AuthenticationChallenge challenge = m_challenges.take(challengeID);
     ASSERT(!challenge.isNull());
     AuthenticationClient* coreClient = challenge.authenticationClient();
@@ -135,6 +142,8 @@ void AuthenticationManager::continueWithoutCredentialForChallenge(uint64_t chall
 
 void AuthenticationManager::cancelChallenge(uint64_t challengeID)
 {
+    ASSERT(isMainThread());
+
     AuthenticationChallenge challenge = m_challenges.take(challengeID);
     ASSERT(!challenge.isNull());
     AuthenticationClient* coreClient = challenge.authenticationClient();

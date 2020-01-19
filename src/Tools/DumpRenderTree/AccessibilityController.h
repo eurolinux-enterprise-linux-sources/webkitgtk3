@@ -28,11 +28,16 @@
 
 #include "AccessibilityUIElement.h"
 #include <JavaScriptCore/JSObjectRef.h>
+#include <JavaScriptCore/JSRetainPtr.h>
 #include <string>
 #include <wtf/HashMap.h>
 #include <wtf/Platform.h>
 #if PLATFORM(WIN)
 #include <windows.h>
+#endif
+#if HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
+#include "AccessibilityNotificationHandlerAtk.h"
+#include <atk/atk.h>
 #endif
 
 class AccessibilityController {
@@ -59,10 +64,16 @@ public:
     bool addNotificationListener(JSObjectRef functionCallback);
     void removeNotificationListener();
 
+    JSRetainPtr<JSStringRef> platformName() const;
+
 #if PLATFORM(WIN)
     // Helper methods so this class can add the listeners on behalf of AccessibilityUIElement.
     void winAddNotificationListener(PlatformUIElement, JSObjectRef functionCallback);
     void winNotificationReceived(PlatformUIElement, const std::string& eventName);
+#endif
+
+#if HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
+    AtkObject* childElementById(AtkObject* parent, const char* id);
 #endif
 
 private:
@@ -81,6 +92,12 @@ private:
 #if PLATFORM(MAC)
     RetainPtr<NotificationHandler> m_globalNotificationHandler;
 #endif
+
+#if HAVE(ACCESSIBILITY) && (PLATFORM(GTK) || PLATFORM(EFL))
+    RefPtr<AccessibilityNotificationHandler> m_globalNotificationHandler;
+#endif
+    
+    void platformResetToConsistentState();
 };
 
 #endif // AccessibilityController_h

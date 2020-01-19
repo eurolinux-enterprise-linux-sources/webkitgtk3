@@ -46,16 +46,14 @@ class WebSecurityOrigin;
 
 typedef GenericCallback<WKArrayRef> ArrayCallback;
 
-class WebDatabaseManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebDatabaseManagerProxy : public API::ObjectImpl<API::Object::Type::DatabaseManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeDatabaseManager;
-
     static const char* supplementName();
 
     static PassRefPtr<WebDatabaseManagerProxy> create(WebContext*);
     virtual ~WebDatabaseManagerProxy();
 
-    void initializeClient(const WKDatabaseManagerClient*);
+    void initializeClient(const WKDatabaseManagerClientBase*);
 
     void getDatabasesByOrigin(PassRefPtr<ArrayCallback>);
     void getDatabaseOrigins(PassRefPtr<ArrayCallback>);
@@ -72,24 +70,24 @@ public:
     static String databaseDetailsDisplayNameKey();
     static String databaseDetailsExpectedUsageKey();
     static String databaseDetailsCurrentUsageKey();
+    static String databaseDetailsCreationTimeKey();
+    static String databaseDetailsModificationTimeKey();
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     explicit WebDatabaseManagerProxy(WebContext*);
 
-    virtual Type type() const { return APIType; }
-
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual bool shouldTerminate(WebProcessProxy*) const OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual bool shouldTerminate(WebProcessProxy*) const override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
     // Message handlers.
     void didGetDatabasesByOrigin(const Vector<OriginAndDatabases>& originAndDatabases, uint64_t callbackID);
@@ -97,7 +95,7 @@ private:
     void didModifyOrigin(const String& originIdentifier);
     void didModifyDatabase(const String& originIdentifier, const String& databaseIdentifier);
 
-    HashMap<uint64_t, RefPtr<ArrayCallback> > m_arrayCallbacks;
+    HashMap<uint64_t, RefPtr<ArrayCallback>> m_arrayCallbacks;
     WebDatabaseManagerProxyClient m_client;
 };
 

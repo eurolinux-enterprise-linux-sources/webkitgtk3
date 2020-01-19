@@ -62,8 +62,8 @@ Structure* PrototypeMap::emptyObjectStructureForPrototype(JSObject* prototype, u
 
     addPrototype(prototype);
     Structure* structure = JSFinalObject::createStructure(
-        prototype->globalObject()->globalData(), prototype->globalObject(), prototype, inlineCapacity);
-    addResult.iterator->value = structure;
+        prototype->globalObject()->vm(), prototype->globalObject(), prototype, inlineCapacity);
+    addResult.iterator->value = Weak<Structure>(structure);
     return structure;
 }
 

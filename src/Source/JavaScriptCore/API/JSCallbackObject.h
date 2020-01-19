@@ -42,7 +42,7 @@ struct JSCallbackObjectData : WeakHandleOwner {
         JSClassRetain(jsClass);
     }
     
-    ~JSCallbackObjectData()
+    virtual ~JSCallbackObjectData()
     {
         JSClassRelease(jsClass);
     }
@@ -54,11 +54,11 @@ struct JSCallbackObjectData : WeakHandleOwner {
         return m_privateProperties->getPrivateProperty(propertyName);
     }
     
-    void setPrivateProperty(JSGlobalData& globalData, JSCell* owner, const Identifier& propertyName, JSValue value)
+    void setPrivateProperty(VM& vm, JSCell* owner, const Identifier& propertyName, JSValue value)
     {
         if (!m_privateProperties)
             m_privateProperties = adoptPtr(new JSPrivatePropertyMap);
-        m_privateProperties->setPrivateProperty(globalData, owner, propertyName, value);
+        m_privateProperties->setPrivateProperty(vm, owner, propertyName, value);
     }
     
     void deletePrivateProperty(const Identifier& propertyName)
@@ -86,10 +86,10 @@ struct JSCallbackObjectData : WeakHandleOwner {
             return location->value.get();
         }
         
-        void setPrivateProperty(JSGlobalData& globalData, JSCell* owner, const Identifier& propertyName, JSValue value)
+        void setPrivateProperty(VM& vm, JSCell* owner, const Identifier& propertyName, JSValue value)
         {
             WriteBarrier<Unknown> empty;
-            m_propertyMap.add(propertyName.impl(), empty).iterator->value.set(globalData, owner, value);
+            m_propertyMap.add(propertyName.impl(), empty).iterator->value.set(vm, owner, value);
         }
         
         void deletePrivateProperty(const Identifier& propertyName)
@@ -110,7 +110,7 @@ struct JSCallbackObjectData : WeakHandleOwner {
         PrivatePropertyMap m_propertyMap;
     };
     OwnPtr<JSPrivatePropertyMap> m_privateProperties;
-    virtual void finalize(Handle<Unknown>, void*);
+    virtual void finalize(Handle<Unknown>, void*) override;
 };
 
     
@@ -118,10 +118,10 @@ template <class Parent>
 class JSCallbackObject : public Parent {
 protected:
     JSCallbackObject(ExecState*, Structure*, JSClassRef, void* data);
-    JSCallbackObject(JSGlobalData&, JSClassRef, Structure*);
+    JSCallbackObject(VM&, JSClassRef, Structure*);
 
     void finishCreation(ExecState*);
-    void finishCreation(JSGlobalData&);
+    void finishCreation(VM&);
 
 public:
     typedef Parent Base;
@@ -133,29 +133,32 @@ public:
         callbackObject->finishCreation(exec);
         return callbackObject;
     }
-    static JSCallbackObject<Parent>* create(JSGlobalData&, JSClassRef, Structure*);
+    static JSCallbackObject<Parent>* create(VM&, JSClassRef, Structure*);
 
     static const bool needsDestruction;
-    static void destroy(JSCell*);
+    static void destroy(JSCell* cell)
+    {
+        static_cast<JSCallbackObject*>(cell)->JSCallbackObject::~JSCallbackObject();
+    }
 
     void setPrivate(void* data);
     void* getPrivate();
 
-    static const ClassInfo s_info;
+    DECLARE_INFO;
 
     JSClassRef classRef() const { return m_callbackObjectData->jsClass; }
     bool inherits(JSClassRef) const;
 
-    static Structure* createStructure(JSGlobalData&, JSGlobalObject*, JSValue);
+    static Structure* createStructure(VM&, JSGlobalObject*, JSValue);
     
     JSValue getPrivateProperty(const Identifier& propertyName) const
     {
         return m_callbackObjectData->getPrivateProperty(propertyName);
     }
     
-    void setPrivateProperty(JSGlobalData& globalData, const Identifier& propertyName, JSValue value)
+    void setPrivateProperty(VM& vm, const Identifier& propertyName, JSValue value)
     {
-        m_callbackObjectData->setPrivateProperty(globalData, this, propertyName, value);
+        m_callbackObjectData->setPrivateProperty(vm, this, propertyName, value);
     }
     
     void deletePrivateProperty(const Identifier& propertyName)
@@ -173,11 +176,11 @@ private:
 
     static JSValue defaultValue(const JSObject*, ExecState*, PreferredPrimitiveType);
 
-    static bool getOwnPropertySlot(JSCell*, ExecState*, PropertyName, PropertySlot&);
-    static bool getOwnPropertySlotByIndex(JSCell*, ExecState*, unsigned propertyName, PropertySlot&);
-    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, PropertyName, PropertyDescriptor&);
+    static bool getOwnPropertySlot(JSObject*, ExecState*, PropertyName, PropertySlot&);
+    static bool getOwnPropertySlotByIndex(JSObject*, ExecState*, unsigned propertyName, PropertySlot&);
     
     static void put(JSCell*, ExecState*, PropertyName, JSValue, PutPropertySlot&);
+    static void putByIndex(JSCell*, ExecState*, unsigned, JSValue, bool shouldThrow);
 
     static bool deleteProperty(JSCell*, ExecState*, PropertyName);
     static bool deletePropertyByIndex(JSCell*, ExecState*, unsigned);
@@ -192,7 +195,7 @@ private:
     static void visitChildren(JSCell* cell, SlotVisitor& visitor)
     {
         JSCallbackObject* thisObject = jsCast<JSCallbackObject*>(cell);
-        ASSERT_GC_OBJECT_INHERITS((static_cast<Parent*>(thisObject)), &JSCallbackObject<Parent>::s_info);
+        ASSERT_GC_OBJECT_INHERITS((static_cast<Parent*>(thisObject)), JSCallbackObject<Parent>::info());
         COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
         ASSERT(thisObject->Parent::structure()->typeInfo().overridesVisitChildren());
         Parent::visitChildren(thisObject, visitor);
@@ -202,13 +205,14 @@ private:
     void init(ExecState*);
  
     static JSCallbackObject* asCallbackObject(JSValue);
+    static JSCallbackObject* asCallbackObject(EncodedJSValue);
  
     static EncodedJSValue JSC_HOST_CALL call(ExecState*);
     static EncodedJSValue JSC_HOST_CALL construct(ExecState*);
    
     JSValue getStaticValue(ExecState*, PropertyName);
-    static JSValue staticFunctionGetter(ExecState*, JSValue, PropertyName);
-    static JSValue callbackGetter(ExecState*, JSValue, PropertyName);
+    static EncodedJSValue staticFunctionGetter(ExecState*, EncodedJSValue, EncodedJSValue, PropertyName);
+    static EncodedJSValue callbackGetter(ExecState*, EncodedJSValue, EncodedJSValue, PropertyName);
 
     OwnPtr<JSCallbackObjectData> m_callbackObjectData;
 };

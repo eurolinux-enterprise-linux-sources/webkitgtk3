@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 Google Inc. All Rights Reserved.
- * Copyright (C) 2012 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,27 +54,34 @@ public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
     void setParentTreeScope(TreeScope*);
 
-    Node* focusedNode();
+    Element* focusedElement();
     Element* getElementById(const AtomicString&) const;
-    bool hasElementWithId(AtomicStringImpl* id) const;
+    const Vector<Element*>* getAllElementsById(const AtomicString&) const;
+    bool hasElementWithId(const AtomicStringImpl&) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
-    void addElementById(const AtomicString& elementId, Element*);
-    void removeElementById(const AtomicString& elementId, Element*);
+    void addElementById(const AtomicStringImpl& elementId, Element&, bool notifyObservers = true);
+    void removeElementById(const AtomicStringImpl& elementId, Element&, bool notifyObservers = true);
+
+    Element* getElementByName(const AtomicString&) const;
+    bool hasElementWithName(const AtomicStringImpl&) const;
+    bool containsMultipleElementsWithName(const AtomicString&) const;
+    void addElementByName(const AtomicStringImpl&, Element&);
+    void removeElementByName(const AtomicStringImpl&, Element&);
 
     Document* documentScope() const { return m_documentScope; }
 
     Node* ancestorInThisScope(Node*) const;
 
-    void addImageMap(HTMLMapElement*);
-    void removeImageMap(HTMLMapElement*);
+    void addImageMap(HTMLMapElement&);
+    void removeImageMap(HTMLMapElement&);
     HTMLMapElement* getImageMap(const String& url) const;
 
     Element* elementFromPoint(int x, int y) const;
 
     // For accessibility.
     bool shouldCacheLabelsByForAttribute() const { return m_labelsByForAttribute; }
-    void addLabel(const AtomicString& forAttributeValue, HTMLLabelElement*);
-    void removeLabel(const AtomicString& forAttributeValue, HTMLLabelElement*);
+    void addLabel(const AtomicStringImpl& forAttributeValue, HTMLLabelElement&);
+    void removeLabel(const AtomicStringImpl& forAttributeValue, HTMLLabelElement&);
     HTMLLabelElement* labelElementForId(const AtomicString& forAttributeValue);
 
     DOMSelection* getSelection() const;
@@ -87,7 +94,6 @@ public:
     Element* findAnchor(const String& name);
 
     virtual bool applyAuthorStyles() const;
-    virtual bool resetStyleInheritance() const;
 
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node*);
@@ -96,17 +102,38 @@ public:
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
-    static TreeScope* noDocumentInstance()
+    static TreeScope& noDocumentInstance()
     {
         DEFINE_STATIC_LOCAL(TreeScope, instance, ());
-        return &instance;
+        return instance;
     }
+
+    // Nodes belonging to this scope hold self-only references -
+    // these are enough to keep the scope from being destroyed, but
+    // not enough to keep it from removing its children. This allows a
+    // node that outlives its scope to still have a valid document
+    // pointer without introducing reference cycles.
+    void selfOnlyRef()
+    {
+        ASSERT(!deletionHasBegun());
+        ++m_selfOnlyRefCount;
+    }
+
+    void selfOnlyDeref()
+    {
+        ASSERT(!deletionHasBegun());
+        --m_selfOnlyRefCount;
+        if (!m_selfOnlyRefCount && !refCount() && this != &noDocumentInstance()) {
+            beginDeletion();
+            delete this;
+        }
+    }
+
+    void removedLastRefToScope();
 
 protected:
     TreeScope(ContainerNode*, Document*);
-    TreeScope(Document*);
+    explicit TreeScope(Document*);
     virtual ~TreeScope();
 
     void destroyTreeScopeData();
@@ -114,18 +141,31 @@ protected:
     void setDocumentScope(Document* document)
     {
         ASSERT(document);
-        ASSERT(this != noDocumentInstance());
+        ASSERT(this != &noDocumentInstance());
         m_documentScope = document;
     }
 
 private:
     TreeScope();
 
+    virtual void dropChildren() { }
+
+    int refCount() const;
+#ifndef NDEBUG
+    bool deletionHasBegun();
+    void beginDeletion();
+#else
+    bool deletionHasBegun() { return false; }
+    void beginDeletion() { }
+#endif
+
     ContainerNode* m_rootNode;
     Document* m_documentScope;
     TreeScope* m_parentTreeScope;
+    unsigned m_selfOnlyRefCount;
 
     OwnPtr<DocumentOrderedMap> m_elementsById;
+    OwnPtr<DocumentOrderedMap> m_elementsByName;
     OwnPtr<DocumentOrderedMap> m_imageMapsByName;
     OwnPtr<DocumentOrderedMap> m_labelsByForAttribute;
 
@@ -134,15 +174,24 @@ private:
     mutable RefPtr<DOMSelection> m_selection;
 };
 
-inline bool TreeScope::hasElementWithId(AtomicStringImpl* id) const
+inline bool TreeScope::hasElementWithId(const AtomicStringImpl& id) const
 {
-    ASSERT(id);
     return m_elementsById && m_elementsById->contains(id);
 }
 
 inline bool TreeScope::containsMultipleElementsWithId(const AtomicString& id) const
 {
-    return m_elementsById && m_elementsById->containsMultiple(id.impl());
+    return m_elementsById && id.impl() && m_elementsById->containsMultiple(*id.impl());
+}
+
+inline bool TreeScope::hasElementWithName(const AtomicStringImpl& id) const
+{
+    return m_elementsByName && m_elementsByName->contains(id);
+}
+
+inline bool TreeScope::containsMultipleElementsWithName(const AtomicString& name) const
+{
+    return m_elementsByName && name.impl() && m_elementsByName->containsMultiple(*name.impl());
 }
 
 Node* nodeFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);

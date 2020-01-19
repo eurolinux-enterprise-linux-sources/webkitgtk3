@@ -27,6 +27,7 @@
 #include "SVGPathParser.h"
 
 #include "AffineTransform.h"
+#include "SVGPathSource.h"
 #include <wtf/MathExtras.h>
 
 static const float gOneOverThree = 1 / 3.f;
@@ -296,7 +297,7 @@ bool SVGPathParser::parsePathDataFromSource(PathParsingMode pathParsingMode, boo
 
     // Skip any leading spaces.
     if (!m_source->moveToNextToken())
-        return false;
+        return true;
 
     SVGPathSegType command;
     m_source->parseSVGSegmentType(command);
@@ -313,24 +314,28 @@ bool SVGPathParser::parsePathDataFromSource(PathParsingMode pathParsingMode, boo
         switch (command) {
         case PathSegMoveToRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegMoveToAbs:
             if (!parseMoveToSegment())
                 return false;
             break;
         case PathSegLineToRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegLineToAbs:
             if (!parseLineToSegment())
                 return false;
             break;
         case PathSegLineToHorizontalRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegLineToHorizontalAbs:
             if (!parseLineToHorizontalSegment())
                 return false;
             break;
         case PathSegLineToVerticalRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegLineToVerticalAbs:
             if (!parseLineToVerticalSegment())
                 return false;
@@ -340,30 +345,35 @@ bool SVGPathParser::parsePathDataFromSource(PathParsingMode pathParsingMode, boo
             break;
         case PathSegCurveToCubicRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegCurveToCubicAbs:
             if (!parseCurveToCubicSegment())
                 return false;
             break;
         case PathSegCurveToCubicSmoothRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegCurveToCubicSmoothAbs:
             if (!parseCurveToCubicSmoothSegment())
                 return false;
             break;
         case PathSegCurveToQuadraticRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegCurveToQuadraticAbs:
             if (!parseCurveToQuadraticSegment())
                 return false;
             break;
         case PathSegCurveToQuadraticSmoothRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegCurveToQuadraticSmoothAbs:
             if (!parseCurveToQuadraticSmoothSegment())
                 return false;
             break;
         case PathSegArcRel:
             m_mode = RelativeCoordinates;
+            FALLTHROUGH;
         case PathSegArcAbs:
             if (!parseArcToSegment())
                 return false;

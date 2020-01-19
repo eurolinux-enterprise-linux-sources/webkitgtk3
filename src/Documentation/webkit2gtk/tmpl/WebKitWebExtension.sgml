@@ -44,6 +44,15 @@ WebKitWebExtension
 @extension: 
 
 
+<!-- ##### USER_FUNCTION WebKitWebExtensionInitializeWithUserDataFunction ##### -->
+<para>
+
+</para>
+
+@extension: 
+@user_data: 
+
+
 <!-- ##### FUNCTION webkit_web_extension_get_page ##### -->
 <para>
 

@@ -31,6 +31,7 @@
 #include "MessageReceiver.h"
 #include "WebBatteryStatus.h"
 #include "WebCoreArgumentCoders.h"
+#include "WebProcessSupplement.h"
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/text/AtomicString.h>
@@ -40,12 +41,14 @@ namespace WebKit {
 class WebPage;
 class WebProcess;
 
-class WebBatteryManager : private CoreIPC::MessageReceiver {
+class WebBatteryManager : public WebProcessSupplement, private IPC::MessageReceiver {
     WTF_MAKE_NONCOPYABLE(WebBatteryManager);
 
 public:
     explicit WebBatteryManager(WebProcess*);
     ~WebBatteryManager();
+
+    static const char* supplementName();
 
     void registerWebPage(WebPage*);
     void unregisterWebPage(WebPage*);
@@ -54,8 +57,8 @@ public:
     void updateBatteryStatus(const WebBatteryStatus::Data&);
 
 private:
-    // CoreIPC::MessageReceiver
-    void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
     WebProcess* m_process;
     HashSet<WebPage*> m_pageSet;

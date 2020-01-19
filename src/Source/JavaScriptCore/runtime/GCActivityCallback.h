@@ -50,16 +50,24 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool enabled) { m_enabled = enabled; }
 
+    static bool s_shouldCreateGCTimer;
+
 protected:
 #if USE(CF)
-    GCActivityCallback(JSGlobalData* globalData, CFRunLoopRef runLoop)
-        : HeapTimer(globalData, runLoop)
+    GCActivityCallback(VM* vm, CFRunLoopRef runLoop)
+        : HeapTimer(vm, runLoop)
         , m_enabled(true)
     {
     }
+#elif PLATFORM(EFL)
+    GCActivityCallback(VM* vm, bool flag)
+        : HeapTimer(vm)
+        , m_enabled(flag)
+    {
+    }
 #else
-    GCActivityCallback(JSGlobalData* globalData)
-        : HeapTimer(globalData)
+    GCActivityCallback(VM* vm)
+        : HeapTimer(vm)
         , m_enabled(true)
     {
     }
@@ -70,21 +78,21 @@ protected:
 
 class DefaultGCActivityCallback : public GCActivityCallback {
 public:
-    static DefaultGCActivityCallback* create(Heap*);
+    static PassOwnPtr<DefaultGCActivityCallback> create(Heap*);
 
     DefaultGCActivityCallback(Heap*);
 
-    virtual void didAllocate(size_t);
-    virtual void willCollect();
-    virtual void cancel();
-    
-    virtual void doWork();
+    JS_EXPORT_PRIVATE virtual void didAllocate(size_t) override;
+    JS_EXPORT_PRIVATE virtual void willCollect() override;
+    JS_EXPORT_PRIVATE virtual void cancel() override;
+
+    JS_EXPORT_PRIVATE virtual void doWork() override;
 
 #if USE(CF)
 protected:
-    DefaultGCActivityCallback(Heap*, CFRunLoopRef);
+    JS_EXPORT_PRIVATE DefaultGCActivityCallback(Heap*, CFRunLoopRef);
 #endif
-#if USE(CF) || PLATFORM(QT)
+#if USE(CF) || PLATFORM(EFL)
 protected:
     void cancelTimer();
     void scheduleTimer(double);
@@ -94,9 +102,9 @@ private:
 #endif
 };
 
-inline DefaultGCActivityCallback* DefaultGCActivityCallback::create(Heap* heap)
+inline PassOwnPtr<DefaultGCActivityCallback> DefaultGCActivityCallback::create(Heap* heap)
 {
-    return new DefaultGCActivityCallback(heap);
+    return GCActivityCallback::s_shouldCreateGCTimer ? adoptPtr(new DefaultGCActivityCallback(heap)) : nullptr;
 }
 
 }

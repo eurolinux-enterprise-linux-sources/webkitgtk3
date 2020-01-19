@@ -25,7 +25,6 @@
 
 #include "config.h"
 #include "JSImageData.h"
-#include "JSUint8ClampedArray.h"
 
 #include "ImageData.h"
 #include <wtf/StdLibExtras.h>
@@ -40,13 +39,13 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, ImageData* imageD
     if (!imageData)
         return jsNull();
     
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), imageData);
+    JSObject* wrapper = getCachedWrapper(currentWorld(exec), imageData);
     if (wrapper)
         return wrapper;
     
     wrapper = CREATE_DOM_WRAPPER(exec, globalObject, ImageData, imageData);
     Identifier dataName(exec, "data");
-    wrapper->putDirect(exec->globalData(), dataName, toJS(exec, globalObject, imageData->data()), DontDelete | ReadOnly);
+    wrapper->putDirect(exec->vm(), dataName, toJS(exec, globalObject, imageData->data()), DontDelete | ReadOnly);
     exec->heap()->reportExtraMemoryCost(imageData->data()->length());
     
     return wrapper;

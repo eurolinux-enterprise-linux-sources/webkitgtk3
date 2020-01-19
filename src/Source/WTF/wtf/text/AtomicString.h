@@ -21,6 +21,7 @@
 #ifndef AtomicString_h
 #define AtomicString_h
 
+#include <utility>
 #include <wtf/text/AtomicStringImpl.h>
 #include <wtf/text/WTFString.h>
 
@@ -35,7 +36,6 @@
 namespace WTF {
 
 struct AtomicStringHash;
-class MemoryObjectInfo;
 
 class AtomicString {
 public:
@@ -74,16 +74,12 @@ public:
         COMPILE_ASSERT((charactersCount - 1 <= ((unsigned(~0) - sizeof(StringImpl)) / sizeof(LChar))), AtomicStringFromLiteralCannotOverflow);
     }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
     // We have to declare the copy constructor and copy assignment operator as well, otherwise
     // they'll be implicitly deleted by adding the move constructor and move assignment operator.
-    // FIXME: Instead of explicitly casting to String&& here, we should use std::move, but that requires us to
-    // have a standard library that supports move semantics.
     AtomicString(const AtomicString& other) : m_string(other.m_string) { }
-    AtomicString(AtomicString&& other) : m_string(static_cast<String&&>(other.m_string)) { }
+    AtomicString(AtomicString&& other) : m_string(std::move(other.m_string)) { }
     AtomicString& operator=(const AtomicString& other) { m_string = other.m_string; return *this; }
-    AtomicString& operator=(AtomicString&& other) { m_string = static_cast<String&&>(other.m_string); return *this; }
-#endif
+    AtomicString& operator=(AtomicString&& other) { m_string = std::move(other.m_string); return *this; }
 
     // Hash table deleted values, which are only constructed and never copied or destroyed.
     AtomicString(WTF::HashTableDeletedValueType) : m_string(WTF::HashTableDeletedValue) { }
@@ -97,23 +93,28 @@ public:
     AtomicStringImpl* impl() const { return static_cast<AtomicStringImpl *>(m_string.impl()); }
 
     bool is8Bit() const { return m_string.is8Bit(); }
-    const UChar* characters() const { return m_string.characters(); }
+    const UChar* characters() const { return m_string.deprecatedCharacters(); } // FIXME: Delete this.
     const LChar* characters8() const { return m_string.characters8(); }
     const UChar* characters16() const { return m_string.characters16(); }
     unsigned length() const { return m_string.length(); }
     
     UChar operator[](unsigned int i) const { return m_string[i]; }
-    
+
+    WTF_EXPORT_STRING_API static AtomicString number(int);
+    WTF_EXPORT_STRING_API static AtomicString number(unsigned);
+    WTF_EXPORT_STRING_API static AtomicString number(double);
+    // If we need more overloads of the number function, we can add all the others that String has, but these seem to do for now.
+
     bool contains(UChar c) const { return m_string.contains(c); }
     bool contains(const LChar* s, bool caseSensitive = true) const
         { return m_string.contains(s, caseSensitive); }
     bool contains(const String& s, bool caseSensitive = true) const
         { return m_string.contains(s, caseSensitive); }
 
-    size_t find(UChar c, size_t start = 0) const { return m_string.find(c, start); }
-    size_t find(const LChar* s, size_t start = 0, bool caseSentitive = true) const
+    size_t find(UChar c, unsigned start = 0) const { return m_string.find(c, start); }
+    size_t find(const LChar* s, unsigned start = 0, bool caseSentitive = true) const
         { return m_string.find(s, start, caseSentitive); }
-    size_t find(const String& s, size_t start = 0, bool caseSentitive = true) const
+    size_t find(const String& s, unsigned start = 0, bool caseSentitive = true) const
         { return m_string.find(s, start, caseSentitive); }
     
     bool startsWith(const String& s, bool caseSensitive = true) const
@@ -152,14 +153,6 @@ public:
     AtomicString(NSString* s) : m_string(add((CFStringRef)s)) { }
     operator NSString*() const { return m_string; }
 #endif
-#if PLATFORM(QT)
-    AtomicString(const QString& s) : m_string(add(String(s).impl())) { }
-    operator QString() const { return m_string; }
-#endif
-#if PLATFORM(BLACKBERRY)
-    AtomicString(const BlackBerry::Platform::String& s) : m_string(add(String(s).impl())) { }
-    operator BlackBerry::Platform::String() const { return m_string; }
-#endif
 
     // AtomicString::fromUTF8 will return a null string if
     // the input data contains invalid UTF-8 sequences.
@@ -184,19 +177,25 @@ private:
     WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> add(const UChar*, unsigned length, unsigned existingHash);
     WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> add(const UChar*);
     WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> add(StringImpl*, unsigned offset, unsigned length);
-    ALWAYS_INLINE static PassRefPtr<StringImpl> add(StringImpl* r)
+    ALWAYS_INLINE static PassRefPtr<StringImpl> add(StringImpl* string)
     {
-        if (!r || r->isAtomic())
-            return r;
-        return addSlowCase(r);
+        if (!string || string->isAtomic()) {
+            ASSERT_WITH_MESSAGE(!string || isInAtomicStringTable(string), "The atomic string comes from an other thread!");
+            return string;
+        }
+        return addSlowCase(string);
     }
     WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> addFromLiteralData(const char* characters, unsigned length);
     WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> addSlowCase(StringImpl*);
 #if USE(CF)
-    static PassRefPtr<StringImpl> add(CFStringRef);
+    WTF_EXPORT_STRING_API static PassRefPtr<StringImpl> add(CFStringRef);
 #endif
 
     WTF_EXPORT_STRING_API static AtomicString fromUTF8Internal(const char*, const char*);
+
+#if !ASSERT_DISABLED
+    WTF_EXPORT_STRING_API static bool isInAtomicStringTable(StringImpl*);
+#endif
 };
 
 inline bool operator==(const AtomicString& a, const AtomicString& b) { return a.impl() == b.impl(); }

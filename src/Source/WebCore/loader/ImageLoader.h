@@ -23,9 +23,9 @@
 #ifndef ImageLoader_h
 #define ImageLoader_h
 
-#include "CachedImage.h"
 #include "CachedImageClient.h"
 #include "CachedResourceHandle.h"
+#include "Timer.h"
 #include <wtf/text/AtomicString.h>
 
 namespace WebCore {
@@ -70,7 +70,7 @@ public:
     static void dispatchPendingErrorEvents();
 
 protected:
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(CachedResource*) override;
 
 private:
     virtual void dispatchLoadEvent() = 0;
@@ -88,8 +88,11 @@ private:
     void setImageWithoutConsideringPendingLoadEvent(CachedImage*);
     void clearFailedLoadURL();
 
+    void timerFired(Timer<ImageLoader>&);
+
     Element* m_element;
     CachedResourceHandle<CachedImage> m_image;
+    Timer<ImageLoader> m_derefElementTimer;
     AtomicString m_failedLoadURL;
     bool m_hasPendingBeforeLoadEvent : 1;
     bool m_hasPendingLoadEvent : 1;

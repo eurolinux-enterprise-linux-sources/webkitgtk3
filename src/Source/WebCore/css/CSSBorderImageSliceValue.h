@@ -36,18 +36,16 @@ class Rect;
 
 class CSSBorderImageSliceValue : public CSSValue {
 public:
-    static PassRefPtr<CSSBorderImageSliceValue> create(PassRefPtr<CSSPrimitiveValue> slices, bool fill)
+    static PassRef<CSSBorderImageSliceValue> create(PassRefPtr<CSSPrimitiveValue> slices, bool fill)
     {
-        return adoptRef(new CSSBorderImageSliceValue(slices, fill));
+        return adoptRef(*new CSSBorderImageSliceValue(slices, fill));
     }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     Quad* slices() { return m_slices ? m_slices->getQuadValue() : 0; }
 
     bool equals(const CSSBorderImageSliceValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
     // These four values are used to make "cuts" in the border image. They can be numbers
     // or percentages.
@@ -57,6 +55,8 @@ public:
 private:
     CSSBorderImageSliceValue(PassRefPtr<CSSPrimitiveValue> slices, bool fill);
 };
+
+CSS_VALUE_TYPE_CASTS(CSSBorderImageSliceValue, isBorderImageSliceValue())
 
 } // namespace WebCore
 

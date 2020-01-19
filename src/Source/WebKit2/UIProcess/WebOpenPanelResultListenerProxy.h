@@ -30,15 +30,16 @@
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
+namespace API {
+class Array;
+}
+
 namespace WebKit {
 
-class ImmutableArray;
 class WebPageProxy;
 
-class WebOpenPanelResultListenerProxy : public APIObject {
+class WebOpenPanelResultListenerProxy : public API::ObjectImpl<API::Object::Type::FramePolicyListener> {
 public:
-    static const Type APIType = TypeFramePolicyListener;
-
     static PassRefPtr<WebOpenPanelResultListenerProxy> create(WebPageProxy* page)
     {
         return adoptRef(new WebOpenPanelResultListenerProxy(page));
@@ -46,15 +47,13 @@ public:
 
     virtual ~WebOpenPanelResultListenerProxy();
 
-    void chooseFiles(ImmutableArray*);
+    void chooseFiles(API::Array*);
     void cancel();
 
     void invalidate();
 
 private:
     explicit WebOpenPanelResultListenerProxy(WebPageProxy*);
-
-    virtual Type type() const { return APIType; }
 
     RefPtr<WebPageProxy> m_page;
 };

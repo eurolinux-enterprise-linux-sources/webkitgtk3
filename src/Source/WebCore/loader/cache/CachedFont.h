@@ -40,19 +40,13 @@ class SVGDocument;
 class SVGFontElement;
 struct FontCustomPlatformData;
 
-class CachedFont : public CachedResource {
+class CachedFont final : public CachedResource {
 public:
     CachedFont(const ResourceRequest&);
     virtual ~CachedFont();
-    
-    virtual void load(CachedResourceLoader*, const ResourceLoaderOptions&);
 
-    virtual void didAddClient(CachedResourceClient*);
-    virtual void data(PassRefPtr<ResourceBuffer> data, bool allDataReceived);
-
-    virtual void allClientsRemoved();
     void beginLoadIfNeeded(CachedResourceLoader* dl);
-    bool stillNeedsLoad() const { return !m_loadInitiated; }
+    virtual bool stillNeedsLoad() const override { return !m_loadInitiated; }
 
     bool ensureCustomFontData();
     FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth, FontRenderingMode = NormalRenderingMode);
@@ -62,12 +56,20 @@ public:
     SVGFontElement* getSVGFontById(const String&) const;
 #endif
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
-
 private:
-    virtual void checkNotify();
-    FontCustomPlatformData* m_fontData;
+    virtual void checkNotify() override;
+    virtual bool mayTryReplaceEncodedData() const override;
+
+    virtual void load(CachedResourceLoader*, const ResourceLoaderOptions&) override;
+
+    virtual void didAddClient(CachedResourceClient*) override;
+    virtual void finishLoading(ResourceBuffer*) override;
+
+    virtual void allClientsRemoved() override;
+
+    std::unique_ptr<FontCustomPlatformData> m_fontData;
     bool m_loadInitiated;
+    bool m_hasCreatedFontDataWrappingResource;
 
 #if ENABLE(SVG_FONTS)
     RefPtr<SVGDocument> m_externalSVGDocument;
@@ -76,14 +78,6 @@ private:
     friend class MemoryCache;
 };
 
-class CachedFontClient : public CachedResourceClient {
-public:
-    virtual ~CachedFontClient() { }
-    static CachedResourceClientType expectedType() { return FontType; }
-    virtual CachedResourceClientType resourceClientType() const { return expectedType(); }
-    virtual void fontLoaded(CachedFont*) { }
-};
+} // namespace WebCore
 
-}
-
-#endif
+#endif // CachedFont_h

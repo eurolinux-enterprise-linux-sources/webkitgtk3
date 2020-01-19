@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,9 +28,10 @@
 #define SerializedScriptValue_h
 
 #include "ScriptState.h"
+#include <bindings/ScriptValue.h>
 #include <heap/Strong.h>
+#include <runtime/ArrayBuffer.h>
 #include <runtime/JSCJSValue.h>
-#include <wtf/ArrayBuffer.h>
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
@@ -43,7 +44,7 @@ namespace WebCore {
 
 class MessagePort;
 typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
-typedef Vector<RefPtr<WTF::ArrayBuffer>, 1> ArrayBufferArray;
+typedef Vector<RefPtr<JSC::ArrayBuffer>, 1> ArrayBufferArray;
  
 enum SerializationReturnCode {
     SuccessfullyCompleted,
@@ -57,7 +58,6 @@ enum SerializationReturnCode {
     
 enum SerializationErrorMode { NonThrowing, Throwing };
 
-class ScriptValue;
 class SharedBuffer;
 
 class SerializedScriptValue :
@@ -67,8 +67,7 @@ class SerializedScriptValue :
     public RefCounted<SerializedScriptValue> {
 #endif
 public:
-    static PassRefPtr<SerializedScriptValue> create(JSC::ExecState*, JSC::JSValue, MessagePortArray*, ArrayBufferArray*,
-                                                    SerializationErrorMode = Throwing);
+    static PassRefPtr<SerializedScriptValue> create(JSC::ExecState*, JSC::JSValue, MessagePortArray*, ArrayBufferArray*, SerializationErrorMode = Throwing);
     static PassRefPtr<SerializedScriptValue> create(JSContextRef, JSValueRef, MessagePortArray*, ArrayBufferArray*, JSValueRef* exception);
     static PassRefPtr<SerializedScriptValue> create(JSContextRef, JSValueRef, JSValueRef* exception);
 
@@ -83,6 +82,10 @@ public:
     static PassRefPtr<SerializedScriptValue> undefinedValue();
     static PassRefPtr<SerializedScriptValue> booleanValue(bool value);
 
+    static PassRefPtr<SerializedScriptValue> serialize(const Deprecated::ScriptValue&, JSC::ExecState*, SerializationErrorMode = Throwing);
+    static PassRefPtr<SerializedScriptValue> serialize(const Deprecated::ScriptValue&, JSC::ExecState*, MessagePortArray*, ArrayBufferArray*, bool&);
+    static Deprecated::ScriptValue deserialize(JSC::ExecState*, SerializedScriptValue*, SerializationErrorMode = Throwing);
+
     static uint32_t wireFormatVersion();
 
     String toString();
@@ -92,11 +95,12 @@ public:
     JSValueRef deserialize(JSContextRef, JSValueRef* exception);
 
 #if ENABLE(INSPECTOR)
-    ScriptValue deserializeForInspector(ScriptState*);
+    Deprecated::ScriptValue deserializeForInspector(JSC::ExecState*);
 #endif
 
-    const Vector<uint8_t>& data() { return m_data; }
-    const Vector<String>& blobURLs() const { return m_blobURLs; }
+    const Vector<uint8_t>& data() const { return m_data; }
+    bool hasBlobURLs() const { return !m_blobURLs.isEmpty(); }
+    void blobURLs(Vector<String>&) const;
 
 #if ENABLE(INDEXED_DATABASE)
     static PassRefPtr<SerializedScriptValue> create(JSC::ExecState*, JSC::JSValue);
@@ -113,10 +117,11 @@ public:
     ~SerializedScriptValue();
 
 private:
-    typedef Vector<WTF::ArrayBufferContents> ArrayBufferContentsArray;
+    typedef Vector<JSC::ArrayBufferContents> ArrayBufferContentsArray;
     static void maybeThrowExceptionIfSerializationFailed(JSC::ExecState*, SerializationReturnCode);
     static bool serializationDidCompleteSuccessfully(SerializationReturnCode);
-    static PassOwnPtr<ArrayBufferContentsArray> transferArrayBuffers(ArrayBufferArray&, SerializationReturnCode&);
+    static PassOwnPtr<ArrayBufferContentsArray> transferArrayBuffers(JSC::ExecState*, ArrayBufferArray&, SerializationReturnCode&);
+    void addBlobURL(const String&);
 
     SerializedScriptValue(const Vector<unsigned char>&);
     SerializedScriptValue(Vector<unsigned char>&);
@@ -124,7 +129,7 @@ private:
     SerializedScriptValue(Vector<unsigned char>&, Vector<String>& blobURLs, PassOwnPtr<ArrayBufferContentsArray>);
     Vector<unsigned char> m_data;
     OwnPtr<ArrayBufferContentsArray> m_arrayBufferContentsArray;
-    Vector<String> m_blobURLs;
+    Vector<Vector<uint16_t>> m_blobURLs;
 };
 
 }

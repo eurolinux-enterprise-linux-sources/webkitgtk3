@@ -25,7 +25,6 @@
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -46,13 +45,14 @@ typedef HashMap<unsigned, SVGCharacterData> SVGCharacterDataMap;
 class SVGTextLayoutAttributes {
     WTF_MAKE_NONCOPYABLE(SVGTextLayoutAttributes);
 public:
-    SVGTextLayoutAttributes(RenderSVGInlineText*);
+    explicit SVGTextLayoutAttributes(RenderSVGInlineText&);
 
     void clear();
     void dump() const;
     static float emptyValue();
 
-    RenderSVGInlineText* context() const { return m_context; }
+    RenderSVGInlineText& context() { return m_context; }
+    const RenderSVGInlineText& context() const { return m_context; }
     
     SVGCharacterDataMap& characterDataMap() { return m_characterDataMap; }
     const SVGCharacterDataMap& characterDataMap() const { return m_characterDataMap; }
@@ -60,7 +60,7 @@ public:
     Vector<SVGTextMetrics>& textMetricsValues() { return m_textMetricsValues; }
 
 private:
-    RenderSVGInlineText* m_context;
+    RenderSVGInlineText& m_context;
     SVGCharacterDataMap m_characterDataMap;
     Vector<SVGTextMetrics> m_textMetricsValues;
 };

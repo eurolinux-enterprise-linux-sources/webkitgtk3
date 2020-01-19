@@ -49,40 +49,18 @@
 #include "ResourceResponse.h"
 #include "ThreadableLoader.h"
 #include "WindowFocusAllowedIndicator.h"
-#include "WorkerContext.h"
+#include "WorkerGlobalScope.h"
 
 namespace WebCore {
 
 Notification::Notification()
-    : ActiveDOMObject(0, this)
+    : ActiveDOMObject(0)
 {
 }
-
-#if ENABLE(LEGACY_NOTIFICATIONS)
-Notification::Notification(const KURL& url, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider)
-    : ActiveDOMObject(context, this)
-    , m_isHTML(true)
-    , m_state(Idle)
-    , m_notificationCenter(provider)
-{
-    if (m_notificationCenter->checkPermission() != NotificationClient::PermissionAllowed) {
-        ec = SECURITY_ERR;
-        return;
-    }
-
-    if (url.isEmpty() || !url.isValid()) {
-        ec = SYNTAX_ERR;
-        return;
-    }
-
-    m_notificationURL = url;
-}
-#endif
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
 Notification::Notification(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider)
-    : ActiveDOMObject(context, this)
-    , m_isHTML(false)
+    : ActiveDOMObject(context)
     , m_title(title)
     , m_body(body)
     , m_state(Idle)
@@ -93,7 +71,7 @@ Notification::Notification(const String& title, const String& body, const String
         return;
     }
 
-    m_icon = iconURI.isEmpty() ? KURL() : scriptExecutionContext()->completeURL(iconURI);
+    m_icon = iconURI.isEmpty() ? URL() : scriptExecutionContext()->completeURL(iconURI);
     if (!m_icon.isEmpty() && !m_icon.isValid()) {
         ec = SYNTAX_ERR;
         return;
@@ -102,15 +80,13 @@ Notification::Notification(const String& title, const String& body, const String
 #endif
 
 #if ENABLE(NOTIFICATIONS)
-Notification::Notification(ScriptExecutionContext* context, const String& title)
-    : ActiveDOMObject(context, this)
-    , m_isHTML(false)
+Notification::Notification(ScriptExecutionContext& context, const String& title)
+    : ActiveDOMObject(&context)
     , m_title(title)
     , m_state(Idle)
     , m_taskTimer(adoptPtr(new Timer<Notification>(this, &Notification::taskTimerFired)))
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
-    m_notificationCenter = DOMWindowNotifications::webkitNotifications(static_cast<Document*>(context)->domWindow());
+    m_notificationCenter = DOMWindowNotifications::webkitNotifications(toDocument(context).domWindow());
     
     ASSERT(m_notificationCenter->client());
     m_taskTimer->startOneShot(0);
@@ -122,13 +98,6 @@ Notification::~Notification()
 }
 
 #if ENABLE(LEGACY_NOTIFICATIONS)
-PassRefPtr<Notification> Notification::create(const KURL& url, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider) 
-{ 
-    RefPtr<Notification> notification(adoptRef(new Notification(url, context, ec, provider)));
-    notification->suspendIfNeeded();
-    return notification.release();
-}
-
 PassRefPtr<Notification> Notification::create(const String& title, const String& body, const String& iconURI, ScriptExecutionContext* context, ExceptionCode& ec, PassRefPtr<NotificationCenter> provider) 
 { 
     RefPtr<Notification> notification(adoptRef(new Notification(title, body, iconURI, context, ec, provider)));
@@ -138,7 +107,7 @@ PassRefPtr<Notification> Notification::create(const String& title, const String&
 #endif
 
 #if ENABLE(NOTIFICATIONS)
-PassRefPtr<Notification> Notification::create(ScriptExecutionContext* context, const String& title, const Dictionary& options)
+PassRefPtr<Notification> Notification::create(ScriptExecutionContext& context, const String& title, const Dictionary& options)
 {
     RefPtr<Notification> notification(adoptRef(new Notification(context, title)));
     String argument;
@@ -151,7 +120,7 @@ PassRefPtr<Notification> Notification::create(ScriptExecutionContext* context, c
     if (options.get("dir", argument))
         notification->setDir(argument);
     if (options.get("icon", argument)) {
-        KURL iconURI = argument.isEmpty() ? KURL() : context->completeURL(argument);
+        URL iconURI = argument.isEmpty() ? URL() : context.completeURL(argument);
         if (!iconURI.isEmpty() && iconURI.isValid())
             notification->setIconURL(iconURI);
     }
@@ -161,19 +130,14 @@ PassRefPtr<Notification> Notification::create(ScriptExecutionContext* context, c
 }
 #endif
 
-const AtomicString& Notification::interfaceName() const
-{
-    return eventNames().interfaceForNotification;
-}
-
 void Notification::show() 
 {
     // prevent double-showing
     if (m_state == Idle && m_notificationCenter->client()) {
 #if ENABLE(NOTIFICATIONS)
-        if (!static_cast<Document*>(scriptExecutionContext())->page())
+        if (!toDocument(scriptExecutionContext())->page())
             return;
-        if (NotificationController::from(static_cast<Document*>(scriptExecutionContext())->page())->client()->checkPermission(scriptExecutionContext()) != NotificationClient::PermissionAllowed) {
+        if (NotificationController::from(toDocument(scriptExecutionContext())->page())->client()->checkPermission(scriptExecutionContext()) != NotificationClient::PermissionAllowed) {
             dispatchErrorEvent();
             return;
         }
@@ -197,16 +161,6 @@ void Notification::close()
     case Closed:
         break;
     }
-}
-
-EventTargetData* Notification::eventTargetData()
-{
-    return &m_eventTargetData;
-}
-
-EventTargetData* Notification::ensureEventTargetData()
-{
-    return &m_eventTargetData;
 }
 
 void Notification::contextDestroyed()
@@ -247,47 +201,41 @@ void Notification::dispatchErrorEvent()
 }
 
 #if ENABLE(NOTIFICATIONS)
-void Notification::taskTimerFired(Timer<Notification>* timer)
+void Notification::taskTimerFired(Timer<Notification>& timer)
 {
     ASSERT(scriptExecutionContext()->isDocument());
-    ASSERT_UNUSED(timer, timer == m_taskTimer.get());
+    ASSERT_UNUSED(timer, &timer == m_taskTimer.get());
     show();
 }
 #endif
 
 
 #if ENABLE(NOTIFICATIONS)
-const String& Notification::permission(ScriptExecutionContext* context)
+const String Notification::permission(ScriptExecutionContext* context)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
-    ASSERT(static_cast<Document*>(context)->page());
-    return permissionString(NotificationController::from(static_cast<Document*>(context)->page())->client()->checkPermission(context));
+    ASSERT(toDocument(context)->page());
+    return permissionString(NotificationController::from(toDocument(context)->page())->client()->checkPermission(context));
 }
 
-const String& Notification::permissionString(NotificationClient::Permission permission)
+const String Notification::permissionString(NotificationClient::Permission permission)
 {
-    DEFINE_STATIC_LOCAL(const String, allowedPermission, (ASCIILiteral("granted")));
-    DEFINE_STATIC_LOCAL(const String, deniedPermission, (ASCIILiteral("denied")));
-    DEFINE_STATIC_LOCAL(const String, defaultPermission, (ASCIILiteral("default")));
-
     switch (permission) {
     case NotificationClient::PermissionAllowed:
-        return allowedPermission;
+        return ASCIILiteral("granted");
     case NotificationClient::PermissionDenied:
-        return deniedPermission;
+        return ASCIILiteral("denied");
     case NotificationClient::PermissionNotAllowed:
-        return defaultPermission;
+        return ASCIILiteral("default");
     }
     
     ASSERT_NOT_REACHED();
-    return deniedPermission;
+    return String();
 }
 
 void Notification::requestPermission(ScriptExecutionContext* context, PassRefPtr<NotificationPermissionCallback> callback)
 {
-    ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
-    ASSERT(static_cast<Document*>(context)->page());
-    NotificationController::from(static_cast<Document*>(context)->page())->client()->requestPermission(context, callback);
+    ASSERT(toDocument(context)->page());
+    NotificationController::from(toDocument(context)->page())->client()->requestPermission(context, callback);
 }
 #endif
 

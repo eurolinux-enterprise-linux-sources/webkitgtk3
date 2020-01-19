@@ -34,17 +34,26 @@
 
 namespace JSC {
 
+inline ThreadIdentifier createBlockFreeingThread(BlockAllocator* allocator)
+{
+    if (!GCActivityCallback::s_shouldCreateGCTimer)
+        return 0; // No block freeing thread.
+    ThreadIdentifier identifier = createThread(allocator->blockFreeingThreadStartFunc, allocator, "JavaScriptCore::BlockFree");
+    RELEASE_ASSERT(identifier);
+    return identifier;
+}
+
 BlockAllocator::BlockAllocator()
-    : m_copiedRegionSet(CopiedBlock::blockSize)
+    : m_superRegion()
+    , m_copiedRegionSet(CopiedBlock::blockSize)
     , m_markedRegionSet(MarkedBlock::blockSize)
-    , m_weakAndMarkStackRegionSet(WeakBlock::blockSize)
+    , m_fourKBBlockRegionSet(WeakBlock::blockSize)
     , m_workListRegionSet(CopyWorkListSegment::blockSize)
     , m_numberOfEmptyRegions(0)
     , m_isCurrentlyAllocating(false)
     , m_blockFreeingThreadShouldQuit(false)
-    , m_blockFreeingThread(createThread(blockFreeingThreadStartFunc, this, "JavaScriptCore::BlockFree"))
+    , m_blockFreeingThread(createBlockFreeingThread(this))
 {
-    RELEASE_ASSERT(m_blockFreeingThread);
     m_regionLock.Init();
 }
 
@@ -52,11 +61,22 @@ BlockAllocator::~BlockAllocator()
 {
     releaseFreeRegions();
     {
-        MutexLocker locker(m_emptyRegionConditionLock);
+        std::lock_guard<std::mutex> lock(m_emptyRegionConditionMutex);
         m_blockFreeingThreadShouldQuit = true;
-        m_emptyRegionCondition.broadcast();
+        m_emptyRegionCondition.notify_all();
     }
-    waitForThreadCompletion(m_blockFreeingThread);
+    if (m_blockFreeingThread)
+        waitForThreadCompletion(m_blockFreeingThread);
+    ASSERT(allRegionSetsAreEmpty());
+    ASSERT(m_emptyRegions.isEmpty());
+}
+
+bool BlockAllocator::allRegionSetsAreEmpty() const
+{
+    return m_copiedRegionSet.isEmpty()
+        && m_markedRegionSet.isEmpty()
+        && m_fourKBBlockRegionSet.isEmpty()
+        && m_workListRegionSet.isEmpty();
 }
 
 void BlockAllocator::releaseFreeRegions()
@@ -77,26 +97,21 @@ void BlockAllocator::releaseFreeRegions()
         if (!region)
             break;
 
-        delete region;
+        region->destroy();
     }
 }
 
-void BlockAllocator::waitForRelativeTimeWhileHoldingLock(double relative)
+void BlockAllocator::waitForDuration(std::chrono::milliseconds duration)
 {
-    if (m_blockFreeingThreadShouldQuit)
-        return;
+    std::unique_lock<std::mutex> lock(m_emptyRegionConditionMutex);
 
-    m_emptyRegionCondition.timedWait(m_emptyRegionConditionLock, currentTime() + relative);
-}
-
-void BlockAllocator::waitForRelativeTime(double relative)
-{
     // If this returns early, that's fine, so long as it doesn't do it too
     // frequently. It would only be a bug if this function failed to return
     // when it was asked to do so.
-    
-    MutexLocker locker(m_emptyRegionConditionLock);
-    waitForRelativeTimeWhileHoldingLock(relative);
+    if (m_blockFreeingThreadShouldQuit)
+        return;
+
+    m_emptyRegionCondition.wait_for(lock, duration);
 }
 
 void BlockAllocator::blockFreeingThreadStartFunc(void* blockAllocator)
@@ -110,7 +125,7 @@ void BlockAllocator::blockFreeingThreadMain()
     while (!m_blockFreeingThreadShouldQuit) {
         // Generally wait for one second before scavenging free blocks. This
         // may return early, particularly when we're being asked to quit.
-        waitForRelativeTime(1.0);
+        waitForDuration(std::chrono::seconds(1));
         if (m_blockFreeingThreadShouldQuit)
             break;
         
@@ -121,11 +136,11 @@ void BlockAllocator::blockFreeingThreadMain()
 
         // Sleep until there is actually work to do rather than waking up every second to check.
         {
-            MutexLocker locker(m_emptyRegionConditionLock);
+            std::unique_lock<std::mutex> lock(m_emptyRegionConditionMutex);
             SpinLockHolder regionLocker(&m_regionLock);
             while (!m_numberOfEmptyRegions && !m_blockFreeingThreadShouldQuit) {
                 m_regionLock.Unlock();
-                m_emptyRegionCondition.wait(m_emptyRegionConditionLock);
+                m_emptyRegionCondition.wait(lock);
                 m_regionLock.Lock();
             }
             currentNumberOfEmptyRegions = m_numberOfEmptyRegions;
@@ -149,7 +164,7 @@ void BlockAllocator::blockFreeingThreadMain()
             if (!region)
                 break;
             
-            delete region;
+            region->destroy();
         }
     }
 }

@@ -33,8 +33,6 @@
 #include "HTMLNames.h"
 #include "RenderObject.h"
 
-using namespace std;
-
 namespace WebCore {
     
 using namespace HTMLNames;
@@ -55,13 +53,7 @@ PassRefPtr<AccessibilityList> AccessibilityList::create(RenderObject* renderer)
 
 bool AccessibilityList::computeAccessibilityIsIgnored() const
 {
-    AccessibilityObjectInclusion decision = accessibilityIsIgnoredBase();
-    if (decision == IncludeObject)
-        return false;
-    if (decision == IgnoreObject)
-        return true;
-    
-    return false;
+    return accessibilityIsIgnoredByDefault();
 }
     
 bool AccessibilityList::isUnorderedList() const
@@ -101,6 +93,13 @@ bool AccessibilityList::isDescriptionList() const
     Node* node = m_renderer->node();
     return node && node->hasTagName(dlTag);    
 }
+
+AccessibilityRole AccessibilityList::roleValue() const
+{
+    if (isDescriptionList())
+        return DescriptionListRole;
     
+    return ListRole;
+}
     
 } // namespace WebCore

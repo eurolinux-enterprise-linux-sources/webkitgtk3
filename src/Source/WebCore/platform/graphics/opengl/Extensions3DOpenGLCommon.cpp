@@ -32,22 +32,26 @@
 #include "ANGLEWebKitBridge.h"
 #include "GraphicsContext3D.h"
 
-#if PLATFORM(BLACKBERRY)
-#include <BlackBerryPlatformLog.h>
-#endif
-
+#if PLATFORM(IOS)
+#include <OpenGLES/ES2/glext.h>
+#else
 #if USE(OPENGL_ES_2)
 #include "OpenGLESShims.h"
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #elif PLATFORM(MAC)
 #include <OpenGL/gl.h>
-#elif PLATFORM(GTK) || PLATFORM(EFL) || PLATFORM(QT)
+#elif PLATFORM(GTK) || PLATFORM(EFL) || PLATFORM(WIN)
 #include "OpenGLShims.h"
+#endif
 #endif
 
 #include <wtf/MainThread.h>
 #include <wtf/Vector.h>
+
+#if PLATFORM(WIN) || (PLATFORM(GTK) && OS(WINDOWS))
+#undef NO_ERROR
+#endif
 
 namespace WebCore {
 
@@ -71,7 +75,7 @@ Extensions3DOpenGLCommon::Extensions3DOpenGLCommon(GraphicsContext3D* context)
     if (vendorComponents.contains("intel"))
         m_isIntel = true;
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) && !PLATFORM(IOS)
     if (m_isAMD || m_isIntel)
         m_requiresBuiltInFunctionEmulation = true;
 
@@ -91,8 +95,8 @@ Extensions3DOpenGLCommon::Extensions3DOpenGLCommon(GraphicsContext3D* context)
         systemSupportsMultisampling = version >= 0x1072;
 #endif // SNOW_LEOPARD and LION
 
-    if (m_isNVIDIA || (m_isAMD && systemSupportsMultisampling))
-        m_maySupportMultisampling = true;
+    if (m_isAMD && !systemSupportsMultisampling)
+        m_maySupportMultisampling = false;
 #endif
 }
 
@@ -116,6 +120,15 @@ void Extensions3DOpenGLCommon::ensureEnabled(const String& name)
         ShBuiltInResources ANGLEResources = compiler.getResources();
         if (!ANGLEResources.OES_standard_derivatives) {
             ANGLEResources.OES_standard_derivatives = 1;
+            compiler.setResources(ANGLEResources);
+        }
+    } else if (name == "GL_EXT_draw_buffers") {
+        // Enable support in ANGLE (if not enabled already)
+        ANGLEWebKitBridge& compiler = m_context->m_compiler;
+        ShBuiltInResources ANGLEResources = compiler.getResources();
+        if (!ANGLEResources.EXT_draw_buffers) {
+            ANGLEResources.EXT_draw_buffers = 1;
+            m_context->getIntegerv(Extensions3D::MAX_DRAW_BUFFERS_EXT, &ANGLEResources.MaxDrawBuffers);
             compiler.setResources(ANGLEResources);
         }
     }
@@ -161,16 +174,10 @@ String Extensions3DOpenGLCommon::getTranslatedShaderSourceANGLE(Platform3DObject
 
     String translatedShaderSource;
     String shaderInfoLog;
-    int extraCompileOptions = SH_MAP_LONG_VARIABLE_NAMES;
+    int extraCompileOptions = SH_MAP_LONG_VARIABLE_NAMES | SH_CLAMP_INDIRECT_ARRAY_BOUNDS | SH_UNFOLD_SHORT_CIRCUIT | SH_ENFORCE_PACKING_RESTRICTIONS;
 
     if (m_requiresBuiltInFunctionEmulation)
         extraCompileOptions |= SH_EMULATE_BUILT_IN_FUNCTIONS;
-
-#if !PLATFORM(CHROMIUM)
-    // Chromium does not use the ANGLE bundled in WebKit source, and thus
-    // does not yet have the symbol SH_CLAMP_INDIRECT_ARRAY_BOUNDS.
-    extraCompileOptions |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
-#endif
 
     Vector<ANGLEShaderSymbol> symbols;
     bool isValid = compiler.compileShaderSource(entry.source.utf8().data(), shaderType, translatedShaderSource, shaderInfoLog, symbols, extraCompileOptions);
@@ -181,7 +188,7 @@ String Extensions3DOpenGLCommon::getTranslatedShaderSourceANGLE(Platform3DObject
     size_t numSymbols = symbols.size();
     for (size_t i = 0; i < numSymbols; ++i) {
         ANGLEShaderSymbol shaderSymbol = symbols[i];
-        GraphicsContext3D::SymbolInfo symbolInfo(shaderSymbol.dataType, shaderSymbol.size, shaderSymbol.mappedName);
+        GraphicsContext3D::SymbolInfo symbolInfo(shaderSymbol.dataType, shaderSymbol.size, shaderSymbol.mappedName, shaderSymbol.precision, shaderSymbol.staticUse);
         entry.symbolMap(shaderSymbol.symbolType).set(shaderSymbol.name, symbolInfo);
     }
 

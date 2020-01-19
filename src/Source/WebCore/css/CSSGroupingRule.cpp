@@ -37,8 +37,6 @@
 #include "CSSStyleSheet.h"
 #include "ExceptionCode.h"
 #include "StyleRule.h"
-#include "WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -71,7 +69,7 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
 
     CSSParser parser(parserContext());
     CSSStyleSheet* styleSheet = parentStyleSheet();
-    RefPtr<StyleRuleBase> newRule = parser.parseRule(styleSheet ? styleSheet->contents() : 0, ruleString);
+    RefPtr<StyleRuleBase> newRule = parser.parseRule(styleSheet ? &styleSheet->contents() : nullptr, ruleString);
     if (!newRule) {
         // SYNTAX_ERR: Raised if the specified rule has a syntax error and is unparsable.
         ec = SYNTAX_ERR;
@@ -91,7 +89,7 @@ unsigned CSSGroupingRule::insertRule(const String& ruleString, unsigned index, E
     }
     CSSStyleSheet::RuleMutationScope mutationScope(this);
 
-    m_groupRule->wrapperInsertRule(index, newRule);
+    m_groupRule->wrapperInsertRule(index, newRule.releaseNonNull());
 
     m_childRuleCSSOMWrappers.insert(index, RefPtr<CSSRule>());
     return index;
@@ -146,7 +144,7 @@ CSSRule* CSSGroupingRule::item(unsigned index) const
 CSSRuleList* CSSGroupingRule::cssRules() const
 {
     if (!m_ruleListCSSOMWrapper)
-        m_ruleListCSSOMWrapper = adoptPtr(new LiveCSSRuleList<CSSGroupingRule>(const_cast<CSSGroupingRule*>(this)));
+        m_ruleListCSSOMWrapper = std::make_unique<LiveCSSRuleList<CSSGroupingRule>>(const_cast<CSSGroupingRule*>(this));
     return m_ruleListCSSOMWrapper.get();
 }
 
@@ -158,15 +156,6 @@ void CSSGroupingRule::reattach(StyleRuleBase* rule)
         if (m_childRuleCSSOMWrappers[i])
             m_childRuleCSSOMWrappers[i]->reattach(m_groupRule->childRules()[i].get());
     }
-}
-
-void CSSGroupingRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_groupRule, "groupRule");
-    info.addMember(m_childRuleCSSOMWrappers, "childRuleCSSOMWrappers");
-    info.addMember(m_ruleListCSSOMWrapper, "ruleListCSSOMWrapper");
 }
 
 } // namespace WebCore

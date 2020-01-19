@@ -36,7 +36,7 @@
 #include "Document.h"
 #include "Page.h"
 #include "RenderView.h"
-#include "StylePropertySet.h"
+#include "StyleProperties.h"
 #include "StyleRule.h"
 #include "ViewportArguments.h"
 
@@ -48,23 +48,24 @@ ViewportStyleResolver::ViewportStyleResolver(Document* document)
     ASSERT(m_document);
 }
 
+ViewportStyleResolver::~ViewportStyleResolver()
+{
+}
+
 void ViewportStyleResolver::addViewportRule(StyleRuleViewport* viewportRule)
 {
-    StylePropertySet* propertySet = viewportRule->mutableProperties();
+    StyleProperties& propertySet = viewportRule->mutableProperties();
 
-    unsigned propertyCount = propertySet->propertyCount();
+    unsigned propertyCount = propertySet.propertyCount();
     if (!propertyCount)
         return;
 
     if (!m_propertySet) {
-        m_propertySet = propertySet->copy();
+        m_propertySet = propertySet.mutableCopy();
         return;
     }
 
-    // We cannot use mergeAndOverrideOnConflict() here because it doesn't
-    // respect the !important declaration (but addParsedProperty() does).
-    for (unsigned i = 0; i < propertyCount; ++i)
-        m_propertySet->addParsedProperty(propertySet->propertyAt(i).toCSSProperty());
+    m_propertySet->mergeAndOverrideOnConflict(propertySet);
 }
 
 void ViewportStyleResolver::clearDocument()
@@ -109,7 +110,7 @@ float ViewportStyleResolver::getViewportArgumentValue(CSSPropertyID id) const
     if (!value || !value->isPrimitiveValue())
         return defaultValue;
 
-    CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(value.get());
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
 
     if (primitiveValue->isNumber() || primitiveValue->isPx())
         return primitiveValue->getFloatValue();
@@ -138,7 +139,7 @@ float ViewportStyleResolver::getViewportArgumentValue(CSSPropertyID id) const
         }
     }
 
-    switch (primitiveValue->getIdent()) {
+    switch (primitiveValue->getValueID()) {
     case CSSValueAuto:
         return defaultValue;
     case CSSValueDeviceHeight:

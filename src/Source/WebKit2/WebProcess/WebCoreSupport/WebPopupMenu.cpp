@@ -59,14 +59,9 @@ void WebPopupMenu::didChangeSelectedIndex(int newIndex)
     if (!m_popupClient)
         return;
 
-#if PLATFORM(QT)
-    if (newIndex >= 0)
-        m_popupClient->listBoxSelectItem(newIndex, m_popupClient->multiple(), false);
-#else
     m_popupClient->popupDidHide();
     if (newIndex >= 0)
         m_popupClient->valueChanged(newIndex);
-#endif
 }
 
 void WebPopupMenu::setTextForIndex(int index)
@@ -117,7 +112,7 @@ void WebPopupMenu::show(const IntRect& rect, FrameView* view, int index)
     PlatformPopupMenuData platformData;
     setUpPlatformData(pageCoordinates, platformData);
 
-    WebProcess::shared().connection()->send(Messages::WebPageProxy::ShowPopupMenu(pageCoordinates, m_popupClient->menuStyle().textDirection(), items, index, platformData), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebPageProxy::ShowPopupMenu(pageCoordinates, m_popupClient->menuStyle().textDirection(), items, index, platformData), m_page->pageID());
 }
 
 void WebPopupMenu::hide()
@@ -125,7 +120,7 @@ void WebPopupMenu::hide()
     if (!m_page || !m_popupClient)
         return;
 
-    WebProcess::shared().connection()->send(Messages::WebPageProxy::HidePopupMenu(), m_page->pageID());
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebPageProxy::HidePopupMenu(), m_page->pageID());
     m_page->setActivePopupMenu(0);
 }
 

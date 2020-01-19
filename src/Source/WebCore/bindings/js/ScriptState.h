@@ -1,11 +1,11 @@
 /*
  * Copyright (c) 2008, 2011 Google Inc.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
  *     * Redistributions in binary form must reproduce the above
@@ -15,7 +15,7 @@
  *     * Neither the name of Google Inc. nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -32,12 +32,8 @@
 #ifndef ScriptState_h
 #define ScriptState_h
 
-#include <heap/Strong.h>
-#include <wtf/Noncopyable.h>
-
 namespace JSC {
 class ExecState;
-class JSGlobalObject;
 }
 
 namespace WebCore {
@@ -47,38 +43,22 @@ class Frame;
 class Node;
 class Page;
 class ScriptExecutionContext;
-class WorkerContext;
+class WorkerGlobalScope;
 
 // The idea is to expose "state-like" methods (hadException, and any other
-// methods where ExecState just dips into globalData) of JSC::ExecState as a
+// methods where ExecState just dips into vm) of JSC::ExecState as a
 // separate abstraction.
 // For now, the separation is purely by convention.
 typedef JSC::ExecState ScriptState;
 
-class ScriptStateProtectedPtr {
-    WTF_MAKE_NONCOPYABLE(ScriptStateProtectedPtr);
-public:
-    explicit ScriptStateProtectedPtr(ScriptState*);
-    ~ScriptStateProtectedPtr();
-    ScriptState* get() const;
-private:
-    JSC::Strong<JSC::JSGlobalObject> m_globalObject;
-};
+DOMWindow* domWindowFromExecState(JSC::ExecState*);
+ScriptExecutionContext* scriptExecutionContextFromExecState(JSC::ExecState*);
 
-DOMWindow* domWindowFromScriptState(ScriptState*);
-ScriptExecutionContext* scriptExecutionContextFromScriptState(ScriptState*);
+JSC::ExecState* mainWorldExecState(Frame*);
 
-bool evalEnabled(ScriptState*);
-void setEvalEnabled(ScriptState*, bool);
-
-ScriptState* mainWorldScriptState(Frame*);
-
-ScriptState* scriptStateFromNode(DOMWrapperWorld*, Node*);
-ScriptState* scriptStateFromPage(DOMWrapperWorld*, Page*);
-
-#if ENABLE(WORKERS)
-ScriptState* scriptStateFromWorkerContext(WorkerContext*);
-#endif
+JSC::ExecState* execStateFromNode(DOMWrapperWorld&, Node*);
+JSC::ExecState* execStateFromPage(DOMWrapperWorld&, Page*);
+JSC::ExecState* execStateFromWorkerGlobalScope(WorkerGlobalScope*);
 
 } // namespace WebCore
 

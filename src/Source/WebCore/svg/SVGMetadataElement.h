@@ -26,12 +26,14 @@
 
 namespace WebCore {
 
-class SVGMetadataElement : public SVGElement {
+class SVGMetadataElement final : public SVGElement {
 public:
-    static PassRefPtr<SVGMetadataElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGMetadataElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGMetadataElement(const QualifiedName&, Document*);
+    SVGMetadataElement(const QualifiedName&, Document&);
+
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 };
 
 } // namespace WebCore

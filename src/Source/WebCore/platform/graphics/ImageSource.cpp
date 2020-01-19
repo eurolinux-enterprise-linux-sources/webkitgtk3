@@ -33,11 +33,6 @@
 
 #include "ImageOrientation.h"
 #include "NotImplemented.h"
-#include "PlatformMemoryInstrumentation.h"
-
-#if PLATFORM(CHROMIUM)
-#include "DeferredImageDecoder.h"
-#endif
 
 namespace WebCore {
 
@@ -104,18 +99,18 @@ bool ImageSource::isSizeAvailable()
     return m_decoder && m_decoder->isSizeAvailable();
 }
 
-IntSize ImageSource::size(RespectImageOrientationEnum shouldRespectOrientation) const
+IntSize ImageSource::size(ImageOrientationDescription description) const
 {
-    return frameSizeAtIndex(0, shouldRespectOrientation);
+    return frameSizeAtIndex(0, description);
 }
 
-IntSize ImageSource::frameSizeAtIndex(size_t index, RespectImageOrientationEnum shouldRespectOrientation) const
+IntSize ImageSource::frameSizeAtIndex(size_t index, ImageOrientationDescription description) const
 {
     if (!m_decoder)
         return IntSize();
 
     IntSize size = m_decoder->frameSizeAtIndex(index);
-    if ((shouldRespectOrientation == RespectImageOrientation) && m_decoder->orientation().usesWidthAsHeight())
+    if ((description.respectImageOrientation() == RespectImageOrientation) && m_decoder->orientation().usesWidthAsHeight())
         return IntSize(size.height(), size.width());
 
     return size;
@@ -141,8 +136,10 @@ size_t ImageSource::frameCount() const
     return m_decoder ? m_decoder->frameCount() : 0;
 }
 
-NativeImagePtr ImageSource::createFrameAtIndex(size_t index)
+PassNativeImagePtr ImageSource::createFrameAtIndex(size_t index, float* scale)
 {
+    UNUSED_PARAM(scale);
+
     if (!m_decoder)
         return 0;
 
@@ -205,12 +202,6 @@ unsigned ImageSource::frameBytesAtIndex(size_t index) const
     if (!m_decoder)
         return 0;
     return m_decoder->frameBytesAtIndex(index);
-}
-
-void ImageSource::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    info.addMember(m_decoder, "decoder");
 }
 
 }

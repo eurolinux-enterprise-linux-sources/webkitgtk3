@@ -27,12 +27,14 @@
 #ifndef InternalSettings_h
 #define InternalSettings_h
 
+// FIXME (121927): This include should not be needed.
+#include <wtf/text/AtomicStringHash.h>
+
 #include "EditingBehaviorTypes.h"
+#include "FontGenericFamilies.h"
 #include "IntSize.h"
 #include "InternalSettingsGenerated.h"
 #include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -47,30 +49,32 @@ class InternalSettings : public InternalSettingsGenerated {
 public:
     class Backup {
     public:
-        explicit Backup(Settings*);
-        void restoreTo(Settings*);
+        explicit Backup(Settings&);
+        void restoreTo(Settings&);
 
         bool m_originalCSSExclusionsEnabled;
-        bool m_originalCSSVariablesEnabled;
+        bool m_originalCSSShapesEnabled;
 #if ENABLE(SHADOW_DOM)
         bool m_originalShadowDOMEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
 #endif
-#if ENABLE(STYLE_SCOPED)
-        bool m_originalStyleScoped;
-#endif
         EditingBehaviorType m_originalEditingBehavior;
-        bool m_originalUnifiedSpellCheckerEnabled;
+
+        // Initially empty, only used if changed by a test.
+        ScriptFontFamilyMap m_standardFontFamilies;
+        ScriptFontFamilyMap m_fixedFontFamilies;
+        ScriptFontFamilyMap m_serifFontFamilies;
+        ScriptFontFamilyMap m_sansSerifFontFamilies;
+        ScriptFontFamilyMap m_cursiveFontFamilies;
+        ScriptFontFamilyMap m_fantasyFontFamilies;
+        ScriptFontFamilyMap m_pictographFontFamilies;
+
 #if ENABLE(TEXT_AUTOSIZING)
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
         float m_originalTextAutosizingFontScaleFactor;
 #endif
-        IntSize m_originalResolutionOverride;
         String m_originalMediaTypeOverride;
-#if ENABLE(DIALOG_ELEMENT)
-        bool m_originalDialogElementEnabled;
-#endif
         bool m_originalCanvasUsesAcceleratedDrawing;
         bool m_originalMockScrollbarsEnabled;
         bool m_originalUsesOverlayScrollbars;
@@ -82,6 +86,11 @@ public:
         bool m_shouldDisplayCaptions;
         bool m_shouldDisplayTextDescriptions;
 #endif
+        String m_defaultVideoPosterURL;
+        bool m_originalTimeWithoutMouseMovementBeforeHidingControls;
+        bool m_useLegacyBackgroundSizeShorthandBehavior;
+        bool m_autoscrollForDragAndDropEnabled;
+        bool m_pluginReplacementEnabled;
     };
 
     static PassRefPtr<InternalSettings> create(Page* page)
@@ -99,7 +108,6 @@ public:
     void setTouchEventEmulationEnabled(bool enabled, ExceptionCode&);
     void setShadowDOMEnabled(bool enabled, ExceptionCode&);
     void setAuthorShadowDOMForAnyElementEnabled(bool);
-    void setStyleScopedEnabled(bool);
     void setStandardFontFamily(const String& family, const String& script, ExceptionCode&);
     void setSerifFontFamily(const String& family, const String& script, ExceptionCode&);
     void setSansSerifFontFamily(const String& family, const String& script, ExceptionCode&);
@@ -110,22 +118,25 @@ public:
     void setTextAutosizingEnabled(bool enabled, ExceptionCode&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionCode&);
     void setTextAutosizingFontScaleFactor(float fontScaleFactor, ExceptionCode&);
-    void setResolutionOverride(int dotsPerCSSInchHorizontally, int dotsPerCSSInchVertically, ExceptionCode&);
     void setMediaTypeOverride(const String& mediaType, ExceptionCode&);
-    void setEnableScrollAnimator(bool enabled, ExceptionCode&);
-    bool scrollAnimatorEnabled(ExceptionCode&);
     void setCSSExclusionsEnabled(bool enabled, ExceptionCode&);
-    void setCSSVariablesEnabled(bool enabled, ExceptionCode&);
-    bool cssVariablesEnabled(ExceptionCode&);
+    void setCSSShapesEnabled(bool enabled, ExceptionCode&);
     void setCanStartMedia(bool, ExceptionCode&);
     void setEditingBehavior(const String&, ExceptionCode&);
-    void setDialogElementEnabled(bool, ExceptionCode&);
     void setShouldDisplayTrackKind(const String& kind, bool enabled, ExceptionCode&);
     bool shouldDisplayTrackKind(const String& kind, ExceptionCode&);
     void setStorageBlockingPolicy(const String&, ExceptionCode&);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setImagesEnabled(bool enabled, ExceptionCode&);
     void setMinimumTimerInterval(double intervalInSeconds, ExceptionCode&);
+    void setDefaultVideoPosterURL(const String& url, ExceptionCode&);
+    void setTimeWithoutMouseMovementBeforeHidingControls(double time, ExceptionCode&);
+    void setUseLegacyBackgroundSizeShorthandBehavior(bool enabled, ExceptionCode&);
+    void setAutoscrollForDragAndDropEnabled(bool enabled, ExceptionCode&);
+    void setFontFallbackPrefersPictographs(bool preferPictographs, ExceptionCode&);
+    void setPluginReplacementEnabled(bool);
+    void setBackgroundShouldExtendBeyondPage(bool hasExtendedBackground, ExceptionCode&);
+
 
 private:
     explicit InternalSettings(Page*);

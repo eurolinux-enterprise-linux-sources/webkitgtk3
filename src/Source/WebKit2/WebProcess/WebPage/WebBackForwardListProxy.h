@@ -26,7 +26,7 @@
 #ifndef WebBackForwardListProxy_h
 #define WebBackForwardListProxy_h
 
-#include <WebCore/BackForwardList.h>
+#include <WebCore/BackForwardClient.h>
 #include <wtf/HashSet.h>
 #include <wtf/PassRefPtr.h>
 
@@ -34,7 +34,7 @@ namespace WebKit {
 
 class WebPage;
 
-class WebBackForwardListProxy : public WebCore::BackForwardList {
+class WebBackForwardListProxy : public WebCore::BackForwardClient {
 public: 
     static PassRefPtr<WebBackForwardListProxy> create(WebPage* page) { return adoptRef(new WebBackForwardListProxy(page)); }
 
@@ -61,6 +61,12 @@ private:
     virtual bool isActive();
 
     virtual void close();
+
+#if PLATFORM(IOS)
+    virtual unsigned current() override;
+    virtual void setCurrent(unsigned newCurrent) override;
+    virtual bool clearAllPageCaches() override;
+#endif
 
     WebPage* m_page;
     HashSet<uint64_t> m_associatedItemIDs;

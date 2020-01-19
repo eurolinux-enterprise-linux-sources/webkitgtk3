@@ -27,20 +27,16 @@
 #define Color_h
 
 #include "AnimationUtilities.h"
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
 #include <wtf/unicode/Unicode.h>
 
 #if USE(CG)
 #include "ColorSpace.h"
 typedef struct CGColor* CGColorRef;
-#endif
-
-#if PLATFORM(QT)
-#include <qglobal.h>
-QT_BEGIN_NAMESPACE
-class QColor;
-QT_END_NAMESPACE
+#if PLATFORM(IOS)
+typedef struct CGColorSpace* CGColorSpaceRef;
+#endif // PLATFORM(IOS)
 #endif
 
 #if PLATFORM(GTK)
@@ -48,10 +44,6 @@ typedef struct _GdkColor GdkColor;
 #ifndef GTK_API_VERSION_2
 typedef struct _GdkRGBA GdkRGBA;
 #endif
-#endif
-
-#if PLATFORM(WX)
-class wxColour;
 #endif
 
 namespace WebCore {
@@ -129,14 +121,11 @@ public:
     Color light() const;
     Color dark() const;
 
+    bool isDark() const;
+
     // This is an implementation of Porter-Duff's "source-over" equation
     Color blend(const Color&) const;
     Color blendWithWhite() const;
-
-#if PLATFORM(QT)
-    Color(const QColor&);
-    operator QColor() const;
-#endif
 
 #if PLATFORM(GTK)
     Color(const GdkColor&);
@@ -145,11 +134,6 @@ public:
     Color(const GdkRGBA&);
     operator GdkRGBA() const;
 #endif
-#endif
-
-#if PLATFORM(WX)
-    Color(const wxColour&);
-    operator wxColour() const;
 #endif
 
 #if USE(CG)
@@ -166,6 +150,15 @@ public:
     static const RGBA32 gray = 0xFFA0A0A0;
     static const RGBA32 lightGray = 0xFFC0C0C0;
     static const RGBA32 transparent = 0x00000000;
+    static const RGBA32 cyan = 0xFF00FFFF;
+
+#if PLATFORM(IOS)
+    static const RGBA32 tap = 0x4D1A1A1A;
+
+    // FIXME: This color shouldn't be iOS-specific. Once we fix up its usage in InlineTextBox::paintCompositionBackground()
+    // we should move it outside the PLATFORM(IOS)-guard. See <https://bugs.webkit.org/show_bug.cgi?id=126296>.
+    static const RGBA32 compositionFill = 0x3CAFC0E3;
+#endif
 
 private:
     RGBA32 m_color;
@@ -211,8 +204,19 @@ inline Color blend(const Color& from, const Color& to, double progress, bool ble
                  blend(from.alpha(), to.alpha(), progress));
 }
 
+inline uint16_t fastDivideBy255(uint16_t value)
+{
+    // This is an approximate algorithm for division by 255, but it gives accurate results for 16bit values.
+    uint16_t approximation = value >> 8;
+    uint16_t remainder = value - (approximation * 255) + 1;
+    return approximation + (remainder >> 8);
+}
+
 #if USE(CG)
 CGColorRef cachedCGColor(const Color&, ColorSpace);
+#if PLATFORM(IOS)
+CGColorRef createCGColorWithDeviceWhite(CGFloat white, CGFloat alpha);
+#endif // PLATFORM(IOS)
 #endif
 
 } // namespace WebCore

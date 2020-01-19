@@ -26,17 +26,15 @@
 #ifndef VisitedLinkStrategy_h
 #define VisitedLinkStrategy_h
 
-#if USE(PLATFORM_STRATEGIES)
-
 namespace WebCore {
 
 typedef uint64_t LinkHash;
 class Page;
-class KURL;
+class URL;
 
 class VisitedLinkStrategy {
 public:
-    virtual bool isLinkVisited(Page*, LinkHash, const KURL& baseURL, const AtomicString& attributeURL) = 0;
+    virtual bool isLinkVisited(Page*, LinkHash, const URL& baseURL, const AtomicString& attributeURL) = 0;
     virtual void addVisitedLink(Page*, LinkHash) = 0;
 
 protected:
@@ -46,7 +44,5 @@ protected:
 };
 
 } // namespace WebCore
-
-#endif // USE(PLATFORM_STRATEGIES)
 
 #endif // VisitedLinkStrategy_h

@@ -27,8 +27,8 @@
 #ifndef CrossOriginPreflightResultCache_h
 #define CrossOriginPreflightResultCache_h
 
-#include "KURLHash.h"
-#include "ResourceHandle.h"
+#include "URLHash.h"
+#include "ResourceHandleTypes.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/PassOwnPtr.h>
@@ -70,15 +70,15 @@ namespace WebCore {
     public:
         static CrossOriginPreflightResultCache& shared();
 
-        void appendEntry(const String& origin, const KURL&, PassOwnPtr<CrossOriginPreflightResultCacheItem>);
-        bool canSkipPreflight(const String& origin, const KURL&, StoredCredentials, const String& method, const HTTPHeaderMap& requestHeaders);
+        void appendEntry(const String& origin, const URL&, PassOwnPtr<CrossOriginPreflightResultCacheItem>);
+        bool canSkipPreflight(const String& origin, const URL&, StoredCredentials, const String& method, const HTTPHeaderMap& requestHeaders);
 
         void empty();
 
     private:
         CrossOriginPreflightResultCache() { }
 
-        typedef HashMap<std::pair<String, KURL>, OwnPtr<CrossOriginPreflightResultCacheItem> > CrossOriginPreflightResultHashMap;
+        typedef HashMap<std::pair<String, URL>, OwnPtr<CrossOriginPreflightResultCacheItem>> CrossOriginPreflightResultHashMap;
 
         CrossOriginPreflightResultHashMap m_preflightHashMap;
     };

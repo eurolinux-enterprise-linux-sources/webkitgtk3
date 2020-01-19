@@ -35,9 +35,10 @@
 
 #include <atk/atk.h>
 
-static bool loggingAccessibilityEvents = false;
+bool loggingAccessibilityEvents = false;
 
 AccessibilityController::AccessibilityController()
+    : m_globalNotificationHandler(nullptr)
 {
 }
 
@@ -48,9 +49,12 @@ AccessibilityController::~AccessibilityController()
 AccessibilityUIElement AccessibilityController::elementAtPoint(int x, int y)
 {
     // FIXME: implement
-    return 0;
+    return nullptr;
 }
 
+void AccessibilityController::platformResetToConsistentState()
+{
+}
 
 void AccessibilityController::setLogFocusEvents(bool)
 {
@@ -70,8 +74,8 @@ void AccessibilityController::setLogAccessibilityEvents(bool logAccessibilityEve
         return;
 
     if (!logAccessibilityEvents) {
-        disconnectAccessibilityCallbacks();
         loggingAccessibilityEvents = false;
+        disconnectAccessibilityCallbacks();
         return;
     }
 
@@ -79,13 +83,63 @@ void AccessibilityController::setLogAccessibilityEvents(bool logAccessibilityEve
     loggingAccessibilityEvents = true;
 }
 
-bool AccessibilityController::addNotificationListener(JSObjectRef)
+bool AccessibilityController::addNotificationListener(JSObjectRef functionCallback)
 {
-    return false;
+    if (!functionCallback)
+        return false;
+
+    // Only one global notification listener.
+    if (m_globalNotificationHandler)
+        return false;
+
+    m_globalNotificationHandler = AccessibilityNotificationHandler::create();
+    m_globalNotificationHandler->setNotificationFunctionCallback(functionCallback);
+
+    return true;
 }
 
 void AccessibilityController::removeNotificationListener()
 {
+    // Programmers should not be trying to remove a listener that's already removed.
+    ASSERT(m_globalNotificationHandler);
+
+    m_globalNotificationHandler = nullptr;
+}
+
+JSRetainPtr<JSStringRef> AccessibilityController::platformName() const
+{
+    JSRetainPtr<JSStringRef> platformName(Adopt, JSStringCreateWithUTF8CString("atk"));
+    return platformName;
+}
+
+AtkObject* AccessibilityController::childElementById(AtkObject* parent, const char* id)
+{
+    if (!ATK_IS_OBJECT(parent))
+        return nullptr;
+
+    bool parentFound = false;
+    AtkAttributeSet* attributeSet(atk_object_get_attributes(parent));
+    for (AtkAttributeSet* attributes = attributeSet; attributes; attributes = attributes->next) {
+        AtkAttribute* attribute = static_cast<AtkAttribute*>(attributes->data);
+        if (!strcmp(attribute->name, "html-id")) {
+            if (!strcmp(attribute->value, id))
+                parentFound = true;
+            break;
+        }
+    }
+    atk_attribute_set_free(attributeSet);
+
+    if (parentFound)
+        return parent;
+
+    int childCount = atk_object_get_n_accessible_children(parent);
+    for (int i = 0; i < childCount; i++) {
+        AtkObject* result = childElementById(atk_object_ref_accessible_child(parent, i), id);
+        if (ATK_IS_OBJECT(result))
+            return result;
+    }
+
+    return nullptr;
 }
 
 #endif

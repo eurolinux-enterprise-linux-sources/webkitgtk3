@@ -34,12 +34,12 @@
 
 namespace WebCore {
 
-AudioBasicInspectorNode::AudioBasicInspectorNode(AudioContext* context, float sampleRate)
+AudioBasicInspectorNode::AudioBasicInspectorNode(AudioContext* context, float sampleRate, unsigned outputChannelCount)
     : AudioNode(context, sampleRate)
     , m_needAutomaticPull(false)
 {
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    addInput(std::make_unique<AudioNodeInput>(this));
+    addOutput(std::make_unique<AudioNodeOutput>(this, outputChannelCount));
 }
 
 // We override pullInputs() as an optimization allowing this node to take advantage of in-place processing,
@@ -55,7 +55,7 @@ void AudioBasicInspectorNode::connect(AudioNode* destination, unsigned outputInd
 {
     ASSERT(isMainThread());
 
-    AudioContext::AutoLocker locker(context());
+    AudioContext::AutoLocker locker(*context());
 
     AudioNode::connect(destination, outputIndex, inputIndex, ec);
     updatePullStatus();
@@ -65,7 +65,7 @@ void AudioBasicInspectorNode::disconnect(unsigned outputIndex, ExceptionCode& ec
 {
     ASSERT(isMainThread());
 
-    AudioContext::AutoLocker locker(context());
+    AudioContext::AutoLocker locker(*context());
 
     AudioNode::disconnect(outputIndex, ec);
     updatePullStatus();

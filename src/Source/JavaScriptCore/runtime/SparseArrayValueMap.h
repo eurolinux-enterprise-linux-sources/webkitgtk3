@@ -44,7 +44,7 @@ struct SparseArrayEntry : public WriteBarrier<Unknown> {
     SparseArrayEntry() : attributes(0) { }
 
     JSValue get(ExecState*, JSObject*) const;
-    void get(PropertySlot&) const;
+    void get(JSObject*, PropertySlot&) const;
     void get(PropertyDescriptor&) const;
     void put(ExecState*, JSValue thisValue, SparseArrayValueMap*, JSValue, bool shouldThrow);
     JSValue getNonSparseMode() const;
@@ -57,7 +57,7 @@ public:
     typedef JSCell Base;
     
 private:
-    typedef HashMap<uint64_t, SparseArrayEntry, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t> > Map;
+    typedef HashMap<uint64_t, SparseArrayEntry, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>> Map;
 
     enum Flags {
         Normal = 0,
@@ -65,27 +65,27 @@ private:
         LengthIsReadOnly = 2,
     };
 
-    SparseArrayValueMap(JSGlobalData&);
+    SparseArrayValueMap(VM&);
     ~SparseArrayValueMap();
     
-    void finishCreation(JSGlobalData&);
+    void finishCreation(VM&);
 
     static const unsigned StructureFlags = OverridesVisitChildren | JSCell::StructureFlags;
 
 public:
-    static JS_EXPORTDATA const ClassInfo s_info;
+    DECLARE_EXPORT_INFO;
     
     typedef Map::iterator iterator;
     typedef Map::const_iterator const_iterator;
     typedef Map::AddResult AddResult;
 
-    static SparseArrayValueMap* create(JSGlobalData&);
+    static SparseArrayValueMap* create(VM&);
     
     static const bool needsDestruction = true;
     static const bool hasImmortalStructure = true;
     static void destroy(JSCell*);
     
-    static Structure* createStructure(JSGlobalData&, JSGlobalObject*, JSValue prototype);
+    static Structure* createStructure(VM&, JSGlobalObject*, JSValue prototype);
 
     static void visitChildren(JSCell*, SlotVisitor&);
 

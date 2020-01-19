@@ -31,7 +31,7 @@
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 
-namespace CoreIPC {
+namespace IPC {
 class Connection;
 class MessageDecoder;
 }
@@ -51,7 +51,7 @@ public:
     static PassRefPtr<WebFullScreenManager> create(WebPage*);
     virtual ~WebFullScreenManager();
 
-    void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
+    void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&);
 
     bool supportsFullScreen(bool withKeyboard);
     void enterFullScreenForElement(WebCore::Element*);
@@ -71,11 +71,14 @@ protected:
 
     void setAnimatingFullScreen(bool);
     void requestExitFullScreen();
+    void saveScrollPosition();
+    void restoreScrollPosition();
 
-    void didReceiveWebFullScreenManagerMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
+    void didReceiveWebFullScreenManagerMessage(IPC::Connection*, IPC::MessageDecoder&);
 
     WebCore::IntRect m_initialFrame;
     WebCore::IntRect m_finalFrame;
+    WebCore::IntPoint m_scrollPosition;
     RefPtr<WebPage> m_page;
     RefPtr<WebCore::Element> m_element;
 };

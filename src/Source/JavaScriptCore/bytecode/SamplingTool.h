@@ -185,8 +185,8 @@ namespace JSC {
     struct Instruction;
 
     struct ScriptSampleRecord {
-        ScriptSampleRecord(JSGlobalData& globalData, ScriptExecutable* executable)
-            : m_executable(globalData, executable)
+        ScriptSampleRecord(VM& vm, ScriptExecutable* executable)
+            : m_executable(vm, executable)
             , m_codeBlock(0)
             , m_sampleCount(0)
             , m_opcodeSampleCount(0)
@@ -211,7 +211,7 @@ namespace JSC {
         unsigned m_size;
     };
 
-    typedef HashMap<ScriptExecutable*, OwnPtr<ScriptSampleRecord> > ScriptSampleRecordMap;
+    typedef HashMap<ScriptExecutable*, std::unique_ptr<ScriptSampleRecord>> ScriptSampleRecordMap;
 
     class SamplingThread {
     public:
@@ -281,7 +281,7 @@ namespace JSC {
         JS_EXPORT_PRIVATE void setup();
         void dump(ExecState*);
 
-        void notifyOfScope(JSGlobalData&, ScriptExecutable* scope);
+        void notifyOfScope(VM&, ScriptExecutable* scope);
 
         void sample(CodeBlock* codeBlock, Instruction* vPC)
         {

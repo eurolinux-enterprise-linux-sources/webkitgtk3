@@ -30,21 +30,8 @@
  */
 
 [
-    Conditional=WORKERS,
-    ActiveDOMObject,
-    JSCustomToJSObject,
-    EventTarget
+    NoInterfaceObject,
 ] interface AbstractWorker {
-
     attribute EventListener onerror;
-
-    void addEventListener(in DOMString type,
-                          in EventListener listener,
-                          in [Optional] boolean useCapture);
-    void removeEventListener(in DOMString type,
-                             in EventListener listener,
-                             in [Optional] boolean useCapture);
-    boolean dispatchEvent(in Event evt)
-        raises(EventException);
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007 Alexey Proskuryakov (ap@nypop.com)
+ * Copyright (C) 2007, 2013 Alexey Proskuryakov (ap@nypop.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,14 +26,16 @@
 #include "config.h"
 #include "JSCustomXPathNSResolver.h"
 
-#include "Console.h"
 #include "Document.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "JSDOMWindowCustom.h"
 #include "JSMainThreadExecState.h"
+#include "Page.h"
+#include "PageConsole.h"
 #include "SecurityOrigin.h"
 #include <runtime/JSLock.h>
+#include <wtf/Ref.h>
 
 namespace WebCore {
 
@@ -50,12 +52,12 @@ PassRefPtr<JSCustomXPathNSResolver> JSCustomXPathNSResolver::create(ExecState* e
         return 0;
     }
 
-    return adoptRef(new JSCustomXPathNSResolver(exec, resolverObject, asJSDOMWindow(exec->dynamicGlobalObject())));
+    return adoptRef(new JSCustomXPathNSResolver(exec, resolverObject, asJSDOMWindow(exec->vmEntryGlobalObject())));
 }
 
 JSCustomXPathNSResolver::JSCustomXPathNSResolver(ExecState* exec, JSObject* customResolver, JSDOMWindow* globalObject)
-    : m_customResolver(exec->globalData(), customResolver)
-    , m_globalObject(exec->globalData(), globalObject)
+    : m_customResolver(exec->vm(), customResolver)
+    , m_globalObject(exec->vm(), globalObject)
 {
 }
 
@@ -67,7 +69,7 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
 {
     ASSERT(m_customResolver);
 
-    JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
+    JSLockHolder lock(JSDOMWindowBase::commonVM());
 
     ExecState* exec = m_globalObject->globalExec();
         
@@ -77,21 +79,20 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     if (callType == CallTypeNone) {
         callType = m_customResolver->methodTable()->getCallData(m_customResolver.get(), callData);
         if (callType == CallTypeNone) {
-            // FIXME: Pass actual line number and source URL.
-            m_globalObject->impl()->console()->addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
+            // FIXME: <http://webkit.org/b/114312> JSCustomXPathNSResolver::lookupNamespaceURI Console Message should include Line, Column, and SourceURL
+            if (PageConsole* console = m_globalObject->impl().pageConsole())
+                console->addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
             return String();
         }
         function = m_customResolver.get();
     }
 
-    RefPtr<JSCustomXPathNSResolver> selfProtector(this);
+    Ref<JSCustomXPathNSResolver> selfProtector(*this);
 
     MarkedArgumentBuffer args;
     args.append(jsStringWithCache(exec, prefix));
 
-    m_globalObject->globalData().timeoutChecker.start();
     JSValue retval = JSMainThreadExecState::call(exec, function, callType, callData, m_customResolver.get(), args);
-    m_globalObject->globalData().timeoutChecker.stop();
 
     String result;
     if (exec->hadException())
@@ -100,8 +101,6 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
         if (!retval.isUndefinedOrNull())
             result = retval.toString(exec)->value(exec);
     }
-
-    Document::updateStyleForAllDocuments();
 
     return result;
 }

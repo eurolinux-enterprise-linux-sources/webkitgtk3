@@ -41,12 +41,8 @@
 #include "InspectorHistory.h"
 #include "Node.h"
 #include "Text.h"
-
 #include "markup.h"
-
 #include <wtf/RefPtr.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -60,18 +56,18 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_anchorNode = m_node->nextSibling();
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         return m_parentNode->insertBefore(m_node.get(), m_anchorNode.get(), ec);
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         return m_parentNode->removeChild(m_node.get(), ec);
     }
@@ -93,7 +89,7 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         if (m_node->parentNode()) {
             m_removeChildAction = adoptPtr(new RemoveChildAction(m_node->parentNode(), m_node.get()));
@@ -103,7 +99,7 @@ public:
         return m_parentNode->insertBefore(m_node.get(), m_anchorNode.get(), ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         if (!m_parentNode->removeChild(m_node.get(), ec))
             return false;
@@ -112,7 +108,7 @@ public:
         return true;
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         if (m_removeChildAction && !m_removeChildAction->redo(ec))
             return false;
@@ -136,19 +132,19 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_value = m_element->getAttribute(m_name);
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         m_element->setAttribute(m_name, m_value, ec);
         return true;
     }
 
-    virtual bool redo(ExceptionCode&)
+    virtual bool redo(ExceptionCode&) override
     {
         m_element->removeAttribute(m_name);
         return true;
@@ -172,7 +168,7 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_hadAttribute = m_element->hasAttribute(m_name);
         if (m_hadAttribute)
@@ -180,7 +176,7 @@ public:
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         if (m_hadAttribute)
             m_element->setAttribute(m_name, m_oldValue, ec);
@@ -189,7 +185,7 @@ public:
         return true;
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         m_element->setAttribute(m_name, m_value, ec);
         return true;
@@ -206,31 +202,31 @@ private:
 class DOMEditor::SetOuterHTMLAction : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(SetOuterHTMLAction);
 public:
-    SetOuterHTMLAction(Node* node, const String& html)
+    SetOuterHTMLAction(Node& node, const String& html)
         : InspectorHistory::Action("SetOuterHTML")
         , m_node(node)
-        , m_nextSibling(node->nextSibling())
+        , m_nextSibling(node.nextSibling())
         , m_html(html)
-        , m_newNode(0)
+        , m_newNode(nullptr)
         , m_history(adoptPtr(new InspectorHistory()))
         , m_domEditor(adoptPtr(new DOMEditor(m_history.get())))
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_oldHTML = createMarkup(m_node.get());
-        DOMPatchSupport domPatchSupport(m_domEditor.get(), m_node->ownerDocument());
+        DOMPatchSupport domPatchSupport(m_domEditor.get(), &m_node->document());
         m_newNode = domPatchSupport.patchNode(m_node.get(), m_html, ec);
         return !ec;
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         return m_history->undo(ec);
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         return m_history->redo(ec);
     }
@@ -241,7 +237,7 @@ public:
     }
 
 private:
-    RefPtr<Node> m_node;
+    Ref<Node> m_node;
     RefPtr<Node> m_nextSibling;
     String m_html;
     String m_oldHTML;
@@ -260,19 +256,19 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_oldText = m_textNode->wholeText();
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         m_textNode->replaceWholeText(m_oldText, ec);
         return true;
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         m_textNode->replaceWholeText(m_text, ec);
         return true;
@@ -295,17 +291,17 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         return m_parentNode->replaceChild(m_oldNode, m_newNode.get(), ec);
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         return m_parentNode->replaceChild(m_newNode, m_oldNode.get(), ec);
     }
@@ -326,19 +322,19 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionCode& ec)
+    virtual bool perform(ExceptionCode& ec) override
     {
         m_oldValue = m_node->nodeValue();
         return redo(ec);
     }
 
-    virtual bool undo(ExceptionCode& ec)
+    virtual bool undo(ExceptionCode& ec) override
     {
         m_node->setNodeValue(m_oldValue, ec);
         return !ec;
     }
 
-    virtual bool redo(ExceptionCode& ec)
+    virtual bool redo(ExceptionCode& ec) override
     {
         m_node->setNodeValue(m_value, ec);
         return !ec;
@@ -374,7 +370,7 @@ bool DOMEditor::removeAttribute(Element* element, const String& name, ExceptionC
     return m_history->perform(adoptPtr(new RemoveAttributeAction(element, name)), ec);
 }
 
-bool DOMEditor::setOuterHTML(Node* node, const String& html, Node** newNode, ExceptionCode& ec)
+bool DOMEditor::setOuterHTML(Node& node, const String& html, Node** newNode, ExceptionCode& ec)
 {
     OwnPtr<SetOuterHTMLAction> action = adoptPtr(new SetOuterHTMLAction(node, html));
     SetOuterHTMLAction* rawAction = action.get();
@@ -439,7 +435,7 @@ bool DOMEditor::removeAttribute(Element* element, const String& name, ErrorStrin
     return result;
 }
 
-bool DOMEditor::setOuterHTML(Node* node, const String& html, Node** newNode, ErrorString* errorString)
+bool DOMEditor::setOuterHTML(Node& node, const String& html, Node** newNode, ErrorString* errorString)
 {
     ExceptionCode ec = 0;
     bool result = setOuterHTML(node, html, newNode, ec);

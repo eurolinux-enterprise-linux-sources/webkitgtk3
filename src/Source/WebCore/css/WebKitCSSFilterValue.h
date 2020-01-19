@@ -50,19 +50,14 @@ public:
         ContrastFilterOperation,
         BlurFilterOperation,
         DropShadowFilterOperation
-#if ENABLE(CSS_SHADERS)
-        , CustomFilterOperation
-#endif
     };
 
-    static bool typeUsesSpaceSeparator(FilterOperationType);
-
-    static PassRefPtr<WebKitCSSFilterValue> create(FilterOperationType type)
+    static PassRef<WebKitCSSFilterValue> create(FilterOperationType type)
     {
-        return adoptRef(new WebKitCSSFilterValue(type));
+        return adoptRef(*new WebKitCSSFilterValue(type));
     }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     FilterOperationType operationType() const { return m_type; }
 
@@ -70,14 +65,14 @@ public:
 
     bool equals(const WebKitCSSFilterValue&) const;
 
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
-
 private:
     WebKitCSSFilterValue(FilterOperationType);
     WebKitCSSFilterValue(const WebKitCSSFilterValue& cloneFrom);
 
     FilterOperationType m_type;
 };
+
+CSS_VALUE_TYPE_CASTS(WebKitCSSFilterValue, isWebKitCSSFilterValue())
 
 }
 

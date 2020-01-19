@@ -32,7 +32,11 @@
 namespace WebCore {
 
 MoveSelectionCommand::MoveSelectionCommand(PassRefPtr<DocumentFragment> fragment, const Position& position, bool smartInsert, bool smartDelete) 
-    : CompositeEditCommand(position.anchorNode()->document()), m_fragment(fragment), m_position(position), m_smartInsert(smartInsert), m_smartDelete(smartDelete)
+    : CompositeEditCommand(position.anchorNode()->document())
+    , m_fragment(fragment)
+    , m_position(position)
+    , m_smartInsert(smartInsert)
+    , m_smartDelete(smartDelete)
 {
     ASSERT(m_fragment);
 }
@@ -64,6 +68,8 @@ void MoveSelectionCommand::doApply()
     //        selection is empty, leading to null deref
     if (!pos.anchorNode()->inDocument())
         pos = endingSelection().start();
+
+    cleanupAfterDeletion(pos);
 
     setEndingSelection(VisibleSelection(pos, endingSelection().affinity(), endingSelection().isDirectional()));
     if (!pos.anchorNode()->inDocument()) {

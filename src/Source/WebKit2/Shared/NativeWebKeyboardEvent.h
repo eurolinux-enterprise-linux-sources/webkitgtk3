@@ -33,15 +33,17 @@
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 OBJC_CLASS NSView;
-#elif PLATFORM(QT)
-#include <QKeyEvent>
 #elif PLATFORM(GTK)
-#include <GOwnPtrGtk.h>
 #include <WebCore/CompositionResults.h>
+#include <WebCore/GUniquePtrGtk.h>
 #include <WebCore/GtkInputMethodFilter.h>
 typedef union _GdkEvent GdkEvent;
 #elif PLATFORM(EFL)
 #include <Evas.h>
+#endif
+
+#if PLATFORM(IOS)
+OBJC_CLASS WebIOSEvent;
 #endif
 
 namespace WebKit {
@@ -50,20 +52,18 @@ class NativeWebKeyboardEvent : public WebKeyboardEvent {
 public:
 #if USE(APPKIT)
     NativeWebKeyboardEvent(NSEvent *, NSView *);
-#elif PLATFORM(QT)
-    explicit NativeWebKeyboardEvent(QKeyEvent*);
 #elif PLATFORM(GTK)
     NativeWebKeyboardEvent(const NativeWebKeyboardEvent&);
     NativeWebKeyboardEvent(GdkEvent*, const WebCore::CompositionResults&, WebCore::GtkInputMethodFilter::EventFakedForComposition);
 #elif PLATFORM(EFL)
     NativeWebKeyboardEvent(const Evas_Event_Key_Down*, bool);
     NativeWebKeyboardEvent(const Evas_Event_Key_Up*);
+#elif PLATFORM(IOS)
+    NativeWebKeyboardEvent(WebIOSEvent *);
 #endif
 
 #if USE(APPKIT)
     NSEvent *nativeEvent() const { return m_nativeEvent.get(); }
-#elif PLATFORM(QT)
-    const QKeyEvent* nativeEvent() const { return &m_nativeEvent; }
 #elif PLATFORM(GTK)
     GdkEvent* nativeEvent() const { return m_nativeEvent.get(); }
     const WebCore::CompositionResults& compositionResults() const  { return m_compositionResults; }
@@ -71,20 +71,22 @@ public:
 #elif PLATFORM(EFL)
     const void* nativeEvent() const { return m_nativeEvent; }
     bool isFiltered() const { return m_isFiltered; }
+#elif PLATFORM(IOS)
+    WebIOSEvent* nativeEvent() const { return m_nativeEvent.get(); }
 #endif
 
 private:
 #if USE(APPKIT)
     RetainPtr<NSEvent> m_nativeEvent;
-#elif PLATFORM(QT)
-    QKeyEvent m_nativeEvent;
 #elif PLATFORM(GTK)
-    GOwnPtr<GdkEvent> m_nativeEvent;
+    GUniquePtr<GdkEvent> m_nativeEvent;
     WebCore::CompositionResults m_compositionResults;
     bool m_fakeEventForComposition;
 #elif PLATFORM(EFL)
     const void* m_nativeEvent;
     bool m_isFiltered;
+#elif PLATFORM(IOS)
+    RetainPtr<WebIOSEvent> m_nativeEvent;
 #endif
 };
 

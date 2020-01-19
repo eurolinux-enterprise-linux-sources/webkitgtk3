@@ -375,12 +375,12 @@ msgid "Live Broadcast"
 msgstr "Live Broadcast"
 
 #: LocalizedStringsGtk.cpp:535
-msgid "audio element controller"
-msgstr "audio element controller"
+msgid "audio playback"
+msgstr "audio playback"
 
 #: LocalizedStringsGtk.cpp:537
-msgid "video element controller"
-msgstr "video element controller"
+msgid "video playback"
+msgstr "video playback"
 
 #: LocalizedStringsGtk.cpp:539
 msgid "mute"
@@ -1722,16 +1722,6 @@ msgstr ""
 #: ../../../WebKit2/UIProcess/API/gtk/WebKitSettings.cpp:986
 msgid "Whether media playback allows inline"
 msgstr ""
-
-#: ../../../WebKit/gtk/webkit/webkitwebsettings.cpp:991
-#, fuzzy
-msgid "Enable CSS shaders"
-msgstr "Enable XSS Auditor"
-
-#: ../../../WebKit/gtk/webkit/webkitwebsettings.cpp:992
-#, fuzzy
-msgid "Whether to enable css shaders"
-msgstr "Whether to enable DOM paste"
 
 #: ../../../WebKit/gtk/webkit/webkitwebsettings.cpp:1007
 msgid "Enable display of insecure content"

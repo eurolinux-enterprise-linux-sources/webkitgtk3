@@ -33,33 +33,34 @@
 
 #include "ConsoleAPITypes.h"
 #include "ConsoleTypes.h"
-#include "InspectorFrontend.h"
+#include "InspectorWebFrontendDispatchers.h"
 #include "ScriptState.h"
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
+namespace Inspector {
+class InjectedScriptManager;
+class InspectorObject;
+}
+
 namespace WebCore {
 
 class DOMWindow;
-class InjectedScriptManager;
-class InspectorFrontend;
-class InspectorObject;
 class ScriptArguments;
 class ScriptCallFrame;
 class ScriptCallStack;
-class ScriptValue;
 
 class ConsoleMessage {
     WTF_MAKE_NONCOPYABLE(ConsoleMessage); WTF_MAKE_FAST_ALLOCATED;
 public:
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, unsigned long requestIdentifier = 0);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, ScriptState* = 0, unsigned long requestIdentifier = 0);
+    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, unsigned column, JSC::ExecState* = nullptr, unsigned long requestIdentifier = 0);
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>, unsigned long requestIdentifier = 0);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptArguments>, ScriptState*, unsigned long requestIdentifier = 0);
+    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptArguments>, JSC::ExecState*, unsigned long requestIdentifier = 0);
     ~ConsoleMessage();
 
-    void addToFrontend(InspectorFrontend::Console*, InjectedScriptManager*, bool generatePreview);
-    void updateRepeatCountInConsole(InspectorFrontend::Console*);
+    void addToFrontend(Inspector::InspectorConsoleFrontendDispatcher*, Inspector::InjectedScriptManager*, bool generatePreview);
+    void updateRepeatCountInConsole(Inspector::InspectorConsoleFrontendDispatcher*);
     void incrementCount() { ++m_repeatCount; }
     bool isEqual(ConsoleMessage* msg) const;
 
@@ -72,7 +73,7 @@ public:
     unsigned argumentCount();
 
 private:
-    void autogenerateMetadata(bool canGenerateCallStack, ScriptState* = 0);
+    void autogenerateMetadata(bool canGenerateCallStack, JSC::ExecState* = nullptr);
 
     MessageSource m_source;
     MessageType m_type;
@@ -82,6 +83,7 @@ private:
     RefPtr<ScriptCallStack> m_callStack;
     String m_url;
     unsigned m_line;
+    unsigned m_column;
     unsigned m_repeatCount;
     String m_requestId;
 };

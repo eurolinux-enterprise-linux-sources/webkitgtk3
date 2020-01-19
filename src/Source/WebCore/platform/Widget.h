@@ -27,22 +27,19 @@
 #ifndef Widget_h
 #define Widget_h
 
+#if PLATFORM(IOS)
+#ifndef NSView
+#define NSView WAKView
+#endif
+#endif
+
 #include "IntRect.h"
+#include "PlatformScreen.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
 
-#if PLATFORM(CHROMIUM)
-#include "PageClientChromium.h"
-#include "PlatformWidget.h"
-#endif
-
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
-#endif
-
-#if PLATFORM(QT)
-#include <QPointer>
-#include <qglobal.h>
 #endif
 
 #if PLATFORM(MAC)
@@ -62,58 +59,30 @@ typedef struct _GtkContainer GtkContainer;
 typedef GtkWidget* PlatformWidget;
 #endif
 
-#if PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QObject;
-QT_END_NAMESPACE
-typedef QObject* PlatformWidget;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-typedef void* PlatformWidget;
-#endif
-
-#if PLATFORM(WX)
-class wxWindow;
-typedef wxWindow* PlatformWidget;
-#endif
-
 #if PLATFORM(EFL)
 #if USE(EO)
-typedef struct _Eo Evas_Object;
-typedef struct _Eo Evas;
+typedef struct _Eo_Opaque Evas_Object;
 #else
 typedef struct _Evas_Object Evas_Object;
-typedef struct _Evas Evas;
 #endif
 typedef Evas_Object* PlatformWidget;
 #endif
 
-#if PLATFORM(QT)
-class QWebPageClient;
-typedef QWebPageClient* PlatformPageClient;
-#elif PLATFORM(BLACKBERRY)
-#include "PageClientBlackBerry.h"
-typedef PageClientBlackBerry* PlatformPageClient;
-#elif PLATFORM(EFL)
+#if PLATFORM(EFL)
 class PageClientEfl;
 typedef PageClientEfl* PlatformPageClient;
-#elif PLATFORM(CHROMIUM)
-typedef WebCore::PageClientChromium* PlatformPageClient;
 #else
 typedef PlatformWidget PlatformPageClient;
 #endif
 
 namespace WebCore {
 
-class AXObjectCache;
 class Cursor;
 class Event;
 class Font;
 class GraphicsContext;
 class PlatformMouseEvent;
 class ScrollView;
-class WidgetPrivate;
 
 enum WidgetNotification { WillPaintFlattened, DidPaintFlattened };
 
@@ -179,6 +148,7 @@ public:
     // FIXME: The Mac plug-in code should inherit from PluginView. When this happens PluginViewBase and PluginView can become one class.
     virtual bool isPluginViewBase() const { return false; }
     virtual bool isScrollbar() const { return false; }
+    virtual bool isScrollView() const { return false; }
 
     void removeFromParent();
     virtual void setParent(ScrollView* view);
@@ -205,10 +175,10 @@ public:
     IntPoint convertToContainingWindow(const IntPoint&) const;
     IntPoint convertFromContainingWindow(const IntPoint&) const;
 
-    virtual void frameRectsChanged();
+    virtual void frameRectsChanged() { }
 
-    // Notifies this widget that other widgets on the page have been repositioned.
-    virtual void widgetPositionsUpdated() {}
+    // Notifies this widget that its clip rect changed.
+    virtual void clipRectChanged() { }
 
     // Whether transforms affect the frame rect. FIXME: We get rid of this and have
     // the frame rects be the same no matter what transforms are applied.
@@ -219,24 +189,13 @@ public:
 
     void removeFromSuperview();
 #endif
+#if PLATFORM(IOS)
+    void addToSuperview(NSView*);
+#endif
 
 #if PLATFORM(EFL)
-    // FIXME: These should really go to PlatformWidget. They're here currently since
-    // the EFL port considers that Evas_Object (a C object) is a PlatformWidget, but
-    // encapsulating that into a C++ class will make this header clean as it should be.
-    Evas* evas() const;
-
     void setEvasObject(Evas_Object*);
-    Evas_Object* evasObject() const;
-#endif
-
-#if PLATFORM(CHROMIUM)
-    virtual bool isPluginContainer() const { return false; }
-#endif
-
-#if PLATFORM(QT)
-    QObject* bindingObject() const;
-    void setBindingObject(QObject*);
+    Evas_Object* evasObject() { return m_evasObject; }
 #endif
 
     // Virtual methods to convert points to/from the containing ScrollView
@@ -245,9 +204,6 @@ public:
     virtual IntPoint convertToContainingView(const IntPoint&) const;
     virtual IntPoint convertFromContainingView(const IntPoint&) const;
 
-    // A means to access the AX cache when this object can get a pointer to it.
-    virtual AXObjectCache* axObjectCache() const { return 0; }
-    
 private:
     void init(PlatformWidget); // Must be called by all Widget constructors to initialize cross-platform data.
 
@@ -274,15 +230,13 @@ private:
 
     IntRect m_frame; // Not used when a native widget exists.
 
-#if PLATFORM(MAC) || PLATFORM(EFL)
-    WidgetPrivate* m_data;
+#if PLATFORM(EFL)
+    Evas_Object* m_evasObject;
 #endif
-
-#if PLATFORM(QT)
-    QPointer<QObject> m_bindingObject;
-#endif
-
 };
+
+#define WIDGET_TYPE_CASTS(ToValueTypeName, predicate) \
+    TYPE_CASTS_BASE(ToValueTypeName, Widget, object, object->predicate, object.predicate)
 
 #if !PLATFORM(MAC)
 

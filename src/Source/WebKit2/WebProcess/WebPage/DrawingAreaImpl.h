@@ -29,7 +29,7 @@
 #include "DrawingArea.h"
 #include "LayerTreeHost.h"
 #include <WebCore/Region.h>
-#include <WebCore/RunLoop.h>
+#include <wtf/RunLoop.h>
 
 namespace WebCore {
     class GraphicsContext;
@@ -42,55 +42,43 @@ class UpdateInfo;
 
 class DrawingAreaImpl : public DrawingArea {
 public:
-    static PassOwnPtr<DrawingAreaImpl> create(WebPage*, const WebPageCreationParameters&);
+    DrawingAreaImpl(WebPage*, const WebPageCreationParameters&);
     virtual ~DrawingAreaImpl();
 
     void layerHostDidFlushLayers();
 
 private:
-    DrawingAreaImpl(WebPage*, const WebPageCreationParameters&);
-
     // DrawingArea
-    virtual void setNeedsDisplay() OVERRIDE;
-    virtual void setNeedsDisplayInRect(const WebCore::IntRect&) OVERRIDE;
+    virtual void setNeedsDisplay() override;
+    virtual void setNeedsDisplayInRect(const WebCore::IntRect&) override;
     virtual void scroll(const WebCore::IntRect& scrollRect, const WebCore::IntSize& scrollDelta);
+    virtual void pageBackgroundTransparencyChanged() override;
     virtual void setLayerTreeStateIsFrozen(bool);
     virtual bool layerTreeStateIsFrozen() const { return m_layerTreeStateIsFrozen; }
     virtual LayerTreeHost* layerTreeHost() const { return m_layerTreeHost.get(); }
     virtual void forceRepaint();
     virtual bool forceRepaintAsync(uint64_t callbackID);
 
-    virtual void didInstallPageOverlay();
-    virtual void didUninstallPageOverlay();
-    virtual void setPageOverlayNeedsDisplay(const WebCore::IntRect&);
-    virtual void setPageOverlayOpacity(float);
-    virtual bool pageOverlayShouldApplyFadeWhenPainting() const;
+    virtual void didInstallPageOverlay(PageOverlay*);
+    virtual void didUninstallPageOverlay(PageOverlay*);
+    virtual void setPageOverlayNeedsDisplay(PageOverlay*, const WebCore::IntRect&);
+    virtual void setPageOverlayOpacity(PageOverlay*, float);
 
     virtual void setPaintingEnabled(bool);
-    virtual void updatePreferences(const WebPreferencesStore&) OVERRIDE;
+    virtual void updatePreferences(const WebPreferencesStore&) override;
 
 #if USE(ACCELERATED_COMPOSITING)
-    virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() OVERRIDE;
-    virtual void setRootCompositingLayer(WebCore::GraphicsLayer*) OVERRIDE;
-    virtual void scheduleCompositingLayerFlush() OVERRIDE;
+    virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() override;
+    virtual void setRootCompositingLayer(WebCore::GraphicsLayer*) override;
+    virtual void scheduleCompositingLayerFlush() override;
 #endif
 
-#if PLATFORM(MAC)
-    virtual void setLayerHostingMode(uint32_t) OVERRIDE;
-#endif
-
-#if USE(COORDINATED_GRAPHICS)
-    virtual void didReceiveCoordinatedLayerTreeHostMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
-#endif
-
-    // CoreIPC message handlers.
+    // IPC message handlers.
     virtual void updateBackingStoreState(uint64_t backingStoreStateID, bool respondImmediately, float deviceScaleFactor, const WebCore::IntSize&, const WebCore::IntSize& scrollOffset);
     virtual void didUpdate();
     virtual void suspendPainting();
     virtual void resumePainting();
     
-    virtual void pageCustomRepresentationChanged();
-
     void sendDidUpdateBackingStoreState();
 
     void enterAcceleratedCompositingMode(WebCore::GraphicsLayer*);
@@ -139,8 +127,8 @@ private:
     bool m_isPaintingSuspended;
     bool m_alwaysUseCompositing;
 
-    WebCore::RunLoop::Timer<DrawingAreaImpl> m_displayTimer;
-    WebCore::RunLoop::Timer<DrawingAreaImpl> m_exitCompositingTimer;
+    RunLoop::Timer<DrawingAreaImpl> m_displayTimer;
+    RunLoop::Timer<DrawingAreaImpl> m_exitCompositingTimer;
 
     // The layer tree host that handles accelerated compositing.
     RefPtr<LayerTreeHost> m_layerTreeHost;

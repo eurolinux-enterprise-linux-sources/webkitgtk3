@@ -29,26 +29,21 @@
 #include "JSObject.h"
 #include "JSString.h"
 
-
-#if ENABLE(DFG_JIT)
-
-#include "DFGArgumentsSimplificationPhase.h"
-#include "DFGByteCodeParser.h"
-#include "DFGCFAPhase.h"
-#include "DFGCFGSimplificationPhase.h"
-#include "DFGCPSRethreadingPhase.h"
-#include "DFGCSEPhase.h"
-#include "DFGConstantFoldingPhase.h"
-#include "DFGFixupPhase.h"
-#include "DFGJITCompiler.h"
-#include "DFGPredictionInjectionPhase.h"
-#include "DFGPredictionPropagationPhase.h"
-#include "DFGStructureCheckHoistingPhase.h"
-#include "DFGUnificationPhase.h"
-#include "DFGValidate.h"
-#include "DFGVirtualRegisterAllocationPhase.h"
+#include "CodeBlock.h"
+#include "DFGJITCode.h"
+#include "DFGPlan.h"
+#include "DFGThunks.h"
+#include "DFGWorklist.h"
+#include "Debugger.h"
+#include "JITCode.h"
 #include "Operations.h"
 #include "Options.h"
+#include "SamplingTool.h"
+#include <wtf/Atomics.h>
+
+#if ENABLE(FTL_JIT)
+#include "FTLThunks.h"
+#endif
 
 namespace JSC { namespace DFG {
 
@@ -59,8 +54,11 @@ unsigned getNumCompilations()
     return numCompilations;
 }
 
-enum CompileMode { CompileFunction, CompileOther };
-inline bool compile(CompileMode compileMode, ExecState* exec, CodeBlock* codeBlock, JITCode& jitCode, MacroAssemblerCodePtr* jitCodeWithArityCheck, unsigned osrEntryBytecodeIndex)
+#if ENABLE(DFG_JIT)
+static CompilationResult compileImpl(
+    VM& vm, CodeBlock* codeBlock, CompilationMode mode, unsigned osrEntryBytecodeIndex,
+    const Operands<JSValue>& mustHandleValues,
+    PassRefPtr<DeferredCompilationCallback> callback, Worklist* worklist)
 {
     SamplingRegion samplingRegion("DFG Compilation (Driver)");
     
@@ -68,130 +66,68 @@ inline bool compile(CompileMode compileMode, ExecState* exec, CodeBlock* codeBlo
     
     ASSERT(codeBlock);
     ASSERT(codeBlock->alternative());
-    ASSERT(codeBlock->alternative()->getJITType() == JITCode::BaselineJIT);
+    ASSERT(codeBlock->alternative()->jitType() == JITCode::BaselineJIT);
     
-    ASSERT(osrEntryBytecodeIndex != UINT_MAX);
+    if (!Options::useDFGJIT() || !MacroAssembler::supportsFloatingPoint())
+        return CompilationFailed;
 
-    if (!Options::useDFGJIT())
-        return false;
+    if (!Options::bytecodeRangeToDFGCompile().isInRange(codeBlock->instructionCount()))
+        return CompilationFailed;
     
+    if (vm.enabledProfiler())
+        return CompilationInvalidated;
+
+    Debugger* debugger = codeBlock->globalObject()->debugger();
+    if (debugger && (debugger->isStepping() || codeBlock->baselineAlternative()->hasDebuggerRequests()))
+        return CompilationInvalidated;
+
     if (logCompilationChanges())
-        dataLog("DFG compiling ", *codeBlock, ", number of instructions = ", codeBlock->instructionCount(), "\n");
+        dataLog("DFG(Driver) compiling ", *codeBlock, " with ", mode, ", number of instructions = ", codeBlock->instructionCount(), "\n");
     
-    // Derive our set of must-handle values. The compilation must be at least conservative
-    // enough to allow for OSR entry with these values.
-    unsigned numVarsWithValues;
-    if (osrEntryBytecodeIndex)
-        numVarsWithValues = codeBlock->m_numVars;
-    else
-        numVarsWithValues = 0;
-    Operands<JSValue> mustHandleValues(codeBlock->numParameters(), numVarsWithValues);
-    for (size_t i = 0; i < mustHandleValues.size(); ++i) {
-        int operand = mustHandleValues.operandForIndex(i);
-        if (operandIsArgument(operand)
-            && !operandToArgument(operand)
-            && compileMode == CompileFunction
-            && codeBlock->specializationKind() == CodeForConstruct) {
-            // Ugh. If we're in a constructor, the 'this' argument may hold garbage. It will
-            // also never be used. It doesn't matter what we put into the value for this,
-            // but it has to be an actual value that can be grokked by subsequent DFG passes,
-            // so we sanitize it here by turning it into Undefined.
-            mustHandleValues[i] = jsUndefined();
-        } else
-            mustHandleValues[i] = exec->uncheckedR(operand).jsValue();
-    }
+    // Make sure that any stubs that the DFG is going to use are initialized. We want to
+    // make sure that all JIT code generation does finalization on the main thread.
+    vm.getCTIStub(osrExitGenerationThunkGenerator);
+    vm.getCTIStub(throwExceptionFromCallSlowPathGenerator);
+    vm.getCTIStub(linkCallThunkGenerator);
+    vm.getCTIStub(linkConstructThunkGenerator);
+    vm.getCTIStub(linkClosureCallThunkGenerator);
+    vm.getCTIStub(virtualCallThunkGenerator);
+    vm.getCTIStub(virtualConstructThunkGenerator);
     
-    Graph dfg(exec->globalData(), codeBlock, osrEntryBytecodeIndex, mustHandleValues);
-    if (!parse(exec, dfg))
-        return false;
+    RefPtr<Plan> plan = adoptRef(
+        new Plan(codeBlock, mode, osrEntryBytecodeIndex, mustHandleValues));
     
-    // By this point the DFG bytecode parser will have potentially mutated various tables
-    // in the CodeBlock. This is a good time to perform an early shrink, which is more
-    // powerful than a late one. It's safe to do so because we haven't generated any code
-    // that references any of the tables directly, yet.
-    codeBlock->shrinkToFit(CodeBlock::EarlyShrink);
-
-    if (validationEnabled())
-        validate(dfg);
-    
-    performCPSRethreading(dfg);
-    performUnification(dfg);
-    performPredictionInjection(dfg);
-    
-    if (validationEnabled())
-        validate(dfg);
-    
-    performPredictionPropagation(dfg);
-    performFixup(dfg);
-    performStructureCheckHoisting(dfg);
-    
-    unsigned cnt = 1;
-    dfg.m_fixpointState = FixpointNotConverged;
-    for (;; ++cnt) {
+    if (worklist) {
+        plan->callback = callback;
         if (logCompilationChanges())
-            dataLogF("DFG beginning optimization fixpoint iteration #%u.\n", cnt);
-        bool changed = false;
-        
-        if (validationEnabled())
-            validate(dfg);
-        
-        performCFA(dfg);
-        changed |= performConstantFolding(dfg);
-        changed |= performArgumentsSimplification(dfg);
-        changed |= performCFGSimplification(dfg);
-        changed |= performCSE(dfg);
-        
-        if (!changed)
-            break;
-        
-        dfg.resetExitStates();
-        performFixup(dfg);
-        performCPSRethreading(dfg);
+            dataLog("Deferring DFG compilation of ", *codeBlock, " with queue length ", worklist->queueLength(), ".\n");
+        worklist->enqueue(plan);
+        return CompilationDeferred;
     }
     
-    dfg.m_fixpointState = FixpointConverged;
-    performCSE(dfg);
-    performCPSRethreading(dfg); // This should usually be a no-op since CSE rarely dethreads the graph.
-    if (logCompilationChanges())
-        dataLogF("DFG optimization fixpoint converged in %u iterations.\n", cnt);
-    performVirtualRegisterAllocation(dfg);
+    plan->compileInThread(*vm.dfgState);
+    return plan->finalizeWithoutNotifyingCallback();
+}
+#else // ENABLE(DFG_JIT)
+static CompilationResult compileImpl(
+    VM&, CodeBlock*, CompilationMode, unsigned, const Operands<JSValue>&,
+    PassRefPtr<DeferredCompilationCallback>, Worklist*)
+{
+    return CompilationFailed;
+}
+#endif // ENABLE(DFG_JIT)
 
-    GraphDumpMode modeForFinalValidate = DumpGraph;
-    if (verboseCompilationEnabled()) {
-        dataLogF("Graph after optimization:\n");
-        dfg.dump();
-        modeForFinalValidate = DontDumpGraph;
-    }
-    if (validationEnabled())
-        validate(dfg, modeForFinalValidate);
-    
-    JITCompiler dataFlowJIT(dfg);
-    bool result;
-    if (compileMode == CompileFunction) {
-        ASSERT(jitCodeWithArityCheck);
-        
-        result = dataFlowJIT.compileFunction(jitCode, *jitCodeWithArityCheck);
-    } else {
-        ASSERT(compileMode == CompileOther);
-        ASSERT(!jitCodeWithArityCheck);
-        
-        result = dataFlowJIT.compile(jitCode);
-    }
-    
+CompilationResult compile(
+    VM& vm, CodeBlock* codeBlock, CompilationMode mode, unsigned osrEntryBytecodeIndex,
+    const Operands<JSValue>& mustHandleValues,
+    PassRefPtr<DeferredCompilationCallback> passedCallback, Worklist* worklist)
+{
+    RefPtr<DeferredCompilationCallback> callback = passedCallback;
+    CompilationResult result = compileImpl(
+        vm, codeBlock, mode, osrEntryBytecodeIndex, mustHandleValues, callback, worklist);
+    if (result != CompilationDeferred)
+        callback->compilationDidComplete(codeBlock, result);
     return result;
 }
 
-bool tryCompile(ExecState* exec, CodeBlock* codeBlock, JITCode& jitCode, unsigned bytecodeIndex)
-{
-    return compile(CompileOther, exec, codeBlock, jitCode, 0, bytecodeIndex);
-}
-
-bool tryCompileFunction(ExecState* exec, CodeBlock* codeBlock, JITCode& jitCode, MacroAssemblerCodePtr& jitCodeWithArityCheck, unsigned bytecodeIndex)
-{
-    return compile(CompileFunction, exec, codeBlock, jitCode, &jitCodeWithArityCheck, bytecodeIndex);
-}
-
 } } // namespace JSC::DFG
-
-#endif // ENABLE(DFG_JIT)
-

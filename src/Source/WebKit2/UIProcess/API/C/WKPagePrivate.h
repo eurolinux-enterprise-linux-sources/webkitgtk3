@@ -36,11 +36,6 @@ extern "C" {
 typedef void (*WKPageRenderTreeExternalRepresentationFunction)(WKStringRef, WKErrorRef, void*);
 WK_EXPORT void WKPageRenderTreeExternalRepresentation(WKPageRef page, void *context, WKPageRenderTreeExternalRepresentationFunction function);
 
-#ifdef __BLOCKS__
-typedef void (^WKPageRenderTreeExternalRepresentationBlock)(WKStringRef, WKErrorRef);
-WK_EXPORT void WKPageRenderTreeExternalRepresentation_b(WKPageRef page, WKPageRenderTreeExternalRepresentationBlock block);
-#endif
-
 enum {
     kWKDebugFlashViewUpdates = 1 << 0,
     kWKDebugFlashBackingStoreUpdates = 1 << 1
@@ -99,6 +94,16 @@ WK_EXPORT WKArrayRef WKPageCopyRelatedPages(WKPageRef page);
 
 typedef void (*WKPageInvalidMessageFunction)(uint32_t messageID);
 WK_EXPORT void WKPageSetInvalidMessageFunction(WKPageInvalidMessageFunction function);
+
+enum {
+    kWKScrollPinningBehaviorDoNotPin,
+    kWKScrollPinningBehaviorPinToTop,
+    kWKScrollPinningBehaviorPinToBottom
+};
+typedef uint32_t WKScrollPinningBehavior;
+
+WK_EXPORT WKScrollPinningBehavior WKPageGetScrollPinningBehavior(WKPageRef page);
+WK_EXPORT void WKPageSetScrollPinningBehavior(WKPageRef page, WKScrollPinningBehavior pinning);
 
 #ifdef __cplusplus
 }

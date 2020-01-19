@@ -31,7 +31,19 @@
 #include <string.h>
 #include <webkit2/webkit2.h>
 
+#define MINI_BROWSER_ERROR (miniBrowserErrorQuark())
+
 static const gchar **uriArguments = NULL;
+static const char *miniBrowserAboutScheme = "minibrowser-about";
+
+typedef enum {
+    MINI_BROWSER_ERROR_INVALID_ABOUT_PATH
+} MiniBrowserError;
+
+static GQuark miniBrowserErrorQuark()
+{
+    return g_quark_from_string("minibrowser-quark");
+}
 
 static gchar *argumentToURL(const char *filename)
 {
@@ -48,10 +60,8 @@ static void createBrowserWindow(const gchar *uri, WebKitSettings *webkitSettings
     GtkWidget *mainWindow = browser_window_new(WEBKIT_WEB_VIEW(webView), NULL);
     gchar *url = argumentToURL(uri);
 
-    if (webkitSettings) {
+    if (webkitSettings)
         webkit_web_view_set_settings(WEBKIT_WEB_VIEW(webView), webkitSettings);
-        g_object_unref(webkitSettings);
-    }
 
     browser_window_load_uri(BROWSER_WINDOW(mainWindow), url);
     g_free(url);
@@ -198,9 +208,42 @@ static gboolean addSettingsGroupToContext(GOptionContext *context, WebKitSetting
     return TRUE;
 }
 
+static void
+aboutURISchemeRequestCallback(WebKitURISchemeRequest *request, gpointer userData)
+{
+    GInputStream *stream;
+    gsize streamLength;
+    const gchar *path;
+    gchar *contents;
+    GError *error;
+
+    path = webkit_uri_scheme_request_get_path(request);
+    if (!g_strcmp0(path, "minibrowser")) {
+        contents = g_strdup_printf("<html><body><h1>WebKitGTK+ MiniBrowser</h1><p>The WebKit2 test browser of the GTK+ port.</p><p>WebKit version: %d.%d.%d</p></body></html>",
+            webkit_get_major_version(),
+            webkit_get_minor_version(),
+            webkit_get_micro_version());
+        streamLength = strlen(contents);
+        stream = g_memory_input_stream_new_from_data(contents, streamLength, g_free);
+
+        webkit_uri_scheme_request_finish(request, stream, streamLength, "text/html");
+        g_object_unref(stream);
+    } else {
+        error = g_error_new(MINI_BROWSER_ERROR, MINI_BROWSER_ERROR_INVALID_ABOUT_PATH, "Invalid about:%s page.", path);
+        webkit_uri_scheme_request_finish_error(request, error);
+        g_error_free(error);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     gtk_init(&argc, &argv);
+
+    const gchar *multiprocess = g_getenv("MINIBROWSER_MULTIPROCESS");
+    if (multiprocess && *multiprocess) {
+        webkit_web_context_set_process_model(webkit_web_context_get_default(),
+            WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES);
+    }
 
     GOptionContext *context = g_option_context_new(NULL);
     g_option_context_add_main_entries(context, commandLineOptions, 0);
@@ -208,10 +251,9 @@ int main(int argc, char *argv[])
 
     WebKitSettings *webkitSettings = webkit_settings_new();
     webkit_settings_set_enable_developer_extras(webkitSettings, TRUE);
-    if (!addSettingsGroupToContext(context, webkitSettings)) {
-        g_object_unref(webkitSettings);
-        webkitSettings = 0;
-    }
+    webkit_settings_set_enable_webgl(webkitSettings, TRUE);
+    if (!addSettingsGroupToContext(context, webkitSettings))
+        g_clear_object(&webkitSettings);
 
     GError *error = 0;
     if (!g_option_context_parse(context, &argc, &argv, &error)) {
@@ -223,13 +265,12 @@ int main(int argc, char *argv[])
     }
     g_option_context_free (context);
 
-#ifdef WEBKIT_EXEC_PATH
-    g_setenv("WEBKIT_INSPECTOR_PATH", WEBKIT_EXEC_PATH "resources/inspector", FALSE);
-#endif /* WEBKIT_EXEC_PATH */
     g_setenv("WEBKIT_INJECTED_BUNDLE_PATH", WEBKIT_INJECTED_BUNDLE_PATH, FALSE);
 
     // Enable the favicon database, by specifying the default directory.
     webkit_web_context_set_favicon_database_directory(webkit_web_context_get_default(), NULL);
+
+    webkit_web_context_register_uri_scheme(webkit_web_context_get_default(), miniBrowserAboutScheme, aboutURISchemeRequestCallback, NULL, NULL);
 
     if (uriArguments) {
         int i;
@@ -238,6 +279,8 @@ int main(int argc, char *argv[])
             createBrowserWindow(uriArguments[i], webkitSettings);
     } else
         createBrowserWindow("http://www.webkitgtk.org/", webkitSettings);
+
+    g_clear_object(&webkitSettings);
 
     gtk_main();
 

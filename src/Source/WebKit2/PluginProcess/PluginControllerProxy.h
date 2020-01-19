@@ -26,7 +26,7 @@
 #ifndef PluginControllerProxy_h
 #define PluginControllerProxy_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "Connection.h"
 #include "Plugin.h"
@@ -34,11 +34,11 @@
 #include "PluginControllerProxyMessages.h"
 #include "ShareableBitmap.h"
 #include "WebProcessConnectionMessages.h"
-#include <WebCore/RunLoop.h>
 #include <WebCore/SecurityOrigin.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/RunLoop.h>
 
-namespace CoreIPC {
+namespace IPC {
     class DataReference;
 }
 
@@ -53,7 +53,7 @@ class PluginControllerProxy : PluginController {
     WTF_MAKE_NONCOPYABLE(PluginControllerProxy);
 
 public:
-    static PassOwnPtr<PluginControllerProxy> create(WebProcessConnection*, const PluginCreationParameters&);
+    PluginControllerProxy(WebProcessConnection*, const PluginCreationParameters&);
     ~PluginControllerProxy();
 
     uint64_t pluginInstanceID() const { return m_pluginInstanceID; }
@@ -61,8 +61,8 @@ public:
     bool initialize(const PluginCreationParameters&);
     void destroy();
 
-    void didReceivePluginControllerProxyMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
-    void didReceiveSyncPluginControllerProxyMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
+    void didReceivePluginControllerProxyMessage(IPC::Connection*, IPC::MessageDecoder&);
+    void didReceiveSyncPluginControllerProxyMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&);
 
     bool wantsWheelEvents() const;
 
@@ -78,8 +78,6 @@ public:
     PassRefPtr<Messages::WebProcessConnection::CreatePlugin::DelayedReply> takeInitializationReply();
 
 private:
-    PluginControllerProxy(WebProcessConnection*, const PluginCreationParameters&);
-
     void startPaintTimer();
     void paint();
 
@@ -97,13 +95,14 @@ private:
     virtual bool isAcceleratedCompositingEnabled();
     virtual void pluginProcessCrashed();
     virtual void willSendEventToPlugin();
-    virtual void didInitializePlugin() OVERRIDE;
-    virtual void didFailToInitializePlugin() OVERRIDE;
+    virtual void didInitializePlugin() override;
+    virtual void didFailToInitializePlugin() override;
 
 #if PLATFORM(MAC)
-    virtual void pluginFocusOrWindowFocusChanged(bool);
-    virtual void setComplexTextInputState(PluginComplexTextInputState);
-    virtual mach_port_t compositingRenderServerPort();
+    virtual void pluginFocusOrWindowFocusChanged(bool) override;
+    virtual void setComplexTextInputState(PluginComplexTextInputState) override;
+    virtual mach_port_t compositingRenderServerPort() override;
+    virtual void openPluginPreferencePane() override;
 #endif
 
     virtual float contentsScaleFactor();
@@ -117,19 +116,21 @@ private:
 #if PLUGIN_ARCHITECTURE(X11)
     virtual uint64_t createPluginContainer();
     virtual void windowedPluginGeometryDidChange(const WebCore::IntRect& frameRect, const WebCore::IntRect& clipRect, uint64_t windowID);
+    virtual void windowedPluginVisibilityDidChange(bool isVisible, uint64_t windowID);
 #endif
     
     // Message handlers.
     void frameDidFinishLoading(uint64_t requestID);
     void frameDidFail(uint64_t requestID, bool wasCancelled);
     void geometryDidChange(const WebCore::IntSize& pluginSize, const WebCore::IntRect& clipRect, const WebCore::AffineTransform& pluginToRootViewTransform, float contentsScaleFactor, const ShareableBitmap::Handle& backingStoreHandle);
+    void visibilityDidChange(bool isVisible);
     void didEvaluateJavaScript(uint64_t requestID, const String& result);
     void streamDidReceiveResponse(uint64_t streamID, const String& responseURLString, uint32_t streamLength, uint32_t lastModifiedTime, const String& mimeType, const String& headers);
-    void streamDidReceiveData(uint64_t streamID, const CoreIPC::DataReference& data);
+    void streamDidReceiveData(uint64_t streamID, const IPC::DataReference& data);
     void streamDidFinishLoading(uint64_t streamID);
     void streamDidFail(uint64_t streamID, bool wasCancelled);
     void manualStreamDidReceiveResponse(const String& responseURLString, uint32_t streamLength, uint32_t lastModifiedTime, const String& mimeType, const String& headers);
-    void manualStreamDidReceiveData(const CoreIPC::DataReference& data);
+    void manualStreamDidReceiveData(const IPC::DataReference& data);
     void manualStreamDidFinishLoading();
     void manualStreamDidFail(bool wasCancelled);
     void handleMouseEvent(const WebMouseEvent&, PassRefPtr<Messages::PluginControllerProxy::HandleMouseEvent::DelayedReply>);
@@ -141,6 +142,7 @@ private:
     void isEditingCommandEnabled(const String&, bool&);
     void handlesPageScaleFactor(bool&);
     void paintEntirePlugin();
+    void supportsSnapshotting(bool&);
     void snapshot(ShareableBitmap::Handle& backingStoreHandle);
     void setFocus(bool);
     void didUpdate();
@@ -183,14 +185,14 @@ private:
     WebCore::IntRect m_dirtyRect;
 
     // The paint timer, used for coalescing painting.
-    WebCore::RunLoop::Timer<PluginControllerProxy> m_paintTimer;
+    RunLoop::Timer<PluginControllerProxy> m_paintTimer;
     
     // A counter used to prevent the plug-in from being destroyed.
     unsigned m_pluginDestructionProtectCount;
 
     // A timer that we use to prevent destruction of the plug-in while plug-in
     // code is on the stack.
-    WebCore::RunLoop::Timer<PluginControllerProxy> m_pluginDestroyTimer;
+    RunLoop::Timer<PluginControllerProxy> m_pluginDestroyTimer;
 
     // Whether we're waiting for the plug-in proxy in the web process to draw the contents of its
     // backing store into the web process backing store.
@@ -204,7 +206,7 @@ private:
     bool m_isComplexTextInputEnabled;
 
     // For CA plug-ins, this holds the information needed to export the layer hierarchy to the UI process.
-    OwnPtr<LayerHostingContext> m_layerHostingContext;
+    std::unique_ptr<LayerHostingContext> m_layerHostingContext;
 #endif
 
     // The contents scale factor of this plug-in.
@@ -222,6 +224,6 @@ private:
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginControllerProxy_h

@@ -33,6 +33,7 @@
 #include "JSString.h"
 #include "Operations.h"
 #include "PropertyNameArray.h"
+#include <memory>
 
 namespace JSC {
 
@@ -52,9 +53,9 @@ namespace JSC {
         static const bool hasImmortalStructure = true;
         static void destroy(JSCell*);
        
-        static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
+        static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue prototype)
         {
-            return Structure::create(globalData, globalObject, prototype, TypeInfo(CompoundType, OverridesVisitChildren), &s_info);
+            return Structure::create(vm, globalObject, prototype, TypeInfo(CompoundType, OverridesVisitChildren), info());
         }
 
         static void visitChildren(JSCell*, SlotVisitor&);
@@ -62,26 +63,26 @@ namespace JSC {
         JSValue get(ExecState*, JSObject*, size_t i);
         size_t size() { return m_jsStringsSize; }
 
-        void setCachedStructure(JSGlobalData& globalData, Structure* structure)
+        void setCachedStructure(VM& vm, Structure* structure)
         {
             ASSERT(!m_cachedStructure);
             ASSERT(structure);
-            m_cachedStructure.set(globalData, this, structure);
+            m_cachedStructure.set(vm, this, structure);
         }
         Structure* cachedStructure() { return m_cachedStructure.get(); }
 
-        void setCachedPrototypeChain(JSGlobalData& globalData, StructureChain* cachedPrototypeChain) { m_cachedPrototypeChain.set(globalData, this, cachedPrototypeChain); }
+        void setCachedPrototypeChain(VM& vm, StructureChain* cachedPrototypeChain) { m_cachedPrototypeChain.set(vm, this, cachedPrototypeChain); }
         StructureChain* cachedPrototypeChain() { return m_cachedPrototypeChain.get(); }
         
-        static JS_EXPORTDATA const ClassInfo s_info;
+        DECLARE_EXPORT_INFO;
 
     protected:
-        void finishCreation(ExecState* exec, PropertyNameArrayData* propertyNameArrayData, JSObject* object)
+        void finishCreation(VM& vm, PropertyNameArrayData* propertyNameArrayData, JSObject* object)
         {
-            Base::finishCreation(exec->globalData());
+            Base::finishCreation(vm);
             PropertyNameArrayData::PropertyNameVector& propertyNameVector = propertyNameArrayData->propertyNameVector();
             for (size_t i = 0; i < m_jsStringsSize; ++i)
-                m_jsStrings[i].set(exec->globalData(), this, jsOwnedString(exec, propertyNameVector[i].string()));
+                m_jsStrings[i].set(vm, this, jsOwnedString(&vm, propertyNameVector[i].string()));
             m_cachedStructureInlineCapacity = object->structure()->inlineCapacity();
         }
 
@@ -95,7 +96,7 @@ namespace JSC {
         uint32_t m_numCacheableSlots;
         uint32_t m_jsStringsSize;
         unsigned m_cachedStructureInlineCapacity;
-        OwnArrayPtr<WriteBarrier<Unknown> > m_jsStrings;
+        std::unique_ptr<WriteBarrier<Unknown>[]> m_jsStrings;
     };
 
     ALWAYS_INLINE JSPropertyNameIterator* Register::propertyNameIterator() const
@@ -108,9 +109,9 @@ namespace JSC {
         return m_enumerationCache.get();
     }
     
-    inline void StructureRareData::setEnumerationCache(JSGlobalData& globalData, const Structure* owner, JSPropertyNameIterator* value)
+    inline void StructureRareData::setEnumerationCache(VM& vm, const Structure*, JSPropertyNameIterator* value)
     {
-        m_enumerationCache.set(globalData, owner, value);
+        m_enumerationCache.set(vm, this, value);
     }
 
 } // namespace JSC

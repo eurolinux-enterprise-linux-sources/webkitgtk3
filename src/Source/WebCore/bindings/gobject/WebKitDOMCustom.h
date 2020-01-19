@@ -19,25 +19,36 @@
 #ifndef WebKitDOMCustom_h
 #define WebKitDOMCustom_h
 
+#include <glib-object.h>
 #include <glib.h>
 #include <webkitdom/webkitdomdefines.h>
 
 G_BEGIN_DECLS
 
-WEBKIT_API gboolean webkit_dom_html_text_area_element_is_edited(WebKitDOMHTMLTextAreaElement*);
-WEBKIT_API gboolean webkit_dom_html_input_element_is_edited(WebKitDOMHTMLInputElement*);
+/**
+ * webkit_dom_html_text_area_element_is_edited:
+ * @input: A #WebKitDOMHTMLTextAreaElement
+ *
+ * Returns: A #gboolean
+ */
+WEBKIT_API gboolean webkit_dom_html_text_area_element_is_edited(WebKitDOMHTMLTextAreaElement* input);
 
-/* Compatibility */
-WEBKIT_API WebKitDOMBlob* webkit_dom_blob_webkit_slice(WebKitDOMBlob* self, gint64 start, gint64 end, const gchar* content_type);
-WEBKIT_API gchar* webkit_dom_html_element_get_class_name(WebKitDOMHTMLElement* element);
-WEBKIT_API void webkit_dom_html_element_set_class_name(WebKitDOMHTMLElement* element, const gchar* value);
-WEBKIT_API WebKitDOMDOMTokenList* webkit_dom_html_element_get_class_list(WebKitDOMHTMLElement* element);
-WEBKIT_API void webkit_dom_html_form_element_dispatch_form_change(WebKitDOMHTMLFormElement* self);
-WEBKIT_API void webkit_dom_html_form_element_dispatch_form_input(WebKitDOMHTMLFormElement* self);
-WEBKIT_API gboolean webkit_dom_webkit_named_flow_get_overflow(WebKitDOMWebKitNamedFlow* flow);
-WEBKIT_API gchar* webkit_dom_element_get_webkit_region_overflow(WebKitDOMElement* element);
-WEBKIT_API WebKitDOMNodeList* webkit_dom_webkit_named_flow_get_content_nodes(WebKitDOMWebKitNamedFlow* namedFlow);
-WEBKIT_API WebKitDOMNodeList* webkit_dom_webkit_named_flow_get_regions_by_content_node(WebKitDOMWebKitNamedFlow* namedFlow, WebKitDOMNode* contentNode);
+/**
+ * webkit_dom_html_media_element_set_current_time:
+ * @self: A #WebKitDOMHTMLMediaElement
+ * @value: A #gdouble
+ * @error: #GError
+ *
+ */
+WEBKIT_API void webkit_dom_html_media_element_set_current_time(WebKitDOMHTMLMediaElement* self, gdouble value, GError** error);
+
+/**
+ * webkit_dom_html_input_element_is_edited:
+ * @input: A #WebKitDOMHTMLInputElement
+ *
+ * Returns: A #gboolean
+ */
+WEBKIT_API gboolean webkit_dom_html_input_element_is_edited(WebKitDOMHTMLInputElement* input);
 
 G_END_DECLS
 

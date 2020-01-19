@@ -35,14 +35,13 @@
 #endif
 
 using namespace WebKit;
-using namespace std;
 
 WKTypeID WKPluginSiteDataManagerGetTypeID()
 {
 #if ENABLE(NETSCAPE_PLUGIN_API)
     return toAPI(WebPluginSiteDataManager::APIType);
 #else
-    return APIObject::TypeNull;
+    return toAPI(API::Object::Type::Null);
 #endif
 }
 
@@ -87,7 +86,7 @@ void WKPluginSiteDataManagerClearSiteData(WKPluginSiteDataManagerRef managerRef,
 void WKPluginSiteDataManagerClearAllSiteData(WKPluginSiteDataManagerRef managerRef, void* context, WKPluginSiteDataManagerClearSiteDataFunction function)
 {
 #if ENABLE(NETSCAPE_PLUGIN_API)
-    toImpl(managerRef)->clearSiteData(0, NP_CLEAR_ALL, numeric_limits<uint64_t>::max(), VoidCallback::create(context, function));
+    toImpl(managerRef)->clearSiteData(0, NP_CLEAR_ALL, std::numeric_limits<uint64_t>::max(), VoidCallback::create(context, function));
 #else
     UNUSED_PARAM(managerRef);
     UNUSED_PARAM(context);

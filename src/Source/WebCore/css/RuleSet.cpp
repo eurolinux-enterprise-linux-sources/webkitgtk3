@@ -36,16 +36,13 @@
 #include "MediaQueryEvaluator.h"
 #include "SecurityOrigin.h"
 #include "SelectorChecker.h"
+#include "SelectorCheckerFastPath.h"
 #include "SelectorFilter.h"
 #include "StyleResolver.h"
 #include "StyleRule.h"
 #include "StyleRuleImport.h"
 #include "StyleSheetContents.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include "WebKitCSSKeyframesRule.h"
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryInstrumentationHashSet.h>
-#include <wtf/MemoryInstrumentationVector.h>
 
 #if ENABLE(VIDEO_TRACK)
 #include "TextTrackCue.h"
@@ -135,7 +132,7 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     : m_rule(rule)
     , m_selectorIndex(selectorIndex)
     , m_position(position)
-    , m_hasFastCheckableSelector((addRuleFlags & RuleCanUseFastCheckSelector) && SelectorChecker::isFastCheckableSelector(selector()))
+    , m_hasFastCheckableSelector((addRuleFlags & RuleCanUseFastCheckSelector) && SelectorCheckerFastPath::canUse(selector()))
     , m_specificity(selector()->specificity())
     , m_hasMultipartSelector(!!selector()->tagHistory())
     , m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash(isSelectorMatchingHTMLBasedOnRuleHash(selector()))
@@ -147,37 +144,6 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     ASSERT(m_position == position);
     ASSERT(m_selectorIndex == selectorIndex);
     SelectorFilter::collectIdentifierHashes(selector(), m_descendantSelectorIdentifierHashes, maximumIdentifierCount);
-}
-
-void RuleData::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_rule, "rule");
-}
-
-void RuleSet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_idRules, "idRules");
-    info.addMember(m_classRules, "classRules");
-    info.addMember(m_tagRules, "tagRules");
-    info.addMember(m_shadowPseudoElementRules, "shadowPseudoElementRules");
-    info.addMember(m_linkPseudoClassRules, "linkPseudoClassRules");
-#if ENABLE(VIDEO_TRACK)
-    info.addMember(m_cuePseudoRules, "cuePseudoRules");
-#endif
-    info.addMember(m_focusPseudoClassRules, "focusPseudoClassRules");
-    info.addMember(m_universalRules, "universalRules");
-    info.addMember(m_pageRules, "pageRules");
-    info.addMember(m_regionSelectorsAndRuleSets, "regionSelectorsAndRuleSets");
-    info.addMember(m_features, "features");
-}
-
-void RuleSet::RuleSetSelectorPair::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(ruleSet, "ruleSet");
-    info.addMember(selector, "selector");
 }
 
 static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
@@ -205,7 +171,7 @@ void RuleSet::addToRuleSet(AtomicStringImpl* key, AtomRuleMap& map, const RuleDa
 {
     if (!key)
         return;
-    OwnPtr<Vector<RuleData> >& rules = map.add(key, nullptr).iterator->value;
+    OwnPtr<Vector<RuleData>>& rules = map.add(key, nullptr).iterator->value;
     if (!rules)
         rules = adoptPtr(new Vector<RuleData>);
     rules->append(ruleData);
@@ -248,13 +214,15 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& rule
     }
 
     if (component->m_match == CSSSelector::Tag) {
+        // If this is part of a subselector chain, recurse ahead to find a narrower set (ID/class/:pseudo)
+        if (component->relation() == CSSSelector::SubSelector) {
+            const CSSSelector* nextComponent = component->tagHistory();
+            if (nextComponent->m_match == CSSSelector::Class || nextComponent->m_match == CSSSelector::Id || SelectorChecker::isCommonPseudoClassSelector(nextComponent)) {
+                if (findBestRuleSetAndAdd(nextComponent, ruleData))
+                    return true;
+            }
+        }
         if (component->tagQName().localName() != starAtom) {
-            // If this is part of a subselector chain, recurse ahead to find a narrower set (ID/class.)
-            if (component->relation() == CSSSelector::SubSelector
-                && (component->tagHistory()->m_match == CSSSelector::Class || component->tagHistory()->m_match == CSSSelector::Id || SelectorChecker::isCommonPseudoClassSelector(component->tagHistory()))
-                && findBestRuleSetAndAdd(component->tagHistory(), ruleData))
-                return true;
-
             addToRuleSet(component->tagQName().localName().impl(), m_tagRules, ruleData);
             return true;
         }
@@ -288,7 +256,7 @@ void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurit
 
     // Collect the region rules into a rule set
     // FIXME: Should this add other types of rules? (i.e. use addChildRules() directly?)
-    const Vector<RefPtr<StyleRuleBase> >& childRules = regionRule->childRules();
+    const Vector<RefPtr<StyleRuleBase>>& childRules = regionRule->childRules();
     AddRuleFlags addRuleFlags = hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : RuleHasNoSpecialState;
     addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector | RuleIsInRegionRule);
     for (unsigned i = 0; i < childRules.size(); ++i) {
@@ -302,29 +270,14 @@ void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurit
     m_regionSelectorsAndRuleSets.append(RuleSetSelectorPair(regionRule->selectorList().first(), regionRuleSet.release()));
 }
 
-void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, StyleResolver* resolver, const ContainerNode* scope, bool hasDocumentSecurityOrigin, AddRuleFlags addRuleFlags)
+void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase>>& rules, const MediaQueryEvaluator& medium, StyleResolver* resolver, const ContainerNode* scope, bool hasDocumentSecurityOrigin, AddRuleFlags addRuleFlags)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
 
         if (rule->isStyleRule()) {
             StyleRule* styleRule = static_cast<StyleRule*>(rule);
-#if ENABLE(SHADOW_DOM)
-            if (!scope)
-                addStyleRule(styleRule, addRuleFlags);
-            else {
-                const CSSSelectorList& selectorList = styleRule->selectorList();
-                for (size_t selectorIndex = 0; selectorIndex != notFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                    if (selectorList.hasShadowDistributedAt(selectorIndex))
-                        resolver->ruleSets().shadowDistributedRules().addRule(styleRule, selectorIndex, const_cast<ContainerNode*>(scope), addRuleFlags);
-                    else
-                        addRule(styleRule, selectorIndex, addRuleFlags);
-                }
-            }
-#else
             addStyleRule(styleRule, addRuleFlags);
-#endif
-
         } else if (rule->isPageRule())
             addPageRule(static_cast<StyleRulePage*>(rule));
         else if (rule->isMediaRule()) {
@@ -376,14 +329,14 @@ void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvalu
 {
     ASSERT(sheet);
 
-    const Vector<RefPtr<StyleRuleImport> >& importRules = sheet->importRules();
+    const Vector<RefPtr<StyleRuleImport>>& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
         if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), resolver)))
             addRulesFromSheet(importRule->styleSheet(), medium, resolver, scope);
     }
 
-    bool hasDocumentSecurityOrigin = resolver && resolver->document()->securityOrigin()->canRequest(sheet->baseURL());
+    bool hasDocumentSecurityOrigin = resolver && resolver->document().securityOrigin()->canRequest(sheet->baseURL());
     AddRuleFlags addRuleFlags = static_cast<AddRuleFlags>((hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : 0) | (!scope ? RuleCanUseFastCheckSelector : 0));
 
     addChildRules(sheet->childRules(), medium, resolver, scope, hasDocumentSecurityOrigin, addRuleFlags);

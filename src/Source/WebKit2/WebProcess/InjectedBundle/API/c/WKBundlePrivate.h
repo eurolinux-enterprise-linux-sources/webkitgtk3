@@ -32,6 +32,10 @@
 #include <stdbool.h>
 #endif
 
+#include <JavaScriptCore/JSBase.h>
+#include <WebKit2/WKUserContentInjectedFrames.h>
+#include <WebKit2/WKUserScriptInjectionTime.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,7 +56,6 @@ WK_EXPORT void WKBundleSetPluginsEnabled(WKBundleRef bundle, WKBundlePageGroupRe
 WK_EXPORT void WKBundleSetJavaScriptCanAccessClipboard(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, bool enabled);
 WK_EXPORT void WKBundleSetPrivateBrowsingEnabled(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, bool enabled);
 WK_EXPORT void WKBundleSetPopupBlockingEnabled(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, bool enabled);
-WK_EXPORT void WKBundleSwitchNetworkLoaderToNewTestingSession(WKBundleRef bundle);
 WK_EXPORT void WKBundleSetAuthorAndUserStylesEnabled(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, bool enabled);
 WK_EXPORT void WKBundleSetSpatialNavigationEnabled(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, bool enabled);
 WK_EXPORT void WKBundleAddOriginAccessWhitelistEntry(WKBundleRef bundle, WKStringRef, WKStringRef, WKStringRef, bool);
@@ -67,6 +70,7 @@ WK_EXPORT void WKBundleSetWebNotificationPermission(WKBundleRef bundle, WKBundle
 WK_EXPORT void WKBundleRemoveAllWebNotificationPermissions(WKBundleRef bundle, WKBundlePageRef page);
 WK_EXPORT uint64_t WKBundleGetWebNotificationID(WKBundleRef bundle, JSContextRef context, JSValueRef notification);
 WK_EXPORT WKDataRef WKBundleCreateWKDataFromUInt8Array(WKBundleRef bundle, JSContextRef context, JSValueRef data);
+WK_EXPORT void WKBundleSetAsynchronousSpellCheckingEnabled(WKBundleRef bundleRef, WKBundlePageGroupRef pageGroupRef, bool enabled);
 
 // UserContent API
 WK_EXPORT void WKBundleAddUserScript(WKBundleRef bundle, WKBundlePageGroupRef pageGroup, WKBundleScriptWorldRef scriptWorld, WKStringRef source, WKURLRef url, WKArrayRef whitelist, WKArrayRef blacklist, WKUserScriptInjectionTime injectionTime, WKUserContentInjectedFrames injectedFrames);

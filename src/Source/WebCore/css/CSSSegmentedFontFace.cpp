@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,6 +31,7 @@
 #include "CSSFontSelector.h"
 #include "Document.h"
 #include "FontDescription.h"
+#include "RuntimeEnabledFeatures.h"
 #include "SegmentedFontData.h"
 #include "SimpleFontData.h"
 
@@ -72,6 +73,19 @@ bool CSSSegmentedFontFace::isValid() const
 void CSSSegmentedFontFace::fontLoaded(CSSFontFace*)
 {
     pruneTable();
+
+#if ENABLE(FONT_LOAD_EVENTS)
+    if (RuntimeEnabledFeatures::sharedFeatures().fontLoadEventsEnabled() && !isLoading()) {
+        Vector<RefPtr<LoadFontCallback>> callbacks;
+        m_callbacks.swap(callbacks);
+        for (size_t index = 0; index < callbacks.size(); ++index) {
+            if (checkFont())
+                callbacks[index]->notifyLoaded();
+            else
+                callbacks[index]->notifyError();
+        }
+    }
+#endif
 }
 
 void CSSSegmentedFontFace::appendFontFace(PassRefPtr<CSSFontFace> fontFace)
@@ -110,7 +124,7 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
         | fontDescription.widthVariant() << FontTraitsMaskWidth
         | desiredTraitsMask;
 
-    RefPtr<SegmentedFontData>& fontData = m_fontDataTable.add(hashKey, 0).iterator->value;
+    RefPtr<SegmentedFontData>& fontData = m_fontDataTable.add(hashKey, nullptr).iterator->value;
     if (fontData && fontData->numRanges())
         return fontData; // No release, we have a reference to an object in the cache which should retain the ref count it has.
 
@@ -134,5 +148,41 @@ PassRefPtr<FontData> CSSSegmentedFontFace::getFontData(const FontDescription& fo
 
     return 0;
 }
+
+#if ENABLE(FONT_LOAD_EVENTS)
+bool CSSSegmentedFontFace::isLoading() const
+{
+    unsigned size = m_fontFaces.size();
+    for (unsigned i = 0; i < size; i++) {
+        if (m_fontFaces[i]->loadState() == CSSFontFace::Loading)
+            return true;
+    }
+    return false;
+}
+
+bool CSSSegmentedFontFace::checkFont() const
+{
+    unsigned size = m_fontFaces.size();
+    for (unsigned i = 0; i < size; i++) {
+        if (m_fontFaces[i]->loadState() != CSSFontFace::Loaded)
+            return false;
+    }
+    return true;
+}
+
+void CSSSegmentedFontFace::loadFont(const FontDescription& fontDescription, PassRefPtr<LoadFontCallback> callback)
+{
+    getFontData(fontDescription); // Kick off the load.
+
+    if (callback) {
+        if (isLoading())
+            m_callbacks.append(callback);
+        else if (checkFont())
+            callback->notifyLoaded();
+        else
+            callback->notifyError();
+    }
+}
+#endif
 
 }

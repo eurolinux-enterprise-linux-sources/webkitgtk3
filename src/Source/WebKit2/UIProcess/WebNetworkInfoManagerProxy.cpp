@@ -35,38 +35,60 @@
 
 namespace WebKit {
 
+const char* WebNetworkInfoManagerProxy::supplementName()
+{
+    return "WebNetworkInfoManagerProxy";
+}
+
 PassRefPtr<WebNetworkInfoManagerProxy> WebNetworkInfoManagerProxy::create(WebContext* context)
 {
     return adoptRef(new WebNetworkInfoManagerProxy(context));
 }
 
 WebNetworkInfoManagerProxy::WebNetworkInfoManagerProxy(WebContext* context)
-    : m_isUpdating(false)
-    , m_context(context)
+    : WebContextSupplement(context)
+    , m_isUpdating(false)
 {
-    m_context->addMessageReceiver(Messages::WebNetworkInfoManagerProxy::messageReceiverName(), this);
+    WebContextSupplement::context()->addMessageReceiver(Messages::WebNetworkInfoManagerProxy::messageReceiverName(), *this);
 }
 
 WebNetworkInfoManagerProxy::~WebNetworkInfoManagerProxy()
 {
 }
 
-void WebNetworkInfoManagerProxy::invalidate()
-{
-    stopUpdating();
-}
-
-void WebNetworkInfoManagerProxy::initializeProvider(const WKNetworkInfoProvider* provider)
+void WebNetworkInfoManagerProxy::initializeProvider(const WKNetworkInfoProviderBase* provider)
 {
     m_provider.initialize(provider);
 }
 
 void WebNetworkInfoManagerProxy::providerDidChangeNetworkInformation(const AtomicString& eventType, WebNetworkInfo* networkInformation)
 {
-    if (!m_context)
+    if (!context())
         return;
 
-    m_context->sendToAllProcesses(Messages::WebNetworkInfoManager::DidChangeNetworkInformation(eventType, networkInformation->data()));
+    context()->sendToAllProcesses(Messages::WebNetworkInfoManager::DidChangeNetworkInformation(eventType, networkInformation->data()));
+}
+
+// WebContextSupplement
+
+void WebNetworkInfoManagerProxy::contextDestroyed()
+{
+    stopUpdating();
+}
+
+void WebNetworkInfoManagerProxy::processDidClose(WebProcessProxy*)
+{
+    stopUpdating();
+}
+
+void WebNetworkInfoManagerProxy::refWebContextSupplement()
+{
+    API::Object::ref();
+}
+
+void WebNetworkInfoManagerProxy::derefWebContextSupplement()
+{
+    API::Object::deref();
 }
 
 void WebNetworkInfoManagerProxy::startUpdating()

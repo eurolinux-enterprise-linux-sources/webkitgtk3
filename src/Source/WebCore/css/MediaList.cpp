@@ -31,8 +31,6 @@
 #include "MediaQuery.h"
 #include "MediaQueryExp.h"
 #include "ScriptableDocumentParser.h"
-#include "WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -127,7 +125,7 @@ bool MediaQuerySet::parse(const String& mediaString)
 {
     CSSParser parser(CSSStrictMode);
     
-    Vector<OwnPtr<MediaQuery> > result;
+    Vector<OwnPtr<MediaQuery>> result;
     Vector<String> list;
     mediaString.split(',', list);
     for (unsigned i = 0; i < list.size(); ++i) {
@@ -218,12 +216,6 @@ String MediaQuerySet::mediaText() const
     return text.toString();
 }
 
-void MediaQuerySet::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_queries, "queries");
-}
-    
 MediaList::MediaList(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
     : m_mediaQueries(mediaQueries)
     , m_parentStyleSheet(parentSheet)
@@ -257,7 +249,7 @@ void MediaList::setMediaText(const String& value, ExceptionCode& ec)
 
 String MediaList::item(unsigned index) const
 {
-    const Vector<OwnPtr<MediaQuery> >& queries = m_mediaQueries->queryVector();
+    const Vector<OwnPtr<MediaQuery>>& queries = m_mediaQueries->queryVector();
     if (index < queries.size())
         return queries[index]->cssText();
     return String();
@@ -296,14 +288,6 @@ void MediaList::reattach(MediaQuerySet* mediaQueries)
     m_mediaQueries = mediaQueries;
 }
 
-void MediaList::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_mediaQueries, "mediaQueries");
-    info.addMember(m_parentStyleSheet, "parentStyleSheet");
-    info.addMember(m_parentRule, "parentRule");
-}
-
 #if ENABLE(RESOLUTION_MEDIA_QUERY)
 static void addResolutionWarningMessageToConsole(Document* document, const String& serializedExpression, const CSSPrimitiveValue* value)
 {
@@ -326,7 +310,7 @@ static void addResolutionWarningMessageToConsole(Document* document, const Strin
 
     message.append(serializedExpression);
 
-    document->addConsoleMessage(HTMLMessageSource, TipMessageLevel, message);
+    document->addConsoleMessage(CSSMessageSource, DebugMessageLevel, message);
 }
 
 void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* mediaQuerySet)
@@ -334,7 +318,7 @@ void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* me
     if (!mediaQuerySet || !document)
         return;
 
-    const Vector<OwnPtr<MediaQuery> >& mediaQueries = mediaQuerySet->queryVector();
+    const Vector<OwnPtr<MediaQuery>>& mediaQueries = mediaQuerySet->queryVector();
     const size_t queryCount = mediaQueries.size();
 
     if (!queryCount)
@@ -344,13 +328,13 @@ void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* me
         const MediaQuery* query = mediaQueries[i].get();
         String mediaType = query->mediaType();
         if (!query->ignored() && !equalIgnoringCase(mediaType, "print")) {
-            const Vector<OwnPtr<MediaQueryExp> >* exps = query->expressions();
-            for (size_t j = 0; j < exps->size(); ++j) {
-                const MediaQueryExp* exp = exps->at(j).get();
+            const Vector<OwnPtr<MediaQueryExp>>& expressions = query->expressions();
+            for (size_t j = 0; j < expressions.size(); ++j) {
+                const MediaQueryExp* exp = expressions.at(j).get();
                 if (exp->mediaFeature() == MediaFeatureNames::resolutionMediaFeature || exp->mediaFeature() == MediaFeatureNames::max_resolutionMediaFeature || exp->mediaFeature() == MediaFeatureNames::min_resolutionMediaFeature) {
                     CSSValue* cssValue =  exp->value();
                     if (cssValue && cssValue->isPrimitiveValue()) {
-                        CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(cssValue);
+                        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(cssValue);
                         if (primitiveValue->isDotsPerInch() || primitiveValue->isDotsPerCentimeter())
                             addResolutionWarningMessageToConsole(document, mediaQuerySet->mediaText(), primitiveValue);
                     }

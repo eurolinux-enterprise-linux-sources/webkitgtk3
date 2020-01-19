@@ -1,41 +1,31 @@
+# Fix rebuild on non-Fedora
+%{!?_pkgdocdir: %global _pkgdocdir %{_docdir}/%{name}-%{version}}
+
 ## NOTE: Lots of files in various subdirectories have the same name (such as
 ## "LICENSE") so this short macro allows us to distinguish them by using their
 ## directory names (from the source tree) as prefixes for the files.
 %global         add_to_doc_files()      \
-        mkdir -p %{buildroot}%{_docdir}/%{name}-%{version} ||: ; \
-        cp -p %1  %{buildroot}%{_docdir}/%{name}-%{version}/$(echo '%1' | sed -e 's!/!.!g')
+        mkdir -p %{buildroot}%{_pkgdocdir} ||: ; \
+        cp -p %1  %{buildroot}%{_pkgdocdir}/$(echo '%1' | sed -e 's!/!.!g')
 
 # Enable higher compression for output rpms
 # https://bugzilla.redhat.com/show_bug.cgi?id=1039590
 %define _binary_payload w8.xzdio
 
 Name:           webkitgtk3
-Version:        2.0.4
-Release:        6%{?dist}.1
+Version:        2.4.11
+Release:        2%{?dist}
 Summary:        GTK+ Web content engine library
 
 Group:          Development/Libraries
 License:        LGPLv2+ and BSD
-URL:            http://www.webkitgtk.org/
+URL:            http://www.webkitgtk.org
 
 Source0:        http://webkitgtk.org/releases/webkitgtk-%{version}.tar.xz
 
-Patch0:         webkit-1.1.14-nspluginwrapper.patch
-# workarounds for non-JIT arches
-# https://bugs.webkit.org/show_bug.cgi?id=104270
-Patch1:         webkit-1.11.2-yarr.patch
-# https://bugs.webkit.org/show_bug.cgi?id=103128
-Patch2:         webkit-1.11.2-Double2Ints.patch
-Patch3:         webkitgtk-1.11.5-libatomic.patch
-Patch4:         webkit-1.11.90-double2intsPPC32.patch
+Patch0:         webkitgtk-2.4.9-disable_deprecated_get_set_id.patch
 
-Patch5:         webkitgtk-aarch64.patch
-Patch6:         webkitgtk-2.0.4_translation-updates.patch
-# https://bugzilla.redhat.com/show_bug.cgi?id=1029783
-Patch7:         webkitgtk-2.0.4-volume.patch
-Patch8:         webkitgtk-2.0.4-ppc64_align.patch
-Patch9:         webkitgtk-2.0.4-cloop_fix.patch
-
+BuildRequires:  at-spi2-core-devel
 BuildRequires:  bison
 BuildRequires:  cairo-devel
 BuildRequires:  chrpath
@@ -43,7 +33,7 @@ BuildRequires:  enchant-devel
 BuildRequires:  flex
 BuildRequires:  fontconfig-devel >= 2.5
 BuildRequires:  freetype-devel
-BuildRequires:  geoclue-devel
+BuildRequires:  geoclue2-devel
 BuildRequires:  gettext
 BuildRequires:  gperf
 BuildRequires:  gstreamer1-devel
@@ -67,10 +57,10 @@ BuildRequires:  gobject-introspection-devel >= 1.32.0
 BuildRequires:  perl-Switch
 BuildRequires:  ruby
 BuildRequires:  mesa-libGL-devel
-
 %ifarch ppc
 BuildRequires:  libatomic
 %endif
+Requires:       geoclue2
 
 %description
 WebKitGTK+ is the port of the portable web rendering engine WebKit to the
@@ -78,19 +68,10 @@ GTK+ platform.
 
 This package contains WebKitGTK+ for GTK+ 3.
 
-%package -n     libwebkit2gtk
-Summary:        The libwebkit2gtk library
-Group:          Development/Libraries
-Requires:       %{name} = %{version}-%{release}
-
-%description -n libwebkit2gtk
-The libwebkit2gtk package contains the libwebkit2gtk library
-that is part of %{name}.
-
 %package        devel
 Summary:        Development files for %{name}
 Group:          Development/Libraries
-Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}%{?_isa} = %{version}-%{release}
 Requires:       pkgconfig
 Requires:       gtk3-devel
 
@@ -109,53 +90,40 @@ This package contains developer documentation for %{name}.
 
 %prep
 %setup -qn "webkitgtk-%{version}"
-%patch0 -p1 -b .nspluginwrapper
-%patch1 -p1 -b .yarr
-%patch2 -p1 -b .double2ints
-%patch6 -p2
-%patch7 -p1 -b .volume
-%ifarch ppc
-%patch3 -p1 -b .libatomic
-%endif
-# required for 32-bit big-endians
-%ifarch ppc s390
-%patch4 -p1 -b .double2intsPPC32
-%endif
+%patch0 -p1 -b .disable_deprecated_get_id
 
-%ifarch aarch64
-%patch5 -p1 -b .aarch64
-%endif
-
-%ifarch ppc64
-%patch8 -p1 -b .ppc64_align
-%endif
-
-%ifarch ppc64 s390x
-%patch9 -p1 -b .cloop_fix
-%endif
+# Fix the permissions
+chmod 644 Source/WebCore/html/canvas/CanvasRenderingContext2D.cpp
 
 %build
+%global optflags %{optflags} -fno-strict-aliasing
+
 # Use linker flags to reduce memory consumption
 %global optflags %{optflags} -Wl,--no-keep-memory -Wl,--reduce-memory-overheads
 
-%ifarch s390 %{arm} aarch64
+%ifarch s390 %{arm}
 # Decrease debuginfo verbosity to reduce memory consumption even more
 %global optflags %(echo %{optflags} | sed 's/-g /-g1 /')
 %endif
 
 %ifarch ppc
-# Use linker flag -relax to get WebKit2 build under ppc(32) with JIT disabled
-%global optflags %{optflags} -Wl,-relax
+# Use linker flag -relax to get WebKit build under ppc(32) with JIT disabled
+%global optflags %{optflags} -Wl,-relax -latomic
 %endif
 
-CFLAGS="%{optflags} -DLIBSOUP_I_HAVE_READ_BUG_594377_AND_KNOW_SOUP_PASSWORD_MANAGER_MIGHT_GO_AWAY" %configure                                                   \
-                        --with-gtk=3.0                          \
-%ifarch s390 s390x ppc ppc64 aarch64
-                        --disable-jit                           \
-%else
-                        --enable-jit                            \
+%ifarch s390 s390x ppc %{power64} aarch64
+%global optflags %{optflags} -DENABLE_YARR_JIT=0
 %endif
-                        --enable-introspection
+
+%configure                                      \
+        --with-gtk=3.0                          \
+        --disable-webkit2                       \
+%ifarch s390 s390x ppc %{power64} aarch64
+        --disable-jit                           \
+%else
+        --enable-jit                            \
+%endif
+        --enable-introspection
 
 mkdir -p DerivedSources/webkit
 mkdir -p DerivedSources/WebCore
@@ -163,24 +131,23 @@ mkdir -p DerivedSources/ANGLE
 mkdir -p DerivedSources/WebKit2
 mkdir -p DerivedSources/webkitdom/
 mkdir -p DerivedSources/InjectedBundle
+mkdir -p DerivedSources/Platform
 
-make %{_smp_mflags} V=1
+# Disable the parallel compilation as it fails to compile in brew.
+# https://bugs.webkit.org/show_bug.cgi?id=34846
+# make %{_smp_mflags} V=1
+make -j1 V=1
 
 %install
 make install DESTDIR=%{buildroot}
 
 install -d -m 755 %{buildroot}%{_libexecdir}/%{name}
 install -m 755 Programs/GtkLauncher %{buildroot}%{_libexecdir}/%{name}
-install -m 755 Programs/MiniBrowser %{buildroot}%{_libexecdir}/%{name}
 
 # Remove lib64 rpaths
 chrpath --delete %{buildroot}%{_bindir}/jsc-3
 chrpath --delete %{buildroot}%{_libdir}/libwebkitgtk-3.0.so
-chrpath --delete %{buildroot}%{_libdir}/libwebkit2gtk-3.0.so
 chrpath --delete %{buildroot}%{_libexecdir}/%{name}/GtkLauncher
-chrpath --delete %{buildroot}%{_libexecdir}/%{name}/MiniBrowser
-chrpath --delete %{buildroot}%{_libexecdir}/WebKitPluginProcess
-chrpath --delete %{buildroot}%{_libexecdir}/WebKitWebProcess
 
 # Remove .la files
 find $RPM_BUILD_ROOT%{_libdir} -name "*.la" -delete
@@ -200,57 +167,82 @@ find $RPM_BUILD_ROOT%{_libdir} -name "*.la" -delete
 %add_to_doc_files Source/JavaScriptCore/icu/README
 %add_to_doc_files Source/JavaScriptCore/icu/LICENSE
 
-
 %post -p /sbin/ldconfig
 %postun -p /sbin/ldconfig
 
-%post -n libwebkit2gtk -p /sbin/ldconfig
-%postun -n libwebkit2gtk -p /sbin/ldconfig
-
-
 %files -f WebKitGTK-3.0.lang
-%doc %{_docdir}/%{name}-%{version}/
+%doc %{_pkgdocdir}/
 %{_libdir}/libwebkitgtk-3.0.so.*
 %{_libdir}/libjavascriptcoregtk-3.0.so.*
 %{_libdir}/girepository-1.0/WebKit-3.0.typelib
-%{_libdir}/girepository-1.0/JSCore-3.0.typelib
+%{_libdir}/girepository-1.0/JavaScriptCore-3.0.typelib
 %dir %{_libexecdir}/%{name}
 %{_libexecdir}/%{name}/GtkLauncher
 %{_datadir}/webkitgtk-3.0
-
-%files -n libwebkit2gtk
-%{_libdir}/libwebkit2gtk-3.0.so.*
-%{_libdir}/webkit2gtk-3.0/
-%{_libdir}/girepository-1.0/WebKit2-3.0.typelib
-%{_libexecdir}/%{name}/MiniBrowser
-%{_libexecdir}/WebKitPluginProcess
-%{_libexecdir}/WebKitWebProcess
 
 %files  devel
 %{_bindir}/jsc-3
 %{_includedir}/webkitgtk-3.0
 %{_libdir}/libwebkitgtk-3.0.so
-%{_libdir}/libwebkit2gtk-3.0.so
 %{_libdir}/libjavascriptcoregtk-3.0.so
 %{_libdir}/pkgconfig/webkitgtk-3.0.pc
-%{_libdir}/pkgconfig/webkit2gtk-3.0.pc
 %{_libdir}/pkgconfig/javascriptcoregtk-3.0.pc
 %{_datadir}/gir-1.0/WebKit-3.0.gir
-%{_datadir}/gir-1.0/WebKit2-3.0.gir
-%{_datadir}/gir-1.0/JSCore-3.0.gir
+%{_datadir}/gir-1.0/JavaScriptCore-3.0.gir
 
 %files doc
 %dir %{_datadir}/gtk-doc
 %dir %{_datadir}/gtk-doc/html
 %{_datadir}/gtk-doc/html/webkitgtk
-%{_datadir}/gtk-doc/html/webkit2gtk
-
+%{_datadir}/gtk-doc/html/webkitdomgtk
 
 %changelog
-* Mon May 12 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-6.1
+* Mon Feb 27 2017 Tomas Popela <tpopela@redhat.com> - 2.4.11-2
+- Don't build WebKit2 as it's build in webkitgtk4 package
+- Resolves: rhbz#1383614
+
+* Mon Feb 13 2017 Tomas Popela <tpopela@redhat.com> - 2.4.11-1
+- Update to 2.4.11
+- Resolves: rhbz#1326714
+
+* Thu Jun 23 2016 Tomas Popela <tpopela@redhat.com> - 2.4.9-6
+- Update the translations
+- Resolves: rhbz#1302692
+
+* Mon Sep 14 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-5
+- Initialize string in SQLiteStatement before using it
+- Resolves: rhbz#1259283
+
+* Mon Jun 22 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-4
+- Remove deprecation from webkit_dom_html_element_get/set_id
+- Resolves: rhbz#1174556
+
+* Fri May 29 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-3
+- Fix some of rpmdiff warnings
+- Resolves: rhbz#1174556
+
+* Thu May 21 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-2
+- Compile with -fno-strict-aliasing
+- Resolves: rhbz#1174556
+- Update translations
+- Resolves: rhbz#1223643
+
+* Wed May 20 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-1
+- Update to 2.4.9
+- Resolves: rhbz#1174556
+
+* Wed Aug 20 2014 Dan Horák <dhorak@redhat.com> - 2.0.4-9
+- refresh ppc64le patch, use %%{power64} for conditions in spec
+- Resolves: rhbz#1125710
+
+* Mon Aug 04 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-8
+- Add support for ppc64le
+- Resolves: rhbz#1125710
+
+* Mon May 12 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-7
 - Fix memory align in JSC for ppc64
 - Fix CLoop for ppc64 and s390x
-- Resolves: rhbz#1097138
+- Resolves: rhbz#1019801
 
 * Tue Jan 28 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-6
 - Enable higher compression for output rpms

@@ -32,6 +32,7 @@
 namespace WebCore {
 
 class AffineTransform;
+class RenderElement;
 class RenderObject;
 class FloatRect;
 class RenderSVGResourceFilter;
@@ -47,22 +48,22 @@ public:
     // Does not start rendering.
     SVGRenderingContext()
         : m_renderingFlags(0)
-        , m_object(0)
-        , m_paintInfo(0)
-        , m_savedContext(0)
+        , m_renderer(nullptr)
+        , m_paintInfo(nullptr)
+        , m_savedContext(nullptr)
 #if ENABLE(FILTERS)
-        , m_filter(0)
+        , m_filter(nullptr)
 #endif
     {
     }
 
-    SVGRenderingContext(RenderObject* object, PaintInfo& paintinfo, NeedsGraphicsContextSave needsGraphicsContextSave = DontSaveGraphicsContext)
+    SVGRenderingContext(RenderElement& object, PaintInfo& paintinfo, NeedsGraphicsContextSave needsGraphicsContextSave = DontSaveGraphicsContext)
         : m_renderingFlags(0)
-        , m_object(0)
-        , m_paintInfo(0)
-        , m_savedContext(0)
+        , m_renderer(nullptr)
+        , m_paintInfo(nullptr)
+        , m_savedContext(nullptr)
 #if ENABLE(FILTERS)
-        , m_filter(0)
+        , m_filter(nullptr)
 #endif
     {
         prepareToRenderSVGContent(object, paintinfo, needsGraphicsContextSave);
@@ -72,18 +73,18 @@ public:
     ~SVGRenderingContext();
 
     // Used by all SVG renderers who apply clip/filter/etc. resources to the renderer content.
-    void prepareToRenderSVGContent(RenderObject*, PaintInfo&, NeedsGraphicsContextSave = DontSaveGraphicsContext);
+    void prepareToRenderSVGContent(RenderElement&, PaintInfo&, NeedsGraphicsContextSave = DontSaveGraphicsContext);
     bool isRenderingPrepared() const { return m_renderingFlags & RenderingPrepared; }
 
-    static bool createImageBuffer(const FloatRect& paintRect, const AffineTransform& absoluteTransform, OwnPtr<ImageBuffer>&, ColorSpace, RenderingMode);
+    static bool createImageBuffer(const FloatRect& paintRect, const AffineTransform& absoluteTransform, std::unique_ptr<ImageBuffer>&, ColorSpace, RenderingMode);
     // Patterns need a different float-to-integer coordinate mapping.
-    static bool createImageBufferForPattern(const FloatRect& absoluteTargetRect, const FloatRect& clampedAbsoluteTargetRect, OwnPtr<ImageBuffer>&, ColorSpace, RenderingMode);
+    static bool createImageBufferForPattern(const FloatRect& absoluteTargetRect, const FloatRect& clampedAbsoluteTargetRect, std::unique_ptr<ImageBuffer>&, ColorSpace, RenderingMode);
 
-    static void renderSubtreeToImageBuffer(ImageBuffer*, RenderObject*, const AffineTransform&);
-    static void clipToImageBuffer(GraphicsContext*, const AffineTransform& absoluteTransform, const FloatRect& targetRect, OwnPtr<ImageBuffer>&, bool safeToClear);
+    static void renderSubtreeToImageBuffer(ImageBuffer*, RenderElement&, const AffineTransform&);
+    static void clipToImageBuffer(GraphicsContext*, const AffineTransform& absoluteTransform, const FloatRect& targetRect, std::unique_ptr<ImageBuffer>&, bool safeToClear);
 
     static float calculateScreenFontSizeScalingFactor(const RenderObject*);
-    static void calculateTransformationToOutermostSVGCoordinateSystem(const RenderObject*, AffineTransform& absoluteTransform);
+    static void calculateTransformationToOutermostCoordinateSystem(const RenderObject*, AffineTransform& absoluteTransform);
     static IntSize clampedAbsoluteSize(const IntSize&);
     static FloatRect clampedAbsoluteTargetRect(const FloatRect& absoluteTargetRect);
     static void clear2DRotation(AffineTransform&);
@@ -92,6 +93,9 @@ public:
     {
         return enclosingIntRect(absoluteTransform.mapRect(targetRect));
     }
+
+    // Support for the buffered-rendering hint.
+    bool bufferForeground(std::unique_ptr<ImageBuffer>&);
 
 private:
     // To properly revert partially successful initializtions in the destructor, we record all successful steps.
@@ -108,10 +112,10 @@ private:
     const static int ActionsNeeded = RestoreGraphicsContext | EndOpacityLayer | EndShadowLayer | EndFilterLayer;
 
     int m_renderingFlags;
-    RenderObject* m_object;
+    RenderElement* m_renderer;
     PaintInfo* m_paintInfo;
     GraphicsContext* m_savedContext;
-    IntRect m_savedPaintRect;
+    LayoutRect m_savedPaintRect;
 #if ENABLE(FILTERS)
     RenderSVGResourceFilter* m_filter;
 #endif

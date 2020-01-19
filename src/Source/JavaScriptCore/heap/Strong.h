@@ -32,7 +32,7 @@
 
 namespace JSC {
 
-class JSGlobalData;
+class VM;
 
 // A strongly referenced handle that prevents the object it points to from being garbage collected.
 template <typename T> class Strong : public Handle<T> {
@@ -48,9 +48,9 @@ public:
     {
     }
     
-    Strong(JSGlobalData&, ExternalType = ExternalType());
+    Strong(VM&, ExternalType = ExternalType());
 
-    Strong(JSGlobalData&, Handle<T>);
+    Strong(VM&, Handle<T>);
     
     Strong(const Strong& other)
         : Handle<T>()
@@ -95,7 +95,7 @@ public:
 
     ExternalType get() const { return HandleTypes<T>::getFromSlot(this->slot()); }
 
-    void set(JSGlobalData&, ExternalType);
+    void set(VM&, ExternalType);
 
     template <typename U> Strong& operator=(const Strong<U>& other)
     {
@@ -104,7 +104,7 @@ public:
             return *this;
         }
 
-        set(*HandleSet::heapFor(other.slot())->globalData(), other.get());
+        set(*HandleSet::heapFor(other.slot())->vm(), other.get());
         return *this;
     }
     
@@ -115,7 +115,7 @@ public:
             return *this;
         }
 
-        set(*HandleSet::heapFor(other.slot())->globalData(), other.get());
+        set(*HandleSet::heapFor(other.slot())->vm(), other.get());
         return *this;
     }
 
@@ -148,11 +148,11 @@ template<class T> inline void swap(Strong<T>& a, Strong<T>& b)
 
 namespace WTF {
 
-template<typename T> struct VectorTraits<JSC::Strong<T> > : SimpleClassVectorTraits {
+template<typename T> struct VectorTraits<JSC::Strong<T>> : SimpleClassVectorTraits {
     static const bool canCompareWithMemcmp = false;
 };
 
-template<typename P> struct HashTraits<JSC::Strong<P> > : SimpleClassHashTraits<JSC::Strong<P> > { };
+template<typename P> struct HashTraits<JSC::Strong<P>> : SimpleClassHashTraits<JSC::Strong<P>> { };
 
 }
 

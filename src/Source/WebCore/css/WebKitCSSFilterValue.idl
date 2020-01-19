@@ -24,10 +24,9 @@
  */
 
 [
-        Conditional=CSS_FILTERS,
-        IndexedGetter,
-        DoNotCheckConstants,
-    ImplementationLacksVTable
+    Conditional=CSS_FILTERS,
+    DoNotCheckConstants,
+    ImplementationLacksVTable,
 ] interface WebKitCSSFilterValue : CSSValueList {
 
     // OperationTypes
@@ -44,9 +43,7 @@
     const unsigned short CSS_FILTER_BLUR = 10;
     const unsigned short CSS_FILTER_DROP_SHADOW = 11;
 
-#if defined(ENABLE_CSS_SHADERS) && ENABLE_CSS_SHADERS
-    const unsigned short CSS_FILTER_CUSTOM = 12;
-#endif
-
     readonly attribute unsigned short operationType;
+
+    getter CSSValue ([Default=Undefined] optional unsigned long index);
 };

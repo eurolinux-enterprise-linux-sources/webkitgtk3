@@ -52,16 +52,10 @@ void IDBDatabaseCallbacksImpl::onForcedClose()
         m_database->forceClose();
 }
 
-void IDBDatabaseCallbacksImpl::onVersionChange(const String& version)
+void IDBDatabaseCallbacksImpl::onVersionChange(uint64_t oldVersion, uint64_t newVersion, IndexedDB::VersionNullness newVersionNullness)
 {
     if (m_database)
-        m_database->onVersionChange(version);
-}
-
-void IDBDatabaseCallbacksImpl::onVersionChange(int64_t oldVersion, int64_t newVersion)
-{
-    if (m_database)
-        m_database->onVersionChange(oldVersion, newVersion);
+        m_database->onVersionChange(oldVersion, newVersion, newVersionNullness);
 }
 
 void IDBDatabaseCallbacksImpl::connect(IDBDatabase* database)

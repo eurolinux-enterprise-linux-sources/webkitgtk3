@@ -36,8 +36,6 @@
 #include "AccessibilityTableRow.h"
 #include "RenderObject.h"
 
-using namespace std;
-
 namespace WebCore {
 
 AccessibilityARIAGrid::AccessibilityARIAGrid(RenderObject* renderer)
@@ -59,7 +57,7 @@ bool AccessibilityARIAGrid::addTableCellChild(AccessibilityObject* child, HashSe
     if (!child || !child->isTableRow() || child->ariaRoleAttribute() != RowRole)
         return false;
         
-    AccessibilityTableRow* row = static_cast<AccessibilityTableRow*>(child);
+    AccessibilityTableRow* row = toAccessibilityTableRow(child);
     if (appendedRows.contains(row))
         return false;
         
@@ -76,12 +74,26 @@ bool AccessibilityARIAGrid::addTableCellChild(AccessibilityObject* child, HashSe
     if (!row->accessibilityIsIgnored())
         m_children.append(row);
     else
-        m_children.append(row->children());
+        m_children.appendVector(row->children());
 
     appendedRows.add(row);
     return true;
 }
-    
+
+void AccessibilityARIAGrid::addRowDescendant(AccessibilityObject* rowChild, HashSet<AccessibilityObject*>& appendedRows, unsigned& columnCount)
+{
+    if (!rowChild)
+        return;
+
+    if (!rowChild->isTableRow()) {
+        // Although a "grid" should have rows as its direct descendants, if this is not a table row,
+        // dive deeper into the descendants to try to find a valid row.
+        for (const auto& child : rowChild->children())
+            addRowDescendant(child.get(), appendedRows, columnCount);
+    } else
+        addTableCellChild(rowChild, appendedRows, columnCount);
+}
+
 void AccessibilityARIAGrid::addChildren()
 {
     ASSERT(!m_haveChildren); 
@@ -95,31 +107,17 @@ void AccessibilityARIAGrid::addChildren()
     if (!m_renderer)
         return;
     
-    AXObjectCache* axCache = m_renderer->document()->axObjectCache();
+    AXObjectCache* axCache = m_renderer->document().axObjectCache();
     
     // add only rows that are labeled as aria rows
     HashSet<AccessibilityObject*> appendedRows;
     unsigned columnCount = 0;
-    for (RefPtr<AccessibilityObject> child = firstChild(); child; child = child->nextSibling()) {
-
-        if (!addTableCellChild(child.get(), appendedRows, columnCount)) {
-            
-            // in case the render tree doesn't match the expected ARIA hierarchy, look at the children
-            if (!child->hasChildren())
-                child->addChildren();
-
-            // The children of this non-row will contain all non-ignored elements (recursing to find them). 
-            // This allows the table to dive arbitrarily deep to find the rows.
-            AccessibilityChildrenVector children = child->children();
-            size_t length = children.size();
-            for (size_t i = 0; i < length; ++i)
-                addTableCellChild(children[i].get(), appendedRows, columnCount);
-        }
-    }
+    for (RefPtr<AccessibilityObject> child = firstChild(); child; child = child->nextSibling())
+        addRowDescendant(child.get(), appendedRows, columnCount);
     
     // make the columns based on the number of columns in the first body
     for (unsigned i = 0; i < columnCount; ++i) {
-        AccessibilityTableColumn* column = static_cast<AccessibilityTableColumn*>(axCache->getOrCreate(ColumnRole));
+        AccessibilityTableColumn* column = toAccessibilityTableColumn(axCache->getOrCreate(ColumnRole));
         column->setColumnIndex((int)i);
         column->setParent(this);
         m_columns.append(column);
@@ -130,52 +128,6 @@ void AccessibilityARIAGrid::addChildren()
     AccessibilityObject* headerContainerObject = headerContainer();
     if (headerContainerObject && !headerContainerObject->accessibilityIsIgnored())
         m_children.append(headerContainerObject);
-}
-    
-AccessibilityTableCell* AccessibilityARIAGrid::cellForColumnAndRow(unsigned column, unsigned row)
-{
-    if (!m_renderer)
-        return 0;
-    
-    updateChildrenIfNecessary();
-    
-    if (column >= columnCount() || row >= rowCount())
-        return 0;
-    
-    int intRow = (int)row;
-    int intColumn = (int)column;
-
-    pair<int, int> columnRange;
-    pair<int, int> rowRange;
-    
-    // Iterate backwards through the rows in case the desired cell has a rowspan and exists
-    // in a previous row.
-    for (; intRow >= 0; --intRow) {
-        AccessibilityObject* tableRow = m_rows[intRow].get();
-        if (!tableRow)
-            continue;
-        
-        AccessibilityChildrenVector children = tableRow->children();
-        unsigned childrenLength = children.size();
-        
-        // Since some cells may have colspans, we have to check the actual range of each
-        // cell to determine which is the right one.
-        for (unsigned k = 0; k < childrenLength; ++k) {
-            AccessibilityObject* child = children[k].get();
-            if (!child->isTableCell()) 
-                continue;
-            
-            AccessibilityTableCell* tableCellChild = static_cast<AccessibilityTableCell*>(child);
-            tableCellChild->columnIndexRange(columnRange);
-            tableCellChild->rowIndexRange(rowRange);
-            
-            if ((intColumn >= columnRange.first && intColumn < (columnRange.first + columnRange.second))
-                && (intRow >= rowRange.first && intRow < (rowRange.first + rowRange.second)))
-                return tableCellChild;
-        }
-    }
-
-    return 0;
 }
     
 } // namespace WebCore

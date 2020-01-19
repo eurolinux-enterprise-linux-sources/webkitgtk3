@@ -7,7 +7,7 @@
 #include "compiler/ValidateLimitations.h"
 #include "compiler/InfoSink.h"
 #include "compiler/InitializeParseContext.h"
-#include "compiler/ParseHelper.h"
+#include "compiler/ParseContext.h"
 
 namespace {
 bool IsLoopIndex(const TIntermSymbol* symbol, const TLoopStack& stack) {
@@ -421,20 +421,13 @@ bool ValidateLimitations::validateFunctionCall(TIntermAggregate* node)
         return true;
 
     // List of param indices for which loop indices are used as argument.
-    typedef std::vector<int> ParamIndex;
+    typedef std::vector<size_t> ParamIndex;
     ParamIndex pIndex;
     TIntermSequence& params = node->getSequence();
     for (TIntermSequence::size_type i = 0; i < params.size(); ++i) {
         TIntermSymbol* symbol = params[i]->getAsSymbolNode();
         if (symbol && isLoopIndex(symbol))
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wshorten-64-to-32"
-#endif
             pIndex.push_back(i);
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
     }
     // If none of the loop indices are used as arguments,
     // there is nothing to check.
@@ -442,7 +435,7 @@ bool ValidateLimitations::validateFunctionCall(TIntermAggregate* node)
         return true;
 
     bool valid = true;
-    TSymbolTable& symbolTable = GlobalParseContext->symbolTable;
+    TSymbolTable& symbolTable = GetGlobalParseContext()->symbolTable;
     TSymbol* symbol = symbolTable.find(node->getName());
     ASSERT(symbol && symbol->isFunction());
     TFunction* function = static_cast<TFunction*>(symbol);
@@ -464,7 +457,7 @@ bool ValidateLimitations::validateFunctionCall(TIntermAggregate* node)
 bool ValidateLimitations::validateOperation(TIntermOperator* node,
                                             TIntermNode* operand) {
     // Check if loop index is modified in the loop body.
-    if (!withinLoopBody() || !node->modifiesState())
+    if (!withinLoopBody() || !node->isAssignment())
         return true;
 
     const TIntermSymbol* symbol = operand->getAsSymbolNode();

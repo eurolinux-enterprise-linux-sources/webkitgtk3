@@ -33,35 +33,62 @@
 
 namespace WebCore {
 
-class ScriptExecutionContext;
+class Element;
+class HTMLMediaElement;
+class SourceBuffer;
 
-class TrackBase : public RefCounted<TrackBase>, public EventTarget {
+class TrackBase : public RefCounted<TrackBase> {
 public:
     virtual ~TrackBase();
 
     enum Type { BaseTrack, TextTrack, AudioTrack, VideoTrack };
     Type type() const { return m_type; }
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-    
-    using RefCounted<TrackBase>::ref;
-    using RefCounted<TrackBase>::deref;
+    void setMediaElement(HTMLMediaElement* element) { m_mediaElement = element; }
+    HTMLMediaElement* mediaElement() { return m_mediaElement; }
+    virtual Element* element();
+
+    virtual AtomicString id() const { return m_id; }
+    virtual void setId(const AtomicString& id) { m_id = id; }
+
+    AtomicString kind() const { return m_kind; }
+    virtual void setKind(const AtomicString&);
+
+    AtomicString label() const { return m_label; }
+    void setLabel(const AtomicString& label) { m_label = label; }
+
+    AtomicString language() const { return m_language; }
+    virtual void setLanguage(const AtomicString& language) { m_language = language; }
+
+    virtual void clearClient() = 0;
+
+#if ENABLE(MEDIA_SOURCE)
+    SourceBuffer* sourceBuffer() const { return m_sourceBuffer; }
+    void setSourceBuffer(SourceBuffer* buffer) { m_sourceBuffer = buffer; }
+#endif
+
+    virtual bool enabled() const = 0;
 
 protected:
-    TrackBase(ScriptExecutionContext*, Type);
-    
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
+    TrackBase(Type, const AtomicString& id, const AtomicString& label, const AtomicString& language);
+
+    virtual bool isValidKind(const AtomicString&) const = 0;
+    virtual const AtomicString& defaultKindKeyword() const = 0;
+
+    void setKindInternal(const AtomicString&);
+
+    HTMLMediaElement* m_mediaElement;
+
+#if ENABLE(MEDIA_SOURCE)
+    SourceBuffer* m_sourceBuffer;
+#endif
 
 private:
     Type m_type;
-    
-    virtual void refEventTarget() { ref(); }
-    virtual void derefEventTarget() { deref(); }
-    
-    ScriptExecutionContext* m_scriptExecutionContext;
-    EventTargetData m_eventTargetData;
+    AtomicString m_id;
+    AtomicString m_kind;
+    AtomicString m_label;
+    AtomicString m_language;
 };
 
 } // namespace WebCore

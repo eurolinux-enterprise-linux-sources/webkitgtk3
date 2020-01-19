@@ -206,64 +206,8 @@ StackTrace.prototype = {
  */
 StackTrace.create = function(stackTraceLimit, topMostFunctionToIgnore)
 {
-    if (typeof Error.captureStackTrace === "function")
-        return new StackTraceV8(stackTraceLimit, topMostFunctionToIgnore || arguments.callee);
     // FIXME: Support JSC, and maybe other browsers.
     return null;
-}
-
-/**
- * @constructor
- * @implements {StackTrace}
- * @param {number=} stackTraceLimit
- * @param {Function=} topMostFunctionToIgnore
- * @see http://code.google.com/p/v8/wiki/JavaScriptStackTraceApi
- */
-function StackTraceV8(stackTraceLimit, topMostFunctionToIgnore)
-{
-    StackTrace.call(this);
-
-    var oldPrepareStackTrace = Error.prepareStackTrace;
-    var oldStackTraceLimit = Error.stackTraceLimit;
-    if (typeof stackTraceLimit === "number")
-        Error.stackTraceLimit = stackTraceLimit;
-
-    /**
-     * @param {Object} error
-     * @param {Array.<CallSite>} structuredStackTrace
-     * @return {Array.<{sourceURL: string, lineNumber: number, columnNumber: number}>}
-     */
-    Error.prepareStackTrace = function(error, structuredStackTrace)
-    {
-        return structuredStackTrace.map(function(callSite) {
-            return {
-                sourceURL: callSite.getFileName(),
-                lineNumber: callSite.getLineNumber(),
-                columnNumber: callSite.getColumnNumber()
-            };
-        });
-    }
-
-    var holder = /** @type {{stack: Array.<{sourceURL: string, lineNumber: number, columnNumber: number}>}} */ ({});
-    Error.captureStackTrace(holder, topMostFunctionToIgnore || arguments.callee);
-    this._stackTrace = holder.stack;
-
-    Error.stackTraceLimit = oldStackTraceLimit;
-    Error.prepareStackTrace = oldPrepareStackTrace;
-}
-
-StackTraceV8.prototype = {
-    /**
-     * @override
-     * @param {number} index
-     * @return {{sourceURL: string, lineNumber: number, columnNumber: number}|undefined}
-     */
-    callFrame: function(index)
-    {
-        return this._stackTrace[index];
-    },
-
-    __proto__: StackTrace.prototype
 }
 
 /**
@@ -365,7 +309,7 @@ Call.prototype = {
     {
         return !this._functionName;
     },
-    
+
     /**
      * @return {!Array}
      */
@@ -482,7 +426,7 @@ Call.prototype = {
                     resource.setWrappedObject(replayResult);
             }
         }
-    
+
         this._thisObject = replayObject;
         this._functionName = replayableCall.functionName();
         this._args = replayArgs;
@@ -1447,7 +1391,7 @@ WebGLProgramResource.prototype = {
 
         var originalProgram = /** @type {WebGLProgram} */ (gl.getParameter(gl.CURRENT_PROGRAM));
         var currentProgram = originalProgram;
-        
+
         data.uniforms.forEach(function(uniform) {
             var uniformLocation = gl.getUniformLocation(program, uniform.name);
             if (!uniformLocation)
@@ -1847,7 +1791,7 @@ WebGLRenderingContextResource.prototype = {
     addExtension: function(name)
     {
         // FIXME: Wrap OES_vertex_array_object extension.
-        this._extensions[name] = true;
+        this._extensions[name.toLowerCase()] = true;
     },
 
     /**
@@ -1919,12 +1863,14 @@ WebGLRenderingContextResource.prototype = {
 
         var canvas = data.originalCanvas.cloneNode(true);
         var replayContext = null;
-        var contextIds = ["experimental-webgl", "webkit-3d", "3d"];
+        var contextIds = ["webgl", "experimental-webgl", "webkit-3d", "3d"];
         for (var i = 0, contextId; contextId = contextIds[i]; ++i) {
             replayContext = canvas.getContext(contextId, data.originalContextAttributes);
             if (replayContext)
                 break;
         }
+
+        console.assert(replayContext, "Failed to create a WebGLRenderingContext for the replay.");
 
         var gl = /** @type {!WebGLRenderingContext} */ (Resource.wrappedObject(replayContext));
         this.setWrappedObject(gl);
@@ -2272,7 +2218,6 @@ CanvasRenderingContext2DResource.AttributeProperties = [
     "textAlign",
     "textBaseline",
     "lineDashOffset",
-    // FIXME: Temporary properties implemented in JSC, but not in V8.
     "webkitLineDash",
     "webkitLineDashOffset"
 ];

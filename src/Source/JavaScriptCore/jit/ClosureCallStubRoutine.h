@@ -38,7 +38,7 @@ namespace JSC {
 class ClosureCallStubRoutine : public GCAwareJITStubRoutine {
 public:
     ClosureCallStubRoutine(
-        const MacroAssemblerCodeRef&, JSGlobalData&, const JSCell* owner,
+        const MacroAssemblerCodeRef&, VM&, const JSCell* owner,
         Structure*, ExecutableBase*, const CodeOrigin&);
     
     virtual ~ClosureCallStubRoutine();
@@ -48,7 +48,7 @@ public:
     const CodeOrigin& codeOrigin() const { return m_codeOrigin; }
 
 protected:
-    virtual void markRequiredObjectsInternal(SlotVisitor&);
+    virtual void markRequiredObjectsInternal(SlotVisitor&) override;
 
 private:
     WriteBarrier<Structure> m_structure;

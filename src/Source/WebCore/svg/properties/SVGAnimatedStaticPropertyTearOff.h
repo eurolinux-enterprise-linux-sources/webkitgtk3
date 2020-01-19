@@ -21,6 +21,7 @@
 #define SVGAnimatedStaticPropertyTearOff_h
 
 #if ENABLE(SVG)
+#include "ExceptionCode.h"
 #include "SVGAnimatedProperty.h"
 
 namespace WebCore {
@@ -48,7 +49,7 @@ public:
         commitChange();
     }
 
-    static PassRefPtr<SVGAnimatedStaticPropertyTearOff<PropertyType> > create(SVGElement* contextElement, const QualifiedName& attributeName, AnimatedPropertyType animatedPropertyType, PropertyType& property)
+    static PassRefPtr<SVGAnimatedStaticPropertyTearOff<PropertyType>> create(SVGElement* contextElement, const QualifiedName& attributeName, AnimatedPropertyType animatedPropertyType, PropertyType& property)
     {
         ASSERT(contextElement);
         return adoptRef(new SVGAnimatedStaticPropertyTearOff<PropertyType>(contextElement, attributeName, animatedPropertyType, property));

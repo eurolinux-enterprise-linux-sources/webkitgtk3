@@ -24,11 +24,23 @@
 #include "GraphicsContext3D.h"
 #include <wtf/OwnPtr.h>
 
+#if USE(CAIRO)
+#include <cairo.h>
+#endif
+
 #if USE(OPENGL_ES_2)
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #else
 #include "OpenGLShims.h"
+#endif
+
+#if ENABLE(ACCELERATED_2D_CANVAS)
+// cairo-gl.h includes some definitions from GLX that conflict with
+// the ones provided by us. Since GLContextEGL doesn't use any GLX
+// functions we can safely disable them.
+#undef CAIRO_HAS_GLX_FUNCTIONS
+#include <cairo-gl.h>
 #endif
 
 namespace WebCore {
@@ -168,13 +180,14 @@ PassOwnPtr<GLContextEGL> GLContextEGL::createPixmapContext(EGLContext sharingCon
         return nullptr;
 
     EGLSurface surface = eglCreatePixmapSurface(display, config, pixmap, 0);
-#else
-    EGLSurface surface = EGL_NO_SURFACE;
-#endif
+
     if (surface == EGL_NO_SURFACE)
         return nullptr;
 
     return adoptPtr(new GLContextEGL(context, surface, PixmapSurface));
+#else
+    return nullptr;
+#endif
 }
 
 PassOwnPtr<GLContextEGL> GLContextEGL::createContext(EGLNativeWindowType window, GLContext* sharingContext)
@@ -208,11 +221,19 @@ GLContextEGL::GLContextEGL(EGLContext context, EGLSurface surface, EGLSurfaceTyp
     : m_context(context)
     , m_surface(surface)
     , m_type(type)
+#if USE(CAIRO)
+    , m_cairoDevice(0)
+#endif
 {
 }
 
 GLContextEGL::~GLContextEGL()
 {
+#if USE(CAIRO)
+    if (m_cairoDevice)
+        cairo_device_destroy(m_cairoDevice);
+#endif
+
     EGLDisplay display = sharedEGLDisplay();
     if (m_context) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -263,6 +284,20 @@ void GLContextEGL::waitNative()
 {
     eglWaitNative(EGL_CORE_NATIVE_ENGINE);
 }
+
+#if USE(CAIRO)
+cairo_device_t* GLContextEGL::cairoDevice()
+{
+    if (m_cairoDevice)
+        return m_cairoDevice;
+
+#if ENABLE(ACCELERATED_2D_CANVAS)
+    m_cairoDevice = cairo_egl_device_create(sharedEGLDisplay(), m_context);
+#endif
+
+    return m_cairoDevice;
+}
+#endif
 
 #if ENABLE(WEBGL)
 PlatformGraphicsContext3D GLContextEGL::platformContext()

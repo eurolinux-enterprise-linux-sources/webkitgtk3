@@ -39,8 +39,6 @@
 #include <emmintrin.h>
 #endif
 
-using namespace std;
-
 // Input buffer layout, dividing the total buffer into regions (r0 - r5):
 //
 // |----------------|----------------------------------------------------------------|----------------|
@@ -134,12 +132,12 @@ void SincResampler::consumeSource(float* buffer, unsigned numberOfSourceFrames)
         return;
     
     // Wrap the provided buffer by an AudioBus for use by the source provider.
-    AudioBus bus(1, numberOfSourceFrames, false);
+    RefPtr<AudioBus> bus = AudioBus::create(1, numberOfSourceFrames, false);
 
     // FIXME: Find a way to make the following const-correct:
-    bus.setChannelMemory(0, buffer, numberOfSourceFrames);
+    bus->setChannelMemory(0, buffer, numberOfSourceFrames);
     
-    m_sourceProvider->provideInput(&bus, numberOfSourceFrames);
+    m_sourceProvider->provideInput(bus.get(), numberOfSourceFrames);
 }
 
 namespace {
@@ -164,7 +162,7 @@ public:
         float* buffer = bus->channel(0)->mutableData();
 
         // Clamp to number of frames available and zero-pad.
-        size_t framesToCopy = min(m_sourceFramesAvailable, framesToProcess);
+        size_t framesToCopy = std::min(m_sourceFramesAvailable, framesToProcess);
         memcpy(buffer, m_source, sizeof(float) * framesToCopy);
 
         // Zero-pad if necessary.
@@ -191,7 +189,7 @@ void SincResampler::process(const float* source, float* destination, unsigned nu
     unsigned remaining = numberOfDestinationFrames;
     
     while (remaining) {
-        unsigned framesThisTime = min(remaining, m_blockSize);
+        unsigned framesThisTime = std::min(remaining, m_blockSize);
         process(&sourceProvider, destination, framesThisTime);
         
         destination += framesThisTime;

@@ -28,7 +28,6 @@
 
 #if ENABLE(INDEXED_DATABASE)
 
-#include "ScriptWrappable.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
@@ -36,9 +35,9 @@
 
 namespace WebCore {
 
-class IDBKey : public ScriptWrappable, public RefCounted<IDBKey> {
+class IDBKey : public RefCounted<IDBKey> {
 public:
-    typedef Vector<RefPtr<IDBKey> > KeyArray;
+    typedef Vector<RefPtr<IDBKey>> KeyArray;
 
     static PassRefPtr<IDBKey> createInvalid()
     {

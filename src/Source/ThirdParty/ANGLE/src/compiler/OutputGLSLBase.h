@@ -11,12 +11,13 @@
 
 #include "compiler/ForLoopUnroll.h"
 #include "compiler/intermediate.h"
-#include "compiler/ParseHelper.h"
+#include "compiler/ParseContext.h"
 
 class TOutputGLSLBase : public TIntermTraverser
 {
 public:
     TOutputGLSLBase(TInfoSinkBase& objSink,
+                    ShArrayIndexClampingStrategy clampingStrategy,
                     ShHashFunction64 hashFunction,
                     NameMap& nameMap,
                     TSymbolTable& symbolTable);
@@ -51,6 +52,9 @@ protected:
     TString hashFunctionName(const TString& mangled_name);
 
 private:
+    bool structDeclared(const TStructure* structure) const;
+    void declareStruct(const TStructure* structure);
+
     TInfoSinkBase& mObjSink;
     bool mDeclaringVariables;
 
@@ -62,8 +66,11 @@ private:
 
     ForLoopUnroll mLoopUnroll;
 
+    ShArrayIndexClampingStrategy mClampingStrategy;
+
     // name hashing.
     ShHashFunction64 mHashFunction;
+
     NameMap& mNameMap;
 
     TSymbolTable& mSymbolTable;

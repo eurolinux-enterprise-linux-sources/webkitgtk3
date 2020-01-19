@@ -21,19 +21,24 @@
 #include "config.h"
 #include "CommonIdentifiers.h"
 
+#include "PrivateName.h"
+
 namespace JSC {
 
-#define INITIALIZE_PROPERTY_NAME(name) , name(globalData, #name)
-#define INITIALIZE_KEYWORD(name) , name##Keyword(globalData, #name)
+#define INITIALIZE_PROPERTY_NAME(name) , name(vm, #name)
+#define INITIALIZE_KEYWORD(name) , name##Keyword(vm, #name)
+#define INITIALIZE_PRIVATE_NAME(name) , name##PrivateName(Identifier::from(PrivateName()))
 
-CommonIdentifiers::CommonIdentifiers(JSGlobalData* globalData)
+CommonIdentifiers::CommonIdentifiers(VM* vm)
     : nullIdentifier()
     , emptyIdentifier(Identifier::EmptyIdentifier)
-    , underscoreProto(globalData, "__proto__")
-    , thisIdentifier(globalData, "this")
-    , useStrictIdentifier(globalData, "use strict")
+    , underscoreProto(vm, "__proto__")
+    , thisIdentifier(vm, "this")
+    , useStrictIdentifier(vm, "use strict")
+    , hasNextIdentifier(vm, "hasNext")
     JSC_COMMON_IDENTIFIERS_EACH_KEYWORD(INITIALIZE_KEYWORD)
     JSC_COMMON_IDENTIFIERS_EACH_PROPERTY_NAME(INITIALIZE_PROPERTY_NAME)
+    JSC_COMMON_PRIVATE_IDENTIFIERS_EACH_PROPERTY_NAME(INITIALIZE_PRIVATE_NAME)
 {
 }
 

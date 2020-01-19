@@ -42,7 +42,7 @@
 #include "HTTPCookieAcceptPolicy.h"
 #endif
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -52,8 +52,8 @@ namespace WebKit {
 struct WebProcessCreationParameters {
     WebProcessCreationParameters();
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebProcessCreationParameters&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebProcessCreationParameters&);
 
     String injectedBundlePath;
     SandboxExtension::Handle injectedBundlePathExtensionHandle;
@@ -69,6 +69,8 @@ struct WebProcessCreationParameters {
     String cookieStorageDirectory;
     SandboxExtension::Handle cookieStorageDirectoryExtensionHandle;
 
+    bool shouldUseTestingNetworkSession;
+
     Vector<String> urlSchemesRegistererdAsEmptyDocument;
     Vector<String> urlSchemesRegisteredAsSecure;
     Vector<String> urlSchemesForWhichDomainRelaxationIsForbidden;
@@ -80,7 +82,9 @@ struct WebProcessCreationParameters {
     Vector<String> urlSchemesRegisteredForCustomProtocols;
 #endif
 #if USE(SOUP)
+#if !ENABLE(CUSTOM_PROTOCOLS)
     Vector<String> urlSchemesRegistered;
+#endif
     String cookiePersistentStoragePath;
     uint32_t cookiePersistentStorageType;
     HTTPCookieAcceptPolicy cookieAcceptPolicy;
@@ -112,10 +116,12 @@ struct WebProcessCreationParameters {
 #if PLATFORM(MAC)
     pid_t presenterApplicationPid;
 
+    bool accessibilityEnhancedUserInterfaceEnabled;
+
     uint64_t nsURLCacheMemoryCapacity;
     uint64_t nsURLCacheDiskCapacity;
 
-    CoreIPC::MachPort acceleratedCompositingPort;
+    IPC::MachPort acceleratedCompositingPort;
 
     String uiProcessBundleResourcePath;
     SandboxExtension::Handle uiProcessBundleResourcePathExtensionHandle;
@@ -132,7 +138,10 @@ struct WebProcessCreationParameters {
     bool usesNetworkProcess;
 #endif
 
-    HashMap<unsigned, double> plugInAutoStartOrigins;
+    HashMap<unsigned, double> plugInAutoStartOriginHashes;
+    Vector<String> plugInAutoStartOrigins;
+
+    bool memoryCacheDisabled;
 };
 
 } // namespace WebKit

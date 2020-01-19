@@ -28,7 +28,6 @@
 #include "TextEvent.h"
 
 #include "DocumentFragment.h"
-#include "EventNames.h"
 
 namespace WebCore {
 
@@ -114,9 +113,9 @@ void TextEvent::initTextEvent(const AtomicString& type, bool canBubble, bool can
     m_data = data;
 }
 
-const AtomicString& TextEvent::interfaceName() const
+EventInterface TextEvent::eventInterface() const
 {
-    return eventNames().interfaceForTextEvent;
+    return TextEventInterfaceType;
 }
 
 } // namespace WebCore

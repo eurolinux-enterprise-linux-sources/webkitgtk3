@@ -35,23 +35,20 @@ public:
     virtual ~LocaleNone();
 
 private:
-    virtual void initializeLocaleData() OVERRIDE FINAL;
-#if ENABLE(CALENDAR_PICKER)
-    virtual bool isRTL() OVERRIDE;
-#endif
+    virtual void initializeLocaleData() override final;
 #if ENABLE(DATE_AND_TIME_INPUT_TYPES)
-    virtual String dateFormat() OVERRIDE;
-    virtual String monthFormat() OVERRIDE;
-    virtual String shortMonthFormat() OVERRIDE;
-    virtual String timeFormat() OVERRIDE;
-    virtual String shortTimeFormat() OVERRIDE;
-    virtual String dateTimeFormatWithSeconds() OVERRIDE;
-    virtual String dateTimeFormatWithoutSeconds() OVERRIDE;
-    virtual const Vector<String>& monthLabels() OVERRIDE;
-    virtual const Vector<String>& shortMonthLabels() OVERRIDE;
-    virtual const Vector<String>& standAloneMonthLabels() OVERRIDE;
-    virtual const Vector<String>& shortStandAloneMonthLabels() OVERRIDE;
-    virtual const Vector<String>& timeAMPMLabels() OVERRIDE;
+    virtual String dateFormat() override;
+    virtual String monthFormat() override;
+    virtual String shortMonthFormat() override;
+    virtual String timeFormat() override;
+    virtual String shortTimeFormat() override;
+    virtual String dateTimeFormatWithSeconds() override;
+    virtual String dateTimeFormatWithoutSeconds() override;
+    virtual const Vector<String>& monthLabels() override;
+    virtual const Vector<String>& shortMonthLabels() override;
+    virtual const Vector<String>& standAloneMonthLabels() override;
+    virtual const Vector<String>& shortStandAloneMonthLabels() override;
+    virtual const Vector<String>& timeAMPMLabels() override;
 
     Vector<String> m_timeAMPMLabels;
     Vector<String> m_shortMonthLabels;
@@ -71,13 +68,6 @@ LocaleNone::~LocaleNone()
 void LocaleNone::initializeLocaleData()
 {
 }
-
-#if ENABLE(CALENDAR_PICKER)
-bool LocaleNone::isRTL()
-{
-    return false;
-}
-#endif
 
 #if ENABLE(DATE_AND_TIME_INPUT_TYPES)
 const Vector<String>& LocaleNone::monthLabels()

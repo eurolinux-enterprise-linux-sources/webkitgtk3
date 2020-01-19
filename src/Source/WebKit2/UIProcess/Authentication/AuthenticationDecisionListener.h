@@ -35,10 +35,8 @@ namespace WebKit {
 class AuthenticationChallengeProxy;
 class WebCredential;
 
-class AuthenticationDecisionListener : public APIObject {
+class AuthenticationDecisionListener : public API::ObjectImpl<API::Object::Type::AuthenticationDecisionListener> {
 public:
-    static const Type APIType = TypeAuthenticationDecisionListener;
-
     static PassRefPtr<AuthenticationDecisionListener> create(AuthenticationChallengeProxy* authenticationChallenge)
     {
         return adoptRef(new AuthenticationDecisionListener(authenticationChallenge));
@@ -52,8 +50,6 @@ public:
 private:
     explicit AuthenticationDecisionListener(AuthenticationChallengeProxy*);
 
-    virtual Type type() const { return APIType; }
-    
     AuthenticationChallengeProxy* m_challengeProxy;
 };
 

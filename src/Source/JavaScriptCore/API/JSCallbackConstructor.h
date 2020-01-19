@@ -46,11 +46,11 @@ public:
     static void destroy(JSCell*);
     JSClassRef classRef() const { return m_class; }
     JSObjectCallAsConstructorCallback callback() const { return m_callback; }
-    static const ClassInfo s_info;
+    DECLARE_INFO;
 
-    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue proto) 
+    static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue proto) 
     {
-        return Structure::create(globalData, globalObject, proto, TypeInfo(ObjectType, StructureFlags), &s_info);
+        return Structure::create(vm, globalObject, proto, TypeInfo(ObjectType, StructureFlags), info());
     }
 
 protected:
@@ -59,7 +59,11 @@ protected:
     static const unsigned StructureFlags = ImplementsHasInstance | JSObject::StructureFlags;
 
 private:
+    friend struct APICallbackFunction;
+
     static ConstructType getConstructData(JSCell*, ConstructData&);
+
+    JSObjectCallAsConstructorCallback constructCallback() { return m_callback; }
 
     JSClassRef m_class;
     JSObjectCallAsConstructorCallback m_callback;

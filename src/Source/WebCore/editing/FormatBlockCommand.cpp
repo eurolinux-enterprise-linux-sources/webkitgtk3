@@ -32,7 +32,7 @@
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "Range.h"
-#include "visible_units.h"
+#include "VisibleUnits.h"
 
 namespace WebCore {
 
@@ -42,10 +42,10 @@ static Node* enclosingBlockToSplitTreeTo(Node* startNode);
 static bool isElementForFormatBlock(const QualifiedName& tagName);
 static inline bool isElementForFormatBlock(Node* node)
 {
-    return node->isElementNode() && isElementForFormatBlock(static_cast<Element*>(node)->tagQName());
+    return node->isElementNode() && isElementForFormatBlock(toElement(node)->tagQName());
 }
 
-FormatBlockCommand::FormatBlockCommand(Document* document, const QualifiedName& tagName) 
+FormatBlockCommand::FormatBlockCommand(Document& document, const QualifiedName& tagName)
     : ApplyBlockElementCommand(document, tagName)
     , m_didApply(false)
 {
@@ -69,7 +69,7 @@ void FormatBlockCommand::formatRange(const Position& start, const Position& end,
     Element* refNode = enclosingBlockFlowElement(end);
     Element* root = editableRootForPosition(start);
     // Root is null for elements with contenteditable=false.
-    if (!root)
+    if (!root || !refNode)
         return;
     if (isElementForFormatBlock(refNode->tagQName()) && start == startOfBlock(start)
         && (end == endOfBlock(end) || isNodeVisiblyContainedWithin(refNode, range.get()))
@@ -149,14 +149,14 @@ Node* enclosingBlockToSplitTreeTo(Node* startNode)
 {
     Node* lastBlock = startNode;
     for (Node* n = startNode; n; n = n->parentNode()) {
-        if (!n->rendererIsEditable())
+        if (!n->hasEditableStyle())
             return lastBlock;
-        if (isTableCell(n) || n->hasTagName(bodyTag) || !n->parentNode() || !n->parentNode()->rendererIsEditable() || isElementForFormatBlock(n))
+        if (isTableCell(n) || n->hasTagName(bodyTag) || !n->parentNode() || !n->parentNode()->hasEditableStyle() || isElementForFormatBlock(n))
             return n;
         if (isBlock(n))
             lastBlock = n;
         if (isListElement(n))
-            return n->parentNode()->rendererIsEditable() ? n->parentNode() : n;
+            return n->parentNode()->hasEditableStyle() ? n->parentNode() : n;
     }
     return lastBlock;
 }

@@ -29,6 +29,7 @@
 namespace WebCore {
 
 class Document;
+class RenderElement;
 class RenderObject;
 class RenderSVGResourceClipper;
 class RenderSVGResourceContainer;
@@ -43,7 +44,7 @@ class SVGResources {
 public:
     SVGResources();
 
-    bool buildCachedResources(const RenderObject*, const SVGRenderStyle*);
+    bool buildCachedResources(const RenderElement&, const SVGRenderStyle&);
 
     // Ordinary resources
     RenderSVGResourceClipper* clipper() const { return m_clipperFilterMaskerData ? m_clipperFilterMaskerData->clipper : 0; }
@@ -71,8 +72,8 @@ public:
     void buildSetOfResources(HashSet<RenderSVGResourceContainer*>&);
 
     // Methods operating on all cached resources
-    void removeClientFromCache(RenderObject*, bool markForInvalidation = true) const;
-    void resourceDestroyed(RenderSVGResourceContainer*);
+    void removeClientFromCache(RenderObject&, bool markForInvalidation = true) const;
+    void resourceDestroyed(RenderSVGResourceContainer&);
 
 #ifndef NDEBUG
     void dump(const RenderObject*);

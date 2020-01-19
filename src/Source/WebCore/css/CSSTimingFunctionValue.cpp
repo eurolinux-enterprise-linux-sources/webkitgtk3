@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2007, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,28 +26,17 @@
 #include "config.h"
 #include "CSSTimingFunctionValue.h"
 
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-String CSSLinearTimingFunctionValue::customCssText() const
-{
-    return "linear";
-}
-
-void CSSLinearTimingFunctionValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-}
-
-String CSSCubicBezierTimingFunctionValue::customCssText() const
+String CSSCubicBezierTimingFunctionValue::customCSSText() const
 {
     return "cubic-bezier("
         + String::number(m_x1) + ", "
         + String::number(m_y1) + ", "
         + String::number(m_x2) + ", "
-        + String::number(m_y2) + ")";
+        + String::number(m_y2) + ')';
 }
 
 bool CSSCubicBezierTimingFunctionValue::equals(const CSSCubicBezierTimingFunctionValue& other) const
@@ -56,12 +45,7 @@ bool CSSCubicBezierTimingFunctionValue::equals(const CSSCubicBezierTimingFunctio
 }
 
 
-void CSSCubicBezierTimingFunctionValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-}
-
-String CSSStepsTimingFunctionValue::customCssText() const
+String CSSStepsTimingFunctionValue::customCSSText() const
 {
     return "steps(" + String::number(m_steps) + ", " + (m_stepAtStart ? "start" : "end") + ')';
 }
@@ -69,12 +53,6 @@ String CSSStepsTimingFunctionValue::customCssText() const
 bool CSSStepsTimingFunctionValue::equals(const CSSStepsTimingFunctionValue& other) const
 {
     return m_steps == other.m_steps && m_stepAtStart == other.m_stepAtStart;
-}
-
-
-void CSSStepsTimingFunctionValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
 }
 
 } // namespace WebCore

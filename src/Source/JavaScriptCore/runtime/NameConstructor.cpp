@@ -32,26 +32,26 @@
 
 namespace JSC {
 
-ASSERT_HAS_TRIVIAL_DESTRUCTOR(NameConstructor);
+STATIC_ASSERT_IS_TRIVIALLY_DESTRUCTIBLE(NameConstructor);
 
 const ClassInfo NameConstructor::s_info = { "Function", &Base::s_info, 0, 0, CREATE_METHOD_TABLE(NameConstructor) };
 
-NameConstructor::NameConstructor(JSGlobalObject* globalObject, Structure* structure)
-    : InternalFunction(globalObject, structure)
+NameConstructor::NameConstructor(VM& vm, Structure* structure)
+    : InternalFunction(vm, structure)
 {
 }
 
-void NameConstructor::finishCreation(ExecState* exec, NamePrototype* prototype)
+void NameConstructor::finishCreation(VM& vm, NamePrototype* prototype)
 {
-    Base::finishCreation(exec->globalData(), prototype->classInfo()->className);
-    putDirectWithoutTransition(exec->globalData(), exec->propertyNames().prototype, prototype, DontEnum | DontDelete | ReadOnly);
-    putDirectWithoutTransition(exec->globalData(), exec->propertyNames().length, jsNumber(1), DontDelete | ReadOnly | DontEnum);
+    Base::finishCreation(vm, prototype->classInfo()->className);
+    putDirectWithoutTransition(vm, vm.propertyNames->prototype, prototype, DontEnum | DontDelete | ReadOnly);
+    putDirectWithoutTransition(vm, vm.propertyNames->length, jsNumber(1), DontDelete | ReadOnly | DontEnum);
 }
 
 static EncodedJSValue JSC_HOST_CALL constructPrivateName(ExecState* exec)
 {
-    JSValue publicName = exec->argumentCount() ? exec->argument(0) : jsUndefined();
-    return JSValue::encode(NameInstance::create(exec->globalData(), exec->lexicalGlobalObject()->privateNameStructure(), publicName.toString(exec)));
+    JSValue publicName = exec->argument(0);
+    return JSValue::encode(NameInstance::create(exec->vm(), exec->lexicalGlobalObject()->privateNameStructure(), publicName.toString(exec)));
 }
 
 ConstructType NameConstructor::getConstructData(JSCell*, ConstructData& constructData)

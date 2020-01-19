@@ -27,13 +27,20 @@
 #define WebUIClient_h
 
 #include "APIClient.h"
-#include "PluginModuleInfo.h"
 #include "WKPage.h"
 #include "WebEvent.h"
 #include "WebHitTestResult.h"
 #include "WebOpenPanelParameters.h"
 #include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
+
+namespace API {
+class Data;
+
+template<> struct ClientTraits<WKPageUIClientBase> {
+    typedef std::tuple<WKPageUIClientV0, WKPageUIClientV1, WKPageUIClientV2> Versions;
+};
+}
 
 namespace WebCore {
     class FloatRect;
@@ -44,19 +51,18 @@ namespace WebCore {
 
 namespace WebKit {
 
-class APIObject;
 class GeolocationPermissionRequestProxy;
+class ImmutableDictionary;
 class NativeWebKeyboardEvent;
 class NativeWebWheelEvent;
 class NotificationPermissionRequest;
 class WebColorPickerResultListenerProxy;
-class WebData;
 class WebFrameProxy;
 class WebPageProxy;
 class WebSecurityOrigin;
 class WebOpenPanelResultListenerProxy;
 
-class WebUIClient : public APIClient<WKPageUIClient, kWKPageUIClientCurrentVersion> {
+class WebUIClient : public API::Client<WKPageUIClientBase> {
 public:
     PassRefPtr<WebPageProxy> createNewPage(WebPageProxy*, const WebCore::ResourceRequest&, const WebCore::WindowFeatures&, WebEvent::Modifiers, WebMouseEvent::Button);
     void showPage(WebPageProxy*);
@@ -71,9 +77,11 @@ public:
     String runJavaScriptPrompt(WebPageProxy*, const String&, const String&, WebFrameProxy*);
 
     void setStatusText(WebPageProxy*, const String&);
-    void mouseDidMoveOverElement(WebPageProxy*, const WebHitTestResult::Data&, WebEvent::Modifiers, APIObject*);
-    void unavailablePluginButtonClicked(WebPageProxy*, WKPluginUnavailabilityReason, const String& mimeType, const String& url, const String& pluginsPageURL);
-    
+    void mouseDidMoveOverElement(WebPageProxy*, const WebHitTestResult::Data&, WebEvent::Modifiers, API::Object*);
+#if ENABLE(NETSCAPE_PLUGIN_API)
+    void unavailablePluginButtonClicked(WebPageProxy*, WKPluginUnavailabilityReason, ImmutableDictionary*);
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
+
     bool implementsDidNotHandleKeyEvent() const;
     void didNotHandleKeyEvent(WebPageProxy*, const NativeWebKeyboardEvent&);
 
@@ -114,7 +122,7 @@ public:
     bool canRunModal() const;
     void runModal(WebPageProxy*);
 
-    void saveDataToFileInDownloadsFolder(WebPageProxy*, const String& suggestedFilename, const String& mimeType, const String& originatingURLString, WebData*);
+    void saveDataToFileInDownloadsFolder(WebPageProxy*, const String& suggestedFilename, const String& mimeType, const String& originatingURLString, API::Data*);
 
     bool shouldInterruptJavaScript(WebPageProxy*);
 
@@ -122,8 +130,6 @@ public:
     bool showColorPicker(WebPageProxy*, const String&, WebColorPickerResultListenerProxy*);
     bool hideColorPicker(WebPageProxy*);
 #endif
-
-    PluginModuleLoadPolicy pluginLoadPolicy(WebPageProxy*, const String& identifier, const String& displayName, const String& documentURLString, PluginModuleLoadPolicy currentPluginLoadPolicy);
 };
 
 } // namespace WebKit

@@ -35,7 +35,7 @@ namespace WebCore {
 
 class SecurityOrigin;
 class ContentSecurityPolicy;
-class KURL;
+class URL;
 
 enum SandboxFlag {
     // See http://www.whatwg.org/specs/web-apps/current-work/#attr-iframe-sandbox for a list of the sandbox flags.
@@ -61,7 +61,7 @@ public:
     SandboxFlags sandboxFlags() const { return m_sandboxFlags; }
     ContentSecurityPolicy* contentSecurityPolicy() { return m_contentSecurityPolicy.get(); }
 
-    bool isSecureTransitionTo(const KURL&) const;
+    bool isSecureTransitionTo(const URL&) const;
 
     void enforceSandboxFlags(SandboxFlags mask);
     bool isSandboxed(SandboxFlags mask) const { return m_sandboxFlags & mask; }
@@ -73,13 +73,9 @@ public:
 
     static SandboxFlags parseSandboxPolicy(const String& policy, String& invalidTokensErrorMessage);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
 protected:
     SecurityContext();
     virtual ~SecurityContext();
-
-    virtual void didUpdateSecurityOrigin();
 
     void setContentSecurityPolicy(PassOwnPtr<ContentSecurityPolicy>);
 

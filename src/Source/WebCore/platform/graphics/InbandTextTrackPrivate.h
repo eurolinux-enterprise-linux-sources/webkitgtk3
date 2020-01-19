@@ -26,51 +26,66 @@
 #ifndef InbandTextTrackPrivate_h
 #define InbandTextTrackPrivate_h
 
-#include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/AtomicString.h>
-
 #if ENABLE(VIDEO_TRACK)
+
+#include "InbandTextTrackPrivateClient.h"
 
 namespace WebCore {
 
-class InbandTextTrackPrivateClient;
-
-class InbandTextTrackPrivate : public RefCounted<InbandTextTrackPrivate> {
-    WTF_MAKE_NONCOPYABLE(InbandTextTrackPrivate); WTF_MAKE_FAST_ALLOCATED;
+class InbandTextTrackPrivate : public TrackPrivateBase {
 public:
-    static PassRefPtr<InbandTextTrackPrivate> create()
-    {
-        return adoptRef(new InbandTextTrackPrivate());
-    }
+    enum CueFormat {
+        Generic,
+        WebVTT
+    };
+    static RefPtr<InbandTextTrackPrivate> create(CueFormat format) { return adoptRef(new InbandTextTrackPrivate(format)); }
     virtual ~InbandTextTrackPrivate() { }
 
     void setClient(InbandTextTrackPrivateClient* client) { m_client = client; }
-    InbandTextTrackPrivateClient* client() { return m_client; }
+    virtual InbandTextTrackPrivateClient* client() const override { return m_client; }
 
-    enum Mode { Disabled, Hidden, Showing };
+    enum Mode {
+        Disabled,
+        Hidden,
+        Showing
+    };
     virtual void setMode(Mode mode) { m_mode = mode; };
     virtual InbandTextTrackPrivate::Mode mode() const { return m_mode; }
 
-    enum Kind { Subtitles, Captions, Descriptions, Chapters, Metadata, None };
+    enum Kind {
+        Subtitles,
+        Captions,
+        Descriptions,
+        Chapters,
+        Metadata,
+        Forced,
+        None
+    };
     virtual Kind kind() const { return Subtitles; }
     virtual bool isClosedCaptions() const { return false; }
-
+    virtual bool isSDH() const { return false; }
+    virtual bool containsOnlyForcedSubtitles() const { return false; }
+    virtual bool isMainProgramContent() const { return true; }
+    virtual bool isEasyToRead() const { return false; }
+    virtual bool isDefault() const { return false; }
     virtual AtomicString label() const { return emptyAtom; }
     virtual AtomicString language() const { return emptyAtom; }
-    virtual bool isDefault() const { return false; }
+    virtual AtomicString id() const { return emptyAtom; }
 
     virtual int textTrackIndex() const { return 0; }
 
+    CueFormat cueFormat() const { return m_format; }
+
 protected:
-    InbandTextTrackPrivate()
-        : m_client(0)
+    InbandTextTrackPrivate(CueFormat format)
+        : m_format(format)
+        , m_client(0)
         , m_mode(Disabled)
     {
     }
 
 private:
+    CueFormat m_format;
     InbandTextTrackPrivateClient* m_client;
     Mode m_mode;
 };

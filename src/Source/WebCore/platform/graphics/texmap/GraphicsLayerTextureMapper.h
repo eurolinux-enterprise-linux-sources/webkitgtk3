@@ -20,24 +20,30 @@
 #ifndef GraphicsLayerTextureMapper_h
 #define GraphicsLayerTextureMapper_h
 
+#if USE(TEXTURE_MAPPER)
+
 #include "GraphicsLayer.h"
 #include "GraphicsLayerClient.h"
 #include "Image.h"
 #include "TextureMapperLayer.h"
+#include "TextureMapperPlatformLayer.h"
 #include "TextureMapperTiledBackingStore.h"
 #include "Timer.h"
 
 namespace WebCore {
 
-class GraphicsLayerTextureMapper : public GraphicsLayer {
+class GraphicsLayerTextureMapper : public GraphicsLayer, public TextureMapperPlatformLayer::Client {
 public:
     explicit GraphicsLayerTextureMapper(GraphicsLayerClient*);
     virtual ~GraphicsLayerTextureMapper();
 
+    void setScrollClient(TextureMapperLayer::ScrollingClient* client) { m_layer->setScrollClient(client); }
+    void setID(uint32_t id) { m_layer->setID(id); }
+
     // reimps from GraphicsLayer.h
     virtual void setNeedsDisplay();
     virtual void setContentsNeedsDisplay();
-    virtual void setNeedsDisplayInRect(const FloatRect&);
+    virtual void setNeedsDisplayInRect(const FloatRect&, ShouldClipToLayer = ClipToLayer);
     virtual bool setChildren(const Vector<GraphicsLayer*>&);
     virtual void addChild(GraphicsLayer*);
     virtual void addChildAtIndex(GraphicsLayer*, int index);
@@ -64,12 +70,13 @@ public:
     Color solidColor() const { return m_solidColor; }
     virtual void setContentsToMedia(PlatformLayer*);
     virtual void setContentsToCanvas(PlatformLayer* canvas) { setContentsToMedia(canvas); }
-    virtual void setShowDebugBorder(bool) OVERRIDE;
-    virtual void setDebugBorder(const Color&, float width) OVERRIDE;
-    virtual void setShowRepaintCounter(bool) OVERRIDE;
+    virtual void setShowDebugBorder(bool) override;
+    virtual void setDebugBorder(const Color&, float width) override;
+    virtual void setShowRepaintCounter(bool) override;
     virtual void flushCompositingState(const FloatRect&);
     virtual void flushCompositingStateForThisLayerOnly();
     virtual void setName(const String& name);
+    virtual bool hasContentsLayer() const { return m_contentsLayer; }
     virtual PlatformLayer* platformLayer() const { return m_contentsLayer; }
 
     inline int changeMask() const { return m_changeMask; }
@@ -81,13 +88,13 @@ public:
 
     TextureMapperLayer* layer() const { return m_layer.get(); }
 
+    void didCommitScrollOffset(const IntSize&);
+    void setIsScrollable(bool);
+    bool isScrollable() const { return m_isScrollable; }
+
 #if ENABLE(CSS_FILTERS)
     virtual bool setFilters(const FilterOperations&);
 #endif
-
-    // FIXME: It will be removed after removing dependency of CoordinatedGraphicsScene on GraphicsLayerTextureMapper.
-    void setHasOwnBackingStore(bool b) { m_hasOwnBackingStore = b; }
-    void setBackingStore(PassRefPtr<TextureMapperBackingStore>);
 
     void setFixedToViewport(bool);
     bool fixedToViewport() const { return m_fixedToViewport; }
@@ -104,7 +111,9 @@ private:
     void updateBackingStoreIfNeeded();
     void prepareBackingStoreIfNeeded();
     bool shouldHaveBackingStore() const;
-    void animationStartedTimerFired(Timer<GraphicsLayerTextureMapper>*);
+
+    virtual void platformLayerWillBeDestroyed() override { setContentsToMedia(0); }
+    virtual void setPlatformLayerNeedsDisplay() override { setContentsNeedsDisplay(); }
 
     // This set of flags help us defer which properties of the layer have been
     // modified by the compositor, so we can know what to look for in the next flush.
@@ -143,7 +152,11 @@ private:
         DebugVisualsChange =        (1L << 24),
         RepaintCountChange =        (1L << 25),
 
-        FixedToViewporChange =      (1L << 26)
+        FixedToViewporChange =      (1L << 26),
+        AnimationStarted =          (1L << 27),
+
+        CommittedScrollOffsetChange =     (1L << 28),
+        IsScrollableChange =              (1L << 29)
     };
     void notifyChange(ChangeMask);
 
@@ -154,7 +167,6 @@ private:
 
     int m_changeMask;
     bool m_needsDisplay;
-    bool m_hasOwnBackingStore;
     bool m_fixedToViewport;
     Color m_solidColor;
 
@@ -164,7 +176,10 @@ private:
     TextureMapperPlatformLayer* m_contentsLayer;
     FloatRect m_needsDisplayRect;
     GraphicsLayerAnimations m_animations;
-    Timer<GraphicsLayerTextureMapper> m_animationStartedTimer;
+    double m_animationStartTime;
+
+    IntSize m_committedScrollOffset;
+    bool m_isScrollable;
 };
 
 inline static GraphicsLayerTextureMapper* toGraphicsLayerTextureMapper(GraphicsLayer* layer)
@@ -175,4 +190,6 @@ inline static GraphicsLayerTextureMapper* toGraphicsLayerTextureMapper(GraphicsL
 TextureMapperLayer* toTextureMapperLayer(GraphicsLayer*);
 
 }
+#endif
+
 #endif // GraphicsLayerTextureMapper_h

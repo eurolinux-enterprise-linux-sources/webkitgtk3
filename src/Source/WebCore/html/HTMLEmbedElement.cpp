@@ -26,31 +26,31 @@
 
 #include "Attribute.h"
 #include "CSSPropertyNames.h"
-#include "DocumentLoader.h"
 #include "Frame.h"
-#include "HTMLDocument.h"
+#include "FrameLoader.h"
+#include "FrameView.h"
 #include "HTMLImageLoader.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
 #include "HTMLParserIdioms.h"
-#include "MainResourceLoader.h"
 #include "PluginDocument.h"
 #include "RenderEmbeddedObject.h"
-#include "RenderImage.h"
 #include "RenderWidget.h"
 #include "Settings.h"
+#include "SubframeLoader.h"
+#include <wtf/Ref.h>
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLEmbedElement::HTMLEmbedElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+inline HTMLEmbedElement::HTMLEmbedElement(const QualifiedName& tagName, Document& document, bool createdByParser)
     : HTMLPlugInImageElement(tagName, document, createdByParser, ShouldPreferPlugInsForImages)
 {
     ASSERT(hasTagName(embedTag));
 }
 
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(const QualifiedName& tagName, Document* document, bool createdByParser)
+PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(const QualifiedName& tagName, Document& document, bool createdByParser)
 {
     return adoptRef(new HTMLEmbedElement(tagName, document, createdByParser));
 }
@@ -70,7 +70,13 @@ static inline RenderWidget* findWidgetRenderer(const Node* n)
 
 RenderWidget* HTMLEmbedElement::renderWidgetForJSBindings() const
 {
-    document()->updateLayoutIgnorePendingStylesheets();
+    FrameView* view = document().view();
+    if (!view || (!view->isInLayout() && !view->isPainting())) {
+        // Needs to load the plugin immediatedly because this function is called
+        // when JavaScript code accesses the plugin.
+        // FIXME: <rdar://16893708> Check if dispatching events here is safe.
+        document().updateLayoutIgnorePendingStylesheets(Document::RunPostLayoutTasksSynchronously);
+    }
     return findWidgetRenderer(this);
 }
 
@@ -81,15 +87,15 @@ bool HTMLEmbedElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLPlugInImageElement::isPresentationAttribute(name);
 }
 
-void HTMLEmbedElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == hiddenAttr) {
-        if (equalIgnoringCase(attribute.value(), "yes") || equalIgnoringCase(attribute.value(), "true")) {
+    if (name == hiddenAttr) {
+        if (equalIgnoringCase(value, "yes") || equalIgnoringCase(value, "true")) {
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWidth, 0, CSSPrimitiveValue::CSS_PX);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyHeight, 0, CSSPrimitiveValue::CSS_PX);
         }
     } else
-        HTMLPlugInImageElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLPlugInImageElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -103,6 +109,7 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
     else if (name == srcAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
+        document().updateStyleIfNeeded();
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
                 m_imageLoader = adoptPtr(new HTMLImageLoader(this));
@@ -117,10 +124,9 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
     if (!hasAttributes())
         return;
 
-    for (unsigned i = 0; i < attributeCount(); ++i) {
-        const Attribute* attribute = attributeItem(i);
-        paramNames.append(attribute->localName().string());
-        paramValues.append(attribute->value().string());
+    for (const Attribute& attribute : attributesIterator()) {
+        paramNames.append(attribute.localName().string());
+        paramValues.append(attribute.value().string());
     }
 }
 
@@ -128,7 +134,7 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
 // moved down into HTMLPluginImageElement.cpp
 void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
 {
-    ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
+    ASSERT(!renderEmbeddedObject()->isPluginUnavailable());
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
 
@@ -154,54 +160,48 @@ void HTMLEmbedElement::updateWidget(PluginCreationOption pluginCreationOption)
     Vector<String> paramValues;
     parametersForPlugin(paramNames, paramValues);
 
-    RefPtr<HTMLEmbedElement> protect(this); // Loading the plugin might remove us from the document.
+    Ref<HTMLEmbedElement> protect(*this); // Loading the plugin might remove us from the document.
     bool beforeLoadAllowedLoad = guardedDispatchBeforeLoadEvent(m_url);
     if (!beforeLoadAllowedLoad) {
-        if (document()->isPluginDocument()) {
+        if (document().isPluginDocument()) {
             // Plugins inside plugin documents load differently than other plugins. By the time
             // we are here in a plugin document, the load of the plugin (which is the plugin document's
             // main resource) has already started. We need to explicitly cancel the main resource load here.
-            toPluginDocument(document())->cancelManualPluginLoad();
+            toPluginDocument(&document())->cancelManualPluginLoad();
         }
         return;
     }
     if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
         return;
 
-    SubframeLoader* loader = document()->frame()->loader()->subframeLoader();
     // FIXME: beforeLoad could have detached the renderer!  Just like in the <object> case above.
-    loader->requestObject(this, m_url, getNameAttribute(), m_serviceType, paramNames, paramValues);
+    requestObject(m_url, m_serviceType, paramNames, paramValues);
 }
 
-bool HTMLEmbedElement::rendererIsNeeded(const NodeRenderingContext& context)
+bool HTMLEmbedElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (isImageType())
-        return HTMLPlugInImageElement::rendererIsNeeded(context);
-
-    Frame* frame = document()->frame();
-    if (!frame)
-        return false;
+        return HTMLPlugInImageElement::rendererIsNeeded(style);
 
     // If my parent is an <object> and is not set to use fallback content, I
     // should be ignored and not get a renderer.
     ContainerNode* p = parentNode();
     if (p && p->hasTagName(objectTag)) {
-        ASSERT(p->renderer());
-        if (!static_cast<HTMLObjectElement*>(p)->useFallbackContent()) {
+        if (!p->renderer())
+            return false;
+        if (!toHTMLObjectElement(p)->useFallbackContent()) {
             ASSERT(!p->renderer()->isEmbeddedObject());
             return false;
         }
     }
 
 #if ENABLE(DASHBOARD_SUPPORT)
-    // Workaround for <rdar://problem/6642221>. 
-    if (Settings* settings = frame->settings()) {
-        if (settings->usesDashboardBackwardCompatibilityMode())
-            return true;
-    }
+    // Workaround for <rdar://problem/6642221>.
+    if (document().frame()->settings().usesDashboardBackwardCompatibilityMode())
+        return true;
 #endif
 
-    return HTMLPlugInImageElement::rendererIsNeeded(context);
+    return HTMLPlugInImageElement::rendererIsNeeded(style);
 }
 
 bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
@@ -209,28 +209,16 @@ bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == srcAttr || HTMLPlugInImageElement::isURLAttribute(attribute);
 }
 
-const QualifiedName& HTMLEmbedElement::imageSourceAttributeName() const
+const AtomicString& HTMLEmbedElement::imageSourceURL() const
 {
-    return srcAttr;
+    return getAttribute(srcAttr);
 }
 
-void HTMLEmbedElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
+void HTMLEmbedElement::addSubresourceAttributeURLs(ListHashSet<URL>& urls) const
 {
     HTMLPlugInImageElement::addSubresourceAttributeURLs(urls);
 
-    addSubresourceURL(urls, document()->completeURL(getAttribute(srcAttr)));
+    addSubresourceURL(urls, document().completeURL(getAttribute(srcAttr)));
 }
-
-#if ENABLE(MICRODATA)
-String HTMLEmbedElement::itemValueText() const
-{
-    return getURLAttribute(srcAttr);
-}
-
-void HTMLEmbedElement::setItemValueText(const String& value, ExceptionCode&)
-{
-    setAttribute(srcAttr, value);
-}
-#endif
 
 }

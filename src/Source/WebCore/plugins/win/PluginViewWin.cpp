@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Collabora Ltd. All rights reserved.
  * Copyright (C) 2008-2009 Torch Mobile, Inc. All rights reserved.
  *
@@ -29,6 +29,7 @@
 #include "PluginView.h"
 
 #include "BitmapImage.h"
+#include "BitmapInfo.h"
 #include "BridgeJSC.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
@@ -70,10 +71,7 @@
 #include <runtime/JSLock.h>
 #include <wtf/ASCIICType.h>
 #include <wtf/text/WTFString.h>
-
-#if !PLATFORM(WX)
-#include "BitmapInfo.h"
-#endif
+#include <wtf/win/GDIObject.h>
 
 #if OS(WINCE)
 #undef LOG_NPERROR
@@ -92,16 +90,6 @@
 #include <gtk/gtk.h>
 #endif
 
-#if PLATFORM(QT)
-#include "QWebPageClient.h"
-#include <QWindow>
-#endif
-
-#if PLATFORM(WX)
-#include <wx/defs.h>
-#include <wx/window.h>
-#endif
-
 static inline HWND windowHandleForPageClient(PlatformPageClient client)
 {
 #if PLATFORM(GTK)
@@ -110,16 +98,6 @@ static inline HWND windowHandleForPageClient(PlatformPageClient client)
     if (GdkWindow* window = gtk_widget_get_window(client))
         return static_cast<HWND>(GDK_WINDOW_HWND(window));
     return 0;
-#elif PLATFORM(QT)
-    if (!client)
-        return 0;
-    if (QWindow* window = client->ownerWindow())
-        return reinterpret_cast<HWND>(window->winId());
-    return 0;
-#elif PLATFORM(WX)
-    if (!client)
-        return 0;
-    return (HWND)client->GetHandle();
 #else
     return client;
 #endif
@@ -302,7 +280,7 @@ static bool registerPluginView()
 
     haveRegisteredWindowClass = true;
 
-#if PLATFORM(GTK) || PLATFORM(QT)
+#if PLATFORM(GTK)
     WebCore::setInstanceHandle((HINSTANCE)(GetModuleHandle(0)));
 #endif
 
@@ -355,6 +333,16 @@ static bool isWindowsMessageUserGesture(UINT message)
         default:
             return false;
     }
+}
+
+static inline IntPoint contentsToNativeWindow(FrameView* view, const IntPoint& point)
+{
+    return view->contentsToWindow(point);
+}
+
+static inline IntRect contentsToNativeWindow(FrameView* view, const IntRect& rect)
+{
+    return view->contentsToWindow(rect);
 }
 
 LRESULT
@@ -432,7 +420,7 @@ void PluginView::updatePluginWidget()
         return;
 
     ASSERT(parent()->isFrameView());
-    FrameView* frameView = static_cast<FrameView*>(parent());
+    FrameView* frameView = toFrameView(parent());
 
     IntRect oldWindowRect = m_windowRect;
     IntRect oldClipRect = m_clipRect;
@@ -446,7 +434,6 @@ void PluginView::updatePluginWidget()
     m_clipRect.move(-m_windowRect.x(), -m_windowRect.y());
 
     if (platformPluginWidget() && (!m_haveUpdatedPluginWidget || m_windowRect != oldWindowRect || m_clipRect != oldClipRect)) {
-        HRGN rgn;
 
         setCallingPlugin(true);
 
@@ -456,19 +443,19 @@ void PluginView::updatePluginWidget()
         bool clipToZeroRect = !m_plugin->quirks().contains(PluginQuirkDontClipToZeroRectWhenScrolling);
 
         if (clipToZeroRect) {
-            rgn = ::CreateRectRgn(0, 0, 0, 0);
-            ::SetWindowRgn(platformPluginWidget(), rgn, FALSE);
+            auto rgn = adoptGDIObject(::CreateRectRgn(0, 0, 0, 0));
+            ::SetWindowRgn(platformPluginWidget(), rgn.leak(), FALSE);
         } else {
-            rgn = ::CreateRectRgn(m_clipRect.x(), m_clipRect.y(), m_clipRect.maxX(), m_clipRect.maxY());
-            ::SetWindowRgn(platformPluginWidget(), rgn, TRUE);
+            auto rgn = adoptGDIObject(::CreateRectRgn(m_clipRect.x(), m_clipRect.y(), m_clipRect.maxX(), m_clipRect.maxY()));
+            ::SetWindowRgn(platformPluginWidget(), rgn.leak(), TRUE);
         }
 
         if (!m_haveUpdatedPluginWidget || m_windowRect != oldWindowRect)
             ::MoveWindow(platformPluginWidget(), m_windowRect.x(), m_windowRect.y(), m_windowRect.width(), m_windowRect.height(), TRUE);
 
         if (clipToZeroRect) {
-            rgn = ::CreateRectRgn(m_clipRect.x(), m_clipRect.y(), m_clipRect.maxX(), m_clipRect.maxY());
-            ::SetWindowRgn(platformPluginWidget(), rgn, TRUE);
+            auto rgn = adoptGDIObject(::CreateRectRgn(m_clipRect.x(), m_clipRect.y(), m_clipRect.maxX(), m_clipRect.maxY()));
+            ::SetWindowRgn(platformPluginWidget(), rgn.leak(), TRUE);
         }
 
         setCallingPlugin(false);
@@ -528,7 +515,7 @@ bool PluginView::dispatchNPEvent(NPEvent& npEvent)
         shouldPop = true;
     }
 
-    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonJSGlobalData());
+    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonVM());
     setCallingPlugin(true);
     bool accepted = !m_plugin->pluginFuncs()->event(m_instance, &npEvent);
     setCallingPlugin(false);
@@ -553,7 +540,7 @@ void PluginView::paintIntoTransformedContext(HDC hdc)
 
     WINDOWPOS windowpos = { 0, 0, 0, 0, 0, 0, 0 };
 
-    IntRect r = static_cast<FrameView*>(parent())->contentsToWindow(frameRect());
+    IntRect r = contentsToNativeWindow(toFrameView(parent()), frameRect());
 
     windowpos.x = r.x();
     windowpos.y = r.y();
@@ -581,12 +568,12 @@ void PluginView::paintIntoTransformedContext(HDC hdc)
 
 void PluginView::paintWindowedPluginIntoContext(GraphicsContext* context, const IntRect& rect)
 {
-#if !OS(WINCE)
+#if !USE(WINGDI)
     ASSERT(m_isWindowed);
     ASSERT(context->shouldIncludeChildWindows());
 
     ASSERT(parent()->isFrameView());
-    IntPoint locationInWindow = static_cast<FrameView*>(parent())->contentsToWindow(frameRect().location());
+    IntPoint locationInWindow = toFrameView(parent())->convertToContainingWindow(frameRect().location());
 
     LocalWindowsContext windowsContext(context, frameRect(), false);
 
@@ -631,7 +618,7 @@ void PluginView::paint(GraphicsContext* context, const IntRect& rect)
         setNPWindowRect(frameRect());
 
     if (m_isWindowed) {
-#if !OS(WINCE)
+#if !USE(WINGDI)
         if (context->shouldIncludeChildWindows())
             paintWindowedPluginIntoContext(context, rect);
 #endif
@@ -642,11 +629,11 @@ void PluginView::paint(GraphicsContext* context, const IntRect& rect)
 
     // In the GTK and Qt ports we draw in an offscreen buffer and don't want to use the window
     // coordinates.
-#if PLATFORM(GTK) || PLATFORM(QT)
+#if PLATFORM(GTK)
     IntRect rectInWindow(rect);
     rectInWindow.intersect(frameRect());
 #else
-    IntRect rectInWindow = static_cast<FrameView*>(parent())->contentsToWindow(frameRect());
+    IntRect rectInWindow = toFrameView(parent())->contentsToWindow(frameRect());
 #endif
     LocalWindowsContext windowsContext(context, rectInWindow, m_isTransparent);
 
@@ -654,7 +641,7 @@ void PluginView::paint(GraphicsContext* context, const IntRect& rect)
     // of the window and the plugin expects that the passed in DC has window coordinates.
     // In the GTK and Qt ports we always draw in an offscreen buffer and therefore need
     // to preserve the translation set in getWindowsContext.
-#if !PLATFORM(GTK) && !PLATFORM(QT) && !OS(WINCE)
+#if !PLATFORM(GTK) && !OS(WINCE)
     if (!context->isInTransparencyLayer()) {
         XFORM transform;
         GetWorldTransform(windowsContext.hdc(), &transform);
@@ -687,7 +674,7 @@ void PluginView::handleKeyboardEvent(KeyboardEvent* event)
     } else
         return;
 
-    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonJSGlobalData());
+    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonVM());
     if (dispatchNPEvent(npEvent))
         event->setDefaultHandled();
 }
@@ -702,7 +689,7 @@ void PluginView::handleMouseEvent(MouseEvent* event)
 
     NPEvent npEvent;
 
-    IntPoint p = static_cast<FrameView*>(parent())->contentsToWindow(IntPoint(event->pageX(), event->pageY()));
+    IntPoint p = contentsToNativeWindow(toFrameView(parent()), IntPoint(event->pageX(), event->pageY()));
 
     npEvent.lParam = MAKELPARAM(p.x(), p.y());
     npEvent.wParam = 0;
@@ -757,17 +744,17 @@ void PluginView::handleMouseEvent(MouseEvent* event)
     } else
         return;
 
-    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonJSGlobalData());
+    JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonVM());
     // FIXME: Consider back porting the http://webkit.org/b/58108 fix here.
     if (dispatchNPEvent(npEvent))
         event->setDefaultHandled();
 
-#if !PLATFORM(GTK) && !PLATFORM(QT) && !PLATFORM(WX) && !OS(WINCE)
+#if !PLATFORM(GTK) && !OS(WINCE)
     // Currently, Widget::setCursor is always called after this function in EventHandler.cpp
     // and since we don't want that we set ignoreNextSetCursor to true here to prevent that.
     ignoreNextSetCursor = true;
     if (Page* page = m_parentFrame->page())
-        page->chrome()->client()->setLastSetCursorToCurrentCursor();
+        page->chrome().client().setLastSetCursorToCurrentCursor();
 #endif
 }
 
@@ -821,7 +808,7 @@ void PluginView::setNPWindowRect(const IntRect& rect)
         return;
 
 #if OS(WINCE)
-    IntRect r = static_cast<FrameView*>(parent())->contentsToWindow(rect);
+    IntRect r = toFrameView(parent())->contentsToWindow(rect);
     m_npWindow.x = r.x();
     m_npWindow.y = r.y();
 
@@ -833,10 +820,10 @@ void PluginView::setNPWindowRect(const IntRect& rect)
 #else
     // In the GTK and Qt ports we draw in an offscreen buffer and don't want to use the window
     // coordinates.
-# if PLATFORM(GTK) || PLATFORM(QT)
+# if PLATFORM(GTK)
     IntPoint p = rect.location();
 # else
-    IntPoint p = static_cast<FrameView*>(parent())->contentsToWindow(rect.location());
+    IntPoint p = toFrameView(parent())->contentsToWindow(rect.location());
 # endif
     m_npWindow.x = p.x();
     m_npWindow.y = p.y();
@@ -851,7 +838,7 @@ void PluginView::setNPWindowRect(const IntRect& rect)
     m_npWindow.clipRect.top = 0;
 
     if (m_plugin->pluginFuncs()->setwindow) {
-        JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonJSGlobalData());
+        JSC::JSLock::DropAllLocks dropAllLocks(JSDOMWindowBase::commonVM());
         setCallingPlugin(true);
         m_plugin->pluginFuncs()->setwindow(m_instance, &m_npWindow);
         setCallingPlugin(false);
@@ -886,13 +873,13 @@ NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32_t len, const
 
     // Get file info
     WIN32_FILE_ATTRIBUTE_DATA attrs;
-    if (GetFileAttributesExW(filename.charactersWithNullTermination(), GetFileExInfoStandard, &attrs) == 0)
+    if (GetFileAttributesExW(filename.charactersWithNullTermination().data(), GetFileExInfoStandard, &attrs) == 0)
         return NPERR_FILE_NOT_FOUND;
 
     if (attrs.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         return NPERR_FILE_NOT_FOUND;
 
-    HANDLE fileHandle = CreateFileW(filename.charactersWithNullTermination(), FILE_READ_DATA, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    HANDLE fileHandle = CreateFileW(filename.charactersWithNullTermination().data(), FILE_READ_DATA, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     
     if (fileHandle == INVALID_HANDLE_VALUE)
         return NPERR_FILE_NOT_FOUND;
@@ -1013,7 +1000,7 @@ bool PluginView::platformStart()
         HWND window = ::CreateWindowEx(0, kWebPluginViewdowClassName, 0, flags,
                                        0, 0, 0, 0, parentWindowHandle, 0, WebCore::instanceHandle(), 0);
 
-#if OS(WINDOWS) && (PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(WX))
+#if OS(WINDOWS) && PLATFORM(GTK)
         m_window = window;
 #else
         setPlatformWidget(window);
@@ -1056,8 +1043,8 @@ void PluginView::platformDestroy()
 
 PassRefPtr<Image> PluginView::snapshot()
 {
-#if !PLATFORM(GTK) && !PLATFORM(WX) && !OS(WINCE)
-    OwnPtr<HDC> hdc = adoptPtr(CreateCompatibleDC(0));
+#if !PLATFORM(GTK) && !USE(WINGDI)
+    auto hdc = adoptGDIObject(::CreateCompatibleDC(0));
 
     if (!m_isWindowed) {
         // Enable world transforms.
@@ -1069,7 +1056,7 @@ PassRefPtr<Image> PluginView::snapshot()
         // Windowless plug-ins assume that they're drawing onto the view's DC.
         // Translate the context so that the plug-in draws at (0, 0).
         ASSERT(parent()->isFrameView());
-        IntPoint position = static_cast<FrameView*>(parent())->contentsToWindow(frameRect()).location();
+        IntPoint position = toFrameView(parent())->contentsToWindow(frameRect()).location();
         transform.eDx = -position.x();
         transform.eDy = -position.y();
         SetWorldTransform(hdc.get(), &transform);
@@ -1077,7 +1064,7 @@ PassRefPtr<Image> PluginView::snapshot()
 
     void* bits;
     BitmapInfo bmp = BitmapInfo::createBottomUp(frameRect().size());
-    OwnPtr<HBITMAP> hbmp = adoptPtr(CreateDIBSection(0, &bmp, DIB_RGB_COLORS, &bits, 0, 0));
+    auto hbmp = adoptGDIObject(::CreateDIBSection(0, &bmp, DIB_RGB_COLORS, &bits, 0, 0));
 
     HBITMAP hbmpOld = static_cast<HBITMAP>(SelectObject(hdc.get(), hbmp.get()));
 

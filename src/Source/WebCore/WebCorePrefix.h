@@ -53,13 +53,6 @@
 #endif
 #endif
 
-// If we don't define these, they get defined in windef.h. 
-// We want to use std::min and std::max
-#ifdef __cplusplus
-#define max max
-#define min min
-#endif
-
 #else
 
 #include <pthread.h>
@@ -72,11 +65,7 @@
 #include <regex.h>
 #endif
 
-// On Linux this causes conflicts with libpng because there are two impls. of
-// longjmp - see here: https://bugs.launchpad.net/ubuntu/+source/libpng/+bug/218409
-#if !PLATFORM(WX)
 #include <setjmp.h>
-#endif
 
 #include <signal.h>
 #include <stdarg.h>
@@ -132,7 +121,6 @@ _LIBCPP_END_NAMESPACE_STD
 #include <sys/resource.h>
 #endif
 
-#if !PLATFORM(WX)
 #include <CoreFoundation/CoreFoundation.h>
 #if PLATFORM(WIN_CAIRO)
 #include <ConditionalMacros.h>
@@ -140,6 +128,8 @@ _LIBCPP_END_NAMESPACE_STD
 #else
 
 #if OS(WINDOWS)
+#if USE(CG)
+
 // FIXME <rdar://problem/8208868> Remove support for obsolete ColorSync API, CoreServices header in CoreGraphics
 // We can remove this once the new ColorSync APIs are available in an internal Safari SDK.
 #include <ColorSync/ColorSync.h>
@@ -147,9 +137,14 @@ _LIBCPP_END_NAMESPACE_STD
 #define COREGRAPHICS_INCLUDES_CORESERVICES_HEADER
 #define OBSOLETE_COLORSYNC_API
 #endif
+#endif
+#if USE(CFNETWORK)
 /* Windows doesn't include CFNetwork.h via CoreServices.h, so we do
    it explicitly here to make Windows more consistent with Mac. */
 #include <CFNetwork/CFNetwork.h>
+// On Windows, dispatch.h needs to be included before certain CFNetwork headers.
+#include <dispatch/dispatch.h>
+#endif
 #include <windows.h>
 #else
 #if !PLATFORM(IOS)
@@ -158,7 +153,6 @@ _LIBCPP_END_NAMESPACE_STD
 #endif // OS(WINDOWS)
 
 #endif
-#endif // !PLATFORM(WX)
 
 #ifdef __OBJC__
 #if PLATFORM(IOS)

@@ -25,7 +25,7 @@
 #include "ConservativeRoots.h"
 #include "Heap.h"
 #include "JSArray.h"
-#include "JSGlobalData.h"
+#include "VM.h"
 #include <setjmp.h>
 #include <stdlib.h>
 #include <wtf/StdLibExtras.h>
@@ -56,13 +56,6 @@
 
 #if HAVE(PTHREAD_NP_H)
 #include <pthread_np.h>
-#endif
-
-#if OS(QNX)
-#include <fcntl.h>
-#include <sys/procfs.h>
-#include <stdio.h>
-#include <errno.h>
 #endif
 
 #if USE(PTHREADS) && !OS(WINDOWS) && !OS(DARWIN)
@@ -188,7 +181,7 @@ void MachineThreads::makeUsableFromMultipleThreads()
 
 void MachineThreads::addCurrentThread()
 {
-    ASSERT(!m_heap->globalData()->exclusiveThread || m_heap->globalData()->exclusiveThread == currentThread());
+    ASSERT(!m_heap->vm()->exclusiveThread || m_heap->vm()->exclusiveThread == currentThread());
 
     if (!m_threadSpecific || threadSpecificGet(m_threadSpecific))
         return;
@@ -303,14 +296,14 @@ typedef ppc_thread_state_t PlatformThreadRegisters;
 typedef ppc_thread_state64_t PlatformThreadRegisters;
 #elif CPU(ARM)
 typedef arm_thread_state_t PlatformThreadRegisters;
+#elif CPU(ARM64)
+typedef arm_thread_state64_t PlatformThreadRegisters;
 #else
 #error Unknown Architecture
 #endif
 
 #elif OS(WINDOWS)
 typedef CONTEXT PlatformThreadRegisters;
-#elif OS(QNX)
-typedef struct _debug_thread_info PlatformThreadRegisters;
 #elif USE(PTHREADS)
 typedef pthread_attr_t PlatformThreadRegisters;
 #else
@@ -336,6 +329,9 @@ static size_t getPlatformThreadRegisters(const PlatformThread& platformThread, P
 #elif CPU(ARM)
     unsigned user_count = ARM_THREAD_STATE_COUNT;
     thread_state_flavor_t flavor = ARM_THREAD_STATE;
+#elif CPU(ARM64)
+    unsigned user_count = ARM_THREAD_STATE64_COUNT;
+    thread_state_flavor_t flavor = ARM_THREAD_STATE64;
 #else
 #error Unknown Architecture
 #endif
@@ -353,22 +349,6 @@ static size_t getPlatformThreadRegisters(const PlatformThread& platformThread, P
     regs.ContextFlags = CONTEXT_INTEGER | CONTEXT_CONTROL;
     GetThreadContext(platformThread, &regs);
     return sizeof(CONTEXT);
-#elif OS(QNX)
-    memset(&regs, 0, sizeof(regs));
-    regs.tid = platformThread;
-    // FIXME: If we find this hurts performance, we can consider caching the fd and keeping it open.
-    int fd = open("/proc/self/as", O_RDONLY);
-    if (fd == -1) {
-        LOG_ERROR("Unable to open /proc/self/as (errno: %d)", errno);
-        CRASH();
-    }
-    int rc = devctl(fd, DCMD_PROC_TIDSTATUS, &regs, sizeof(regs), 0);
-    if (rc != EOK) {
-        LOG_ERROR("devctl(DCMD_PROC_TIDSTATUS) failed (error: %d)", rc);
-        CRASH();
-    }
-    close(fd);
-    return sizeof(struct _debug_thread_info);
 #elif USE(PTHREADS)
     pthread_attr_init(&regs);
 #if HAVE(PTHREAD_NP_H) || OS(NETBSD)
@@ -397,6 +377,8 @@ static inline void* otherThreadStackPointer(const PlatformThreadRegisters& regs)
 #elif CPU(PPC) || CPU(PPC64)
     return reinterpret_cast<void*>(regs.__r1);
 #elif CPU(ARM)
+    return reinterpret_cast<void*>(regs.__sp);
+#elif CPU(ARM64)
     return reinterpret_cast<void*>(regs.__sp);
 #else
 #error Unknown Architecture
@@ -431,9 +413,6 @@ static inline void* otherThreadStackPointer(const PlatformThreadRegisters& regs)
 #error Unknown Architecture
 #endif
 
-#elif OS(QNX)
-    return reinterpret_cast<void*>((uintptr_t) regs.sp);
-
 #elif USE(PTHREADS)
     void* stackBase = 0;
     size_t stackSize = 0;
@@ -448,7 +427,7 @@ static inline void* otherThreadStackPointer(const PlatformThreadRegisters& regs)
 
 static void freePlatformThreadRegisters(PlatformThreadRegisters& regs)
 {
-#if USE(PTHREADS) && !OS(WINDOWS) && !OS(DARWIN) && !OS(QNX)
+#if USE(PTHREADS) && !OS(WINDOWS) && !OS(DARWIN)
     pthread_attr_destroy(&regs);
 #else
     UNUSED_PARAM(regs);

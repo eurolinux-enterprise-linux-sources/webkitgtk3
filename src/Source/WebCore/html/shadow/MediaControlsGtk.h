@@ -35,31 +35,45 @@
 
 namespace WebCore {
 
+class MediaControlsGtkEventListener;
+
 class MediaControlsGtk : public MediaControls {
 public:
     // Called from port-specific parent create function to create custom controls.
-    static PassRefPtr<MediaControlsGtk> createControls(Document*);
+    static PassRefPtr<MediaControlsGtk> createControls(Document&);
 
-    virtual void setMediaController(MediaControllerInterface*) OVERRIDE;
-    virtual void reset() OVERRIDE;
-    virtual void playbackStarted() OVERRIDE;
-    void changedMute() OVERRIDE;
-    virtual void updateCurrentTimeDisplay() OVERRIDE;
-    virtual void showVolumeSlider() OVERRIDE;
+    virtual void setMediaController(MediaControllerInterface*) override;
+    virtual void reset() override;
+    virtual void playbackStarted() override;
+    void changedMute() override;
+    virtual void updateCurrentTimeDisplay() override;
+    virtual void showVolumeSlider() override;
+    virtual void makeTransparent() override;
+    virtual void toggleClosedCaptionTrackList() override;
+
+    void handleClickEvent(Event*);
 
 #if ENABLE(VIDEO_TRACK)
-    void createTextTrackDisplay() OVERRIDE;
+    void createTextTrackDisplay() override;
 #endif
 
 protected:
-    explicit MediaControlsGtk(Document*);
-
-    bool initializeControls(Document*);
+    explicit MediaControlsGtk(Document&);
+    bool initializeControls(Document&);
 
 private:
+    void showClosedCaptionTrackList();
+    void hideClosedCaptionTrackList();
+
+    PassRefPtr<MediaControlsGtkEventListener> eventListener();
+
     MediaControlTimeRemainingDisplayElement* m_durationDisplay;
     MediaControlPanelEnclosureElement* m_enclosure;
     MediaControlVolumeSliderContainerElement* m_volumeSliderContainer;
+    MediaControlClosedCaptionsTrackListElement* m_closedCaptionsTrackList;
+    MediaControlClosedCaptionsContainerElement* m_closedCaptionsContainer;
+
+    RefPtr<MediaControlsGtkEventListener> m_eventListener;
 };
 
 }

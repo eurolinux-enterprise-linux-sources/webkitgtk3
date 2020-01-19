@@ -32,6 +32,9 @@
 #include "RenderText.h"
 #include "Settings.h"
 #include "Text.h"
+#if PLATFORM(IOS)
+#include "RenderText.h"
+#endif
 
 namespace WebCore {
 
@@ -48,33 +51,42 @@ InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(PassRefPtr<Text> node, unsi
 
 void InsertIntoTextNodeCommand::doApply()
 {
-    bool passwordEchoEnabled = document()->settings() && document()->settings()->passwordEchoEnabled();
+    // FIXME: EditCommand should always have a Frame, so going through Document for Settings shouldn't be necessary.
+    bool passwordEchoEnabled = document().settings() && document().settings()->passwordEchoEnabled();
     if (passwordEchoEnabled)
-        document()->updateLayoutIgnorePendingStylesheets();
+        document().updateLayoutIgnorePendingStylesheets();
 
-    if (!m_node->rendererIsEditable())
+    if (!m_node->hasEditableStyle())
         return;
 
     if (passwordEchoEnabled) {
-        RenderText* renderText = toRenderText(m_node->renderer());
+        RenderText* renderText = m_node->renderer();
         if (renderText && renderText->isSecure())
             renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
     }
 
     m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION);
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
 }
 
+#if PLATFORM(IOS)
+void InsertIntoTextNodeCommand::doReapply()
+{
+    ExceptionCode ec;
+    m_node->insertData(m_offset, m_text, ec);
+}
+#endif
+    
 void InsertIntoTextNodeCommand::doUnapply()
 {
-    if (!m_node->rendererIsEditable())
+    if (!m_node->hasEditableStyle())
         return;
         
     // Need to notify this before actually deleting the text
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
 
     m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION);
 }

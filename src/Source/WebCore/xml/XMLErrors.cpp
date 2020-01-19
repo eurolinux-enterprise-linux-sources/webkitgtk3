@@ -93,7 +93,7 @@ static inline PassRefPtr<Element> createXHTMLParserErrorHeader(Document* doc, co
 
     Vector<Attribute> reportAttributes;
     reportAttributes.append(Attribute(styleAttr, "display: block; white-space: pre; border: 2px solid #c77; padding: 0 1em 0 1em; margin: 1em; background-color: #fdd; color: black"));
-    reportElement->parserSetAttributes(reportAttributes, DisallowScriptingContent);
+    reportElement->parserSetAttributes(reportAttributes);
 
     RefPtr<Element> h3 = doc->createElement(h3Tag, true);
     reportElement->parserAppendChild(h3.get());
@@ -102,7 +102,7 @@ static inline PassRefPtr<Element> createXHTMLParserErrorHeader(Document* doc, co
     RefPtr<Element> fixed = doc->createElement(divTag, true);
     Vector<Attribute> fixedAttributes;
     fixedAttributes.append(Attribute(styleAttr, "font-family:monospace;font-size:12px"));
-    fixed->parserSetAttributes(fixedAttributes, DisallowScriptingContent);
+    fixed->parserSetAttributes(fixedAttributes);
     reportElement->parserAppendChild(fixed.get());
 
     fixed->parserAppendChild(doc->createTextNode(errorMessages));
@@ -127,8 +127,6 @@ void XMLErrors::insertErrorMessageBlock()
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
         m_document->parserAppendChild(rootElement);
-        if (m_document->attached() && !rootElement->attached())
-            rootElement->attach();
         documentElement = body.get();
     }
 #if ENABLE(SVG)
@@ -137,17 +135,10 @@ void XMLErrors::insertErrorMessageBlock()
         RefPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
 
-        documentElement->parentNode()->parserRemoveChild(documentElement.get());
-        if (documentElement->attached())
-            documentElement->detach();
+        documentElement->parentNode()->parserRemoveChild(*documentElement);
 
         body->parserAppendChild(documentElement);
         m_document->parserAppendChild(rootElement.get());
-
-        if (m_document->attached())
-            // In general, rootElement shouldn't be attached right now, but it will be if there is a style element
-            // in the SVG content.
-            rootElement->reattach();
 
         documentElement = body.get();
     }
@@ -161,7 +152,7 @@ void XMLErrors::insertErrorMessageBlock()
         Vector<Attribute> attributes;
         attributes.append(Attribute(styleAttr, "white-space: normal"));
         RefPtr<Element> paragraph = m_document->createElement(pTag, true);
-        paragraph->parserSetAttributes(attributes, DisallowScriptingContent);
+        paragraph->parserSetAttributes(attributes);
         paragraph->parserAppendChild(m_document->createTextNode("This document was created as the result of an XSL transformation. The line and column numbers given are from the transformed result."));
         reportElement->parserAppendChild(paragraph.release());
     }
@@ -172,9 +163,6 @@ void XMLErrors::insertErrorMessageBlock()
         documentElement->parserInsertBefore(reportElement, documentElement->firstChild());
     else
         documentElement->parserAppendChild(reportElement);
-
-    if (documentElement->attached() && !reportElement->attached())
-        reportElement->attach();
 
     m_document->updateStyleIfNeeded();
 }

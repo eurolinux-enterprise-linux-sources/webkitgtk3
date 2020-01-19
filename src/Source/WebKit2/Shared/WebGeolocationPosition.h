@@ -33,13 +33,11 @@
 
 namespace WebKit {
 
-class WebGeolocationPosition : public APIObject {
+class WebGeolocationPosition : public API::ObjectImpl<API::Object::Type::GeolocationPosition> {
 public:
-    static const Type APIType = TypeGeolocationPosition;
-
     struct Data {
-        void encode(CoreIPC::ArgumentEncoder&) const;
-        static bool decode(CoreIPC::ArgumentDecoder&, Data&);
+        void encode(IPC::ArgumentEncoder&) const;
+        static bool decode(IPC::ArgumentDecoder&, Data&);
 
         double timestamp;
         double latitude;
@@ -85,8 +83,6 @@ public:
 
 private:
     WebGeolocationPosition(double timestamp, double latitude, double longitude, double accuracy, bool providesAltitude, double altitude, bool providesAltitudeAccuracy, double altitudeAccuracy, bool providesHeading, double heading, bool providesSpeed, double speed);
-
-    virtual Type type() const { return APIType; }
 
     Data m_data;
 };

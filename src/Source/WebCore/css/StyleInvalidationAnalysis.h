@@ -27,7 +27,6 @@
 #define StyleInvalidationAnalysis_h
 
 #include <wtf/HashSet.h>
-#include <wtf/PassOwnPtr.h>
 #include <wtf/text/AtomicStringImpl.h>
 
 namespace WebCore {
@@ -40,7 +39,7 @@ public:
     StyleInvalidationAnalysis(const Vector<StyleSheetContents*>&);
 
     bool dirtiesAllStyle() const { return m_dirtiesAllStyle; }
-    void invalidateStyle(Document*);
+    void invalidateStyle(Document&);
 
 private:
 

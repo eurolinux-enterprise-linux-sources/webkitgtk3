@@ -31,140 +31,198 @@
 #include "config.h"
 #include "DocumentOrderedMap.h"
 
-#include "Element.h"
+#include "ElementIterator.h"
+#include "HTMLImageElement.h"
+#include "HTMLLabelElement.h"
 #include "HTMLMapElement.h"
-#include "HTMLNames.h"
-#include "NodeTraversal.h"
-#include "TreeScope.h"
-#include "WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationHashCountedSet.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
+#include "HTMLNameCollection.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline bool keyMatchesId(AtomicStringImpl* key, Element* element)
+inline bool keyMatchesId(const AtomicStringImpl& key, const Element& element)
 {
-    return element->getIdAttribute().impl() == key;
+    return element.getIdAttribute().impl() == &key;
 }
 
-inline bool keyMatchesMapName(AtomicStringImpl* key, Element* element)
+inline bool keyMatchesName(const AtomicStringImpl& key, const Element& element)
 {
-    return element->hasTagName(mapTag) && static_cast<HTMLMapElement*>(element)->getName().impl() == key;
+    return element.getNameAttribute().impl() == &key;
 }
 
-inline bool keyMatchesLowercasedMapName(AtomicStringImpl* key, Element* element)
+inline bool keyMatchesMapName(const AtomicStringImpl& key, const Element& element)
 {
-    return element->hasTagName(mapTag) && static_cast<HTMLMapElement*>(element)->getName().lower().impl() == key;
+    return isHTMLMapElement(element) && toHTMLMapElement(element).getName().impl() == &key;
 }
 
-inline bool keyMatchesLabelForAttribute(AtomicStringImpl* key, Element* element)
+inline bool keyMatchesLowercasedMapName(const AtomicStringImpl& key, const Element& element)
 {
-    return element->hasTagName(labelTag) && element->getAttribute(forAttr).impl() == key;
+    return isHTMLMapElement(element) && toHTMLMapElement(element).getName().lower().impl() == &key;
+}
+
+inline bool keyMatchesLowercasedUsemap(const AtomicStringImpl& key, const Element& element)
+{
+    // FIXME: HTML5 specification says we should match both image and object elements.
+    return isHTMLImageElement(element) && toHTMLImageElement(element).matchesLowercasedUsemap(key);
+}
+
+inline bool keyMatchesLabelForAttribute(const AtomicStringImpl& key, const Element& element)
+{
+    return isHTMLLabelElement(element) && element.getAttribute(forAttr).impl() == &key;
+}
+
+inline bool keyMatchesWindowNamedItem(const AtomicStringImpl& key, const Element& element)
+{
+    return WindowNameCollection::nodeMatches(const_cast<Element*>(&element), &key);
+}
+
+inline bool keyMatchesDocumentNamedItem(const AtomicStringImpl& key, const Element& element)
+{
+    return DocumentNameCollection::nodeMatches(const_cast<Element*>(&element), &key);
 }
 
 void DocumentOrderedMap::clear()
 {
     m_map.clear();
-    m_duplicateCounts.clear();
 }
 
-void DocumentOrderedMap::add(AtomicStringImpl* key, Element* element)
+void DocumentOrderedMap::add(const AtomicStringImpl& key, Element& element, const TreeScope& treeScope)
 {
-    ASSERT(key);
-    ASSERT(element);
+    ASSERT_WITH_SECURITY_IMPLICATION(element.isInTreeScope());
+    ASSERT_WITH_SECURITY_IMPLICATION(treeScope.rootNode()->containsIncludingShadowDOM(&element));
+    if (!element.isInTreeScope() || &element.document() != treeScope.documentScope())
+        return;
+    Map::AddResult addResult = m_map.add(&key, MapEntry(&element));
+    if (addResult.isNewEntry)
+        return;
 
-    if (!m_duplicateCounts.contains(key)) {
-        // Fast path. The key is not already in m_duplicateCounts, so we assume that it's
-        // also not already in m_map and try to add it. If that add succeeds, we're done.
-        Map::AddResult addResult = m_map.add(key, element);
-        if (addResult.isNewEntry)
-            return;
+    MapEntry& entry = addResult.iterator->value;
+    ASSERT_WITH_SECURITY_IMPLICATION(entry.count);
+    entry.element = nullptr;
+    entry.count++;
+    entry.orderedList.clear();
+}
 
-        // The add failed, so this key was already cached in m_map.
-        // There are multiple elements with this key. Remove the m_map
-        // cache for this key so get searches for it next time it is called.
-        m_map.remove(addResult.iterator);
-        m_duplicateCounts.add(key);
+void DocumentOrderedMap::remove(const AtomicStringImpl& key, Element& element)
+{
+    m_map.checkConsistency();
+    auto it = m_map.find(&key);
+    ASSERT_WITH_SECURITY_IMPLICATION(it != m_map.end());
+    if (it == m_map.end())
+        return;
+    MapEntry& entry = it->value;
+
+    ASSERT_WITH_SECURITY_IMPLICATION(entry.count);
+    if (entry.count == 1) {
+        ASSERT_WITH_SECURITY_IMPLICATION(!entry.element || entry.element == &element);
+        m_map.remove(it);
     } else {
-        // There are multiple elements with this key. Remove the m_map
-        // cache for this key so get will search for it next time it is called.
-        Map::iterator cachedItem = m_map.find(key);
-        if (cachedItem != m_map.end()) {
-            m_map.remove(cachedItem);
-            m_duplicateCounts.add(key);
-        }
+        if (entry.element == &element)
+            entry.element = nullptr;
+        entry.count--;
+        entry.orderedList.clear(); // FIXME: Remove the element instead if there are only few items left.
     }
-
-    m_duplicateCounts.add(key);
 }
 
-void DocumentOrderedMap::remove(AtomicStringImpl* key, Element* element)
+template<bool keyMatches(const AtomicStringImpl&, const Element&)>
+inline Element* DocumentOrderedMap::get(const AtomicStringImpl& key, const TreeScope& scope) const
 {
-    ASSERT(key);
-    ASSERT(element);
-
-    m_map.checkConsistency();
-    Map::iterator cachedItem = m_map.find(key);
-    if (cachedItem != m_map.end() && cachedItem->value == element)
-        m_map.remove(cachedItem);
-    else
-        m_duplicateCounts.remove(key);
-}
-
-template<bool keyMatches(AtomicStringImpl*, Element*)>
-inline Element* DocumentOrderedMap::get(AtomicStringImpl* key, const TreeScope* scope) const
-{
-    ASSERT(key);
-    ASSERT(scope);
-
     m_map.checkConsistency();
 
-    Element* element = m_map.get(key);
-    if (element)
-        return element;
+    auto it = m_map.find(&key);
+    if (it == m_map.end())
+        return nullptr;
 
-    if (m_duplicateCounts.contains(key)) {
-        // We know there's at least one node that matches; iterate to find the first one.
-        for (element = ElementTraversal::firstWithin(scope->rootNode()); element; element = ElementTraversal::next(element)) {
-            if (!keyMatches(key, element))
-                continue;
-            m_duplicateCounts.remove(key);
-            m_map.set(key, element);
-            return element;
-        }
-        ASSERT_NOT_REACHED();
+    MapEntry& entry = it->value;
+    ASSERT(entry.count);
+    if (entry.element) {
+        ASSERT_WITH_SECURITY_IMPLICATION(entry.element->isInTreeScope());
+        ASSERT_WITH_SECURITY_IMPLICATION(&entry.element->treeScope() == &scope);
+        return entry.element;
     }
 
-    return 0;
+    // We know there's at least one node that matches; iterate to find the first one.
+    for (auto& element : descendantsOfType<Element>(*scope.rootNode())) {
+        if (!keyMatches(key, element))
+            continue;
+        entry.element = &element;
+        ASSERT_WITH_SECURITY_IMPLICATION(element.isInTreeScope());
+        ASSERT_WITH_SECURITY_IMPLICATION(&element.treeScope() == &scope);
+        return &element;
+    }
+    ASSERT_NOT_REACHED();
+    return nullptr;
 }
 
-Element* DocumentOrderedMap::getElementById(AtomicStringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementById(const AtomicStringImpl& key, const TreeScope& scope) const
 {
     return get<keyMatchesId>(key, scope);
 }
 
-Element* DocumentOrderedMap::getElementByMapName(AtomicStringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementByName(const AtomicStringImpl& key, const TreeScope& scope) const
 {
-    return get<keyMatchesMapName>(key, scope);
+    return get<keyMatchesName>(key, scope);
 }
 
-Element* DocumentOrderedMap::getElementByLowercasedMapName(AtomicStringImpl* key, const TreeScope* scope) const
+HTMLMapElement* DocumentOrderedMap::getElementByMapName(const AtomicStringImpl& key, const TreeScope& scope) const
 {
-    return get<keyMatchesLowercasedMapName>(key, scope);
+    return toHTMLMapElement(get<keyMatchesMapName>(key, scope));
 }
 
-Element* DocumentOrderedMap::getElementByLabelForAttribute(AtomicStringImpl* key, const TreeScope* scope) const
+HTMLMapElement* DocumentOrderedMap::getElementByLowercasedMapName(const AtomicStringImpl& key, const TreeScope& scope) const
 {
-    return get<keyMatchesLabelForAttribute>(key, scope);
+    return toHTMLMapElement(get<keyMatchesLowercasedMapName>(key, scope));
 }
 
-void DocumentOrderedMap::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+HTMLImageElement* DocumentOrderedMap::getElementByLowercasedUsemap(const AtomicStringImpl& key, const TreeScope& scope) const
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_map, "map");
-    info.addMember(m_duplicateCounts, "duplicateCounts");
+    return toHTMLImageElement(get<keyMatchesLowercasedUsemap>(key, scope));
+}
+
+HTMLLabelElement* DocumentOrderedMap::getElementByLabelForAttribute(const AtomicStringImpl& key, const TreeScope& scope) const
+{
+    return toHTMLLabelElement(get<keyMatchesLabelForAttribute>(key, scope));
+}
+
+Element* DocumentOrderedMap::getElementByWindowNamedItem(const AtomicStringImpl& key, const TreeScope& scope) const
+{
+    return get<keyMatchesWindowNamedItem>(key, scope);
+}
+
+Element* DocumentOrderedMap::getElementByDocumentNamedItem(const AtomicStringImpl& key, const TreeScope& scope) const
+{
+    return get<keyMatchesDocumentNamedItem>(key, scope);
+}
+
+const Vector<Element*>* DocumentOrderedMap::getAllElementsById(const AtomicStringImpl& key, const TreeScope& scope) const
+{
+    m_map.checkConsistency();
+
+    auto it = m_map.find(&key);
+    if (it == m_map.end())
+        return nullptr;
+
+    MapEntry& entry = it->value;
+    ASSERT_WITH_SECURITY_IMPLICATION(entry.count);
+    if (!entry.count)
+        return nullptr;
+
+    if (entry.orderedList.isEmpty()) {
+        entry.orderedList.reserveCapacity(entry.count);
+        auto elementDescandents = descendantsOfType<Element>(*scope.rootNode());
+        auto it = entry.element ? elementDescandents.beginAt(*entry.element) : elementDescandents.begin();
+        auto end = elementDescandents.end();
+        for (; it != end; ++it) {
+            auto& element = *it;
+            if (!keyMatchesId(key, element))
+                continue;
+            entry.orderedList.append(&element);
+        }
+        ASSERT(entry.orderedList.size() == entry.count);
+    }
+
+    return &entry.orderedList;
 }
 
 } // namespace WebCore

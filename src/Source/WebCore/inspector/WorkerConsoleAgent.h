@@ -34,29 +34,24 @@
 #include "InspectorConsoleAgent.h"
 #include <wtf/PassOwnPtr.h>
 
-#if ENABLE(INSPECTOR) && ENABLE(WORKERS)
+#if ENABLE(INSPECTOR)
 
 namespace WebCore {
 
 class WorkerConsoleAgent : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(WorkerConsoleAgent);
 public:
-    static PassOwnPtr<WorkerConsoleAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager)
-    {
-        return adoptPtr(new WorkerConsoleAgent(instrumentingAgents, state, injectedScriptManager));
-    }
+    WorkerConsoleAgent(InstrumentingAgents*, PageInjectedScriptManager*);
     virtual ~WorkerConsoleAgent();
 
-    virtual bool isWorkerAgent() OVERRIDE { return true; }
+    virtual bool isWorkerAgent() override { return true; }
 
 private:
-    WorkerConsoleAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
-    virtual void addInspectedNode(ErrorString*, int nodeId);
-    virtual bool developerExtrasEnabled();
+    virtual void addInspectedNode(ErrorString*, int nodeId) override;
 };
 
 } // namespace WebCore
 
-#endif // ENABLE(INSPECTOR) && ENABLE(WORKERS)
+#endif // ENABLE(INSPECTOR)
 
 #endif // !defined(WorkerConsoleAgent_h)

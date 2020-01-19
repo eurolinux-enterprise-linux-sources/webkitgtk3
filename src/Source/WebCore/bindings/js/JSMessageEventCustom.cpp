@@ -31,7 +31,6 @@
 #include "config.h"
 #include "JSMessageEvent.h"
 
-#include "JSArrayBuffer.h"
 #include "JSBlob.h"
 #include "JSDOMBinding.h"
 #include "JSDOMWindow.h"
@@ -39,6 +38,7 @@
 #include "JSMessagePortCustom.h"
 #include "MessageEvent.h"
 #include <runtime/JSArray.h>
+#include <runtime/JSArrayBuffer.h>
 
 using namespace JSC;
 
@@ -49,11 +49,11 @@ JSValue JSMessageEvent::data(ExecState* exec) const
     if (JSValue cachedValue = m_data.get())
         return cachedValue;
 
-    MessageEvent* event = static_cast<MessageEvent*>(impl());
+    MessageEvent& event = impl();
     JSValue result;
-    switch (event->dataType()) {
+    switch (event.dataType()) {
     case MessageEvent::DataTypeScriptValue: {
-        ScriptValue scriptValue = event->dataAsScriptValue();
+        Deprecated::ScriptValue scriptValue = event.dataAsScriptValue();
         if (scriptValue.hasNoValue())
             result = jsNull();
         else
@@ -62,42 +62,30 @@ JSValue JSMessageEvent::data(ExecState* exec) const
     }
 
     case MessageEvent::DataTypeSerializedScriptValue:
-        if (RefPtr<SerializedScriptValue> serializedValue = event->dataAsSerializedScriptValue()) {
-            MessagePortArray* ports = static_cast<MessageEvent*>(impl())->ports();
-            result = serializedValue->deserialize(exec, globalObject(), ports, NonThrowing);
+        if (RefPtr<SerializedScriptValue> serializedValue = event.dataAsSerializedScriptValue()) {
+            MessagePortArray ports = impl().ports();
+            result = serializedValue->deserialize(exec, globalObject(), &ports, NonThrowing);
         }
         else
             result = jsNull();
         break;
 
     case MessageEvent::DataTypeString:
-        result = jsStringWithCache(exec, event->dataAsString());
+        result = jsStringWithCache(exec, event.dataAsString());
         break;
 
     case MessageEvent::DataTypeBlob:
-        result = toJS(exec, globalObject(), event->dataAsBlob());
+        result = toJS(exec, globalObject(), event.dataAsBlob());
         break;
 
     case MessageEvent::DataTypeArrayBuffer:
-        result = toJS(exec, globalObject(), event->dataAsArrayBuffer());
+        result = toJS(exec, globalObject(), event.dataAsArrayBuffer());
         break;
     }
 
     // Save the result so we don't have to deserialize the value again.
-    const_cast<JSMessageEvent*>(this)->m_data.set(exec->globalData(), this, result);
+    const_cast<JSMessageEvent*>(this)->m_data.set(exec->vm(), this, result);
     return result;
-}
-
-JSValue JSMessageEvent::ports(ExecState* exec) const
-{
-    MessagePortArray* ports = static_cast<MessageEvent*>(impl())->ports();
-    if (!ports)
-        return constructEmptyArray(exec, 0, globalObject());
-
-    MarkedArgumentBuffer list;
-    for (size_t i = 0; i < ports->size(); i++)
-        list.append(toJS(exec, globalObject(), (*ports)[i].get()));
-    return constructArray(exec, 0, globalObject(), list);
 }
 
 static JSC::JSValue handleInitMessageEvent(JSMessageEvent* jsEvent, JSC::ExecState* exec)
@@ -117,13 +105,13 @@ static JSC::JSValue handleInitMessageEvent(JSMessageEvent* jsEvent, JSC::ExecSta
         if (exec->hadException())
             return jsUndefined();
     }
-    ScriptValue dataArg = ScriptValue(exec->globalData(), exec->argument(3));
+    Deprecated::ScriptValue dataArg = Deprecated::ScriptValue(exec->vm(), exec->argument(3));
     if (exec->hadException())
         return jsUndefined();
 
-    MessageEvent* event = static_cast<MessageEvent*>(jsEvent->impl());
-    event->initMessageEvent(typeArg, canBubbleArg, cancelableArg, dataArg, originArg, lastEventIdArg, sourceArg, messagePorts.release());
-    jsEvent->m_data.set(exec->globalData(), jsEvent, dataArg.jsValue());
+    MessageEvent& event = jsEvent->impl();
+    event.initMessageEvent(typeArg, canBubbleArg, cancelableArg, dataArg, originArg, lastEventIdArg, sourceArg, messagePorts.release());
+    jsEvent->m_data.set(exec->vm(), jsEvent, dataArg.jsValue());
     return jsUndefined();
 }
 

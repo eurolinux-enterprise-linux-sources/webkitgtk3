@@ -33,7 +33,7 @@
 
 #if ENABLE(SQL_DATABASE)
 
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
 
 namespace WebCore {
@@ -47,7 +47,6 @@ class SQLTransactionClient {
 public:
     SQLTransactionClient() { }
     void didCommitWriteTransaction(DatabaseBackendBase*);
-    void didExecuteStatement(DatabaseBackendBase*);
     bool didExceedQuota(DatabaseBackendBase*);
 };
 

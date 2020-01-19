@@ -26,6 +26,8 @@
 #ifndef WKFindOptions_h
 #define WKFindOptions_h
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,6 +43,8 @@ enum {
     kWKFindOptionsShowHighlight = 1 << 7
 };
 typedef uint32_t WKFindOptions;
+
+enum { kWKFindResultNoMatchAfterUserSelection = -1 };
 
 #ifdef __cplusplus
 }

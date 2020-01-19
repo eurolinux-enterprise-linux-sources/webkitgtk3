@@ -73,12 +73,10 @@ JSValue JSInspectorFrontendHost::platform(ExecState* execState)
 
 JSValue JSInspectorFrontendHost::port(ExecState* execState)
 {
-#if PLATFORM(QT)
-    DEFINE_STATIC_LOCAL(const String, port, (ASCIILiteral("qt")));
-#elif PLATFORM(GTK)
+#if PLATFORM(GTK)
     DEFINE_STATIC_LOCAL(const String, port, (ASCIILiteral("gtk")));
-#elif PLATFORM(WX)
-    DEFINE_STATIC_LOCAL(const String, port, (ASCIILiteral("wx")));
+#elif PLATFORM(EFL)
+    DEFINE_STATIC_LOCAL(const String, port, (ASCIILiteral("efl")));
 #else
     DEFINE_STATIC_LOCAL(const String, port, (ASCIILiteral("unknown")));
 #endif
@@ -105,7 +103,7 @@ static void populateContextMenuItems(ExecState* exec, JSArray* array, ContextMen
                                  ContextMenuItemCustomTagNoAction,
                                  String());
             menu.appendItem(item);
-        } else if (typeString == "subMenu" && subItems.inherits(&JSArray::s_info)) {
+        } else if (typeString == "subMenu" && subItems.inherits(JSArray::info())) {
             ContextMenu subMenu;
             JSArray* subItemsArray = asArray(subItems);
             populateContextMenuItems(exec, subItemsArray, subMenu);
@@ -143,7 +141,7 @@ JSValue JSInspectorFrontendHost::showContextMenu(ExecState* exec)
 #else
     Vector<ContextMenuItem> items = menu.items();
 #endif
-    impl()->showContextMenu(event, items);
+    impl().showContextMenu(event, items);
 #else
     UNUSED_PARAM(exec);
 #endif

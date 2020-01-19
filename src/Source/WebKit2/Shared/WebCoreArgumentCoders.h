@@ -29,57 +29,100 @@
 #include "ArgumentCoders.h"
 
 namespace WebCore {
-    class AffineTransform;
-    class AuthenticationChallenge;
-    class Color;
-    class Credential;
-    class Cursor;
-    class DatabaseDetails;
-    class FloatPoint;
-    class FloatRect;
-    class FloatSize;
-    class HTTPHeaderMap;
-    class IntPoint;
-    class IntRect;
-    class IntSize;
-    class KeyframeValueList;
-    class KURL;
-    class Notification;
-    class ProtectionSpace;
-    class ResourceError;
-    class ResourceRequest;
-    class ResourceResponse;
-    class UserStyleSheet;
-    class UserScript;
-    struct CompositionUnderline;
-    struct Cookie;
-    struct DictationAlternative;
-    struct DragSession;
-    struct FileChooserSettings;
-    struct GrammarDetail;
-    struct MimeClassInfo;
-    struct PluginInfo;
-    struct TextCheckingResult;
-    struct ViewportAttributes;
-    struct WindowFeatures;
+class AffineTransform;
+class AuthenticationChallenge;
+class CertificateInfo;
+class Color;
+class Credential;
+class Cursor;
+class DatabaseDetails;
+class FilterOperations;
+class FloatPoint;
+class FloatPoint3D;
+class FloatRect;
+class FloatSize;
+class FixedPositionViewportConstraints;
+class HTTPHeaderMap;
+class IDBKeyPath;
+class IntPoint;
+class IntRect;
+class IntSize;
+class KeyframeValueList;
+class URL;
+class Notification;
+class ProtectionSpace;
+class ResourceError;
+class ResourceRequest;
+class ResourceResponse;
+class StickyPositionViewportConstraints;
+class TextCheckingRequestData;
+class TransformationMatrix;
+class UserStyleSheet;
+class UserScript;
+struct CompositionUnderline;
+struct Cookie;
+struct DictationAlternative;
+struct DragSession;
+struct FileChooserSettings;
+struct IDBDatabaseMetadata;
+struct IDBGetResult;
+struct IDBIndexMetadata;
+struct IDBKeyData;
+struct IDBKeyRangeData;
+struct IDBObjectStoreMetadata;
+struct Length;
+struct GrammarDetail;
+struct MimeClassInfo;
+struct PasteboardImage;
+struct PasteboardWebContent;
+struct PluginInfo;
+struct ScrollableAreaParameters;
+struct TextCheckingResult;
+struct ViewportAttributes;
+struct WindowFeatures;
 }
 
 #if PLATFORM(MAC)
 namespace WebCore {
-    struct KeypressCommand;
+struct KeypressCommand;
 }
 #endif
 
-namespace CoreIPC {
+#if PLATFORM(IOS)
+namespace WebCore {
+class FloatQuad;
+class SelectionRect;
+struct PasteboardImage;
+struct PasteboardWebContent;
+struct ViewportArguments;
+}
+#endif
+
+namespace IPC {
 
 template<> struct ArgumentCoder<WebCore::AffineTransform> {
     static void encode(ArgumentEncoder&, const WebCore::AffineTransform&);
     static bool decode(ArgumentDecoder&, WebCore::AffineTransform&);
 };
 
+template<> struct ArgumentCoder<WebCore::TransformationMatrix> {
+    static void encode(ArgumentEncoder&, const WebCore::TransformationMatrix&);
+    static bool decode(ArgumentDecoder&, WebCore::TransformationMatrix&);
+};
+
+template<> struct ArgumentCoder<WebCore::CertificateInfo> {
+    static void encode(ArgumentEncoder&, const WebCore::CertificateInfo&);
+    static bool decode(ArgumentDecoder&, WebCore::CertificateInfo&);
+};
+
 template<> struct ArgumentCoder<WebCore::FloatPoint> {
     static void encode(ArgumentEncoder&, const WebCore::FloatPoint&);
     static bool decode(ArgumentDecoder&, WebCore::FloatPoint&);
+};
+
+template<> struct ArgumentCoder<WebCore::FloatPoint3D> {
+    static void encode(ArgumentEncoder&, const WebCore::FloatPoint3D&);
+    static bool decode(ArgumentDecoder&, WebCore::FloatPoint3D&);
 };
 
 template<> struct ArgumentCoder<WebCore::FloatRect> {
@@ -91,6 +134,18 @@ template<> struct ArgumentCoder<WebCore::FloatSize> {
     static void encode(ArgumentEncoder&, const WebCore::FloatSize&);
     static bool decode(ArgumentDecoder&, WebCore::FloatSize&);
 };
+
+#if PLATFORM(IOS)
+template<> struct ArgumentCoder<WebCore::FloatQuad> {
+    static void encode(ArgumentEncoder&, const WebCore::FloatQuad&);
+    static bool decode(ArgumentDecoder&, WebCore::FloatQuad&);
+};
+
+template<> struct ArgumentCoder<WebCore::ViewportArguments> {
+    static void encode(ArgumentEncoder&, const WebCore::ViewportArguments&);
+    static bool decode(ArgumentDecoder&, WebCore::ViewportArguments&);
+};
+#endif // PLATFORM(IOS)
 
 template<> struct ArgumentCoder<WebCore::IntPoint> {
     static void encode(ArgumentEncoder&, const WebCore::IntPoint&);
@@ -105,6 +160,11 @@ template<> struct ArgumentCoder<WebCore::IntRect> {
 template<> struct ArgumentCoder<WebCore::IntSize> {
     static void encode(ArgumentEncoder&, const WebCore::IntSize&);
     static bool decode(ArgumentDecoder&, WebCore::IntSize&);
+};
+
+template<> struct ArgumentCoder<WebCore::Length> {
+    static void encode(ArgumentEncoder&, const WebCore::Length&);
+    static bool decode(ArgumentDecoder&, WebCore::Length&);
 };
 
 template<> struct ArgumentCoder<WebCore::ViewportAttributes> {
@@ -161,12 +221,6 @@ template<> struct ArgumentCoder<WebCore::ResourceRequest> {
 };
 
 template<> struct ArgumentCoder<WebCore::ResourceResponse> {
-#if PLATFORM(MAC)
-    static const bool kShouldSerializeWebCoreData = false;
-#else
-    static const bool kShouldSerializeWebCoreData = true;
-#endif
-
     static void encode(ArgumentEncoder&, const WebCore::ResourceResponse&);
     static bool decode(ArgumentDecoder&, WebCore::ResourceResponse&);
     static void encodePlatformData(ArgumentEncoder&, const WebCore::ResourceResponse&);
@@ -203,6 +257,23 @@ template<> struct ArgumentCoder<WebCore::KeypressCommand> {
 };
 #endif
 
+#if PLATFORM(IOS)
+template<> struct ArgumentCoder<WebCore::SelectionRect> {
+    static void encode(ArgumentEncoder&, const WebCore::SelectionRect&);
+    static bool decode(ArgumentDecoder&, WebCore::SelectionRect&);
+};
+
+template<> struct ArgumentCoder<WebCore::PasteboardWebContent> {
+    static void encode(ArgumentEncoder&, const WebCore::PasteboardWebContent&);
+    static bool decode(ArgumentDecoder&, WebCore::PasteboardWebContent&);
+};
+
+template<> struct ArgumentCoder<WebCore::PasteboardImage> {
+    static void encode(ArgumentEncoder&, const WebCore::PasteboardImage&);
+    static bool decode(ArgumentDecoder&, WebCore::PasteboardImage&);
+};
+#endif
+
 template<> struct ArgumentCoder<WebCore::CompositionUnderline> {
     static void encode(ArgumentEncoder&, const WebCore::CompositionUnderline&);
     static bool decode(ArgumentDecoder&, WebCore::CompositionUnderline&);
@@ -233,6 +304,11 @@ template<> struct ArgumentCoder<WebCore::GrammarDetail> {
     static bool decode(ArgumentDecoder&, WebCore::GrammarDetail&);
 };
 
+template<> struct ArgumentCoder<WebCore::TextCheckingRequestData> {
+    static void encode(ArgumentEncoder&, const WebCore::TextCheckingRequestData&);
+    static bool decode(ArgumentDecoder&, WebCore::TextCheckingRequestData&);
+};
+
 template<> struct ArgumentCoder<WebCore::TextCheckingResult> {
     static void encode(ArgumentEncoder&, const WebCore::TextCheckingResult&);
     static bool decode(ArgumentDecoder&, WebCore::TextCheckingResult&);
@@ -243,9 +319,9 @@ template<> struct ArgumentCoder<WebCore::DragSession> {
     static bool decode(ArgumentDecoder&, WebCore::DragSession&);
 };
 
-template<> struct ArgumentCoder<WebCore::KURL> {
-    static void encode(ArgumentEncoder&, const WebCore::KURL&);
-    static bool decode(ArgumentDecoder&, WebCore::KURL&);
+template<> struct ArgumentCoder<WebCore::URL> {
+    static void encode(ArgumentEncoder&, const WebCore::URL&);
+    static bool decode(ArgumentDecoder&, WebCore::URL&);
 };
 
 template<> struct ArgumentCoder<WebCore::UserStyleSheet> {
@@ -258,6 +334,65 @@ template<> struct ArgumentCoder<WebCore::UserScript> {
     static bool decode(ArgumentDecoder&, WebCore::UserScript&);
 };
 
-} // namespace CoreIPC
+template<> struct ArgumentCoder<WebCore::ScrollableAreaParameters> {
+    static void encode(ArgumentEncoder&, const WebCore::ScrollableAreaParameters&);
+    static bool decode(ArgumentDecoder&, WebCore::ScrollableAreaParameters&);
+};
+
+template<> struct ArgumentCoder<WebCore::FixedPositionViewportConstraints> {
+    static void encode(ArgumentEncoder&, const WebCore::FixedPositionViewportConstraints&);
+    static bool decode(ArgumentDecoder&, WebCore::FixedPositionViewportConstraints&);
+};
+
+template<> struct ArgumentCoder<WebCore::StickyPositionViewportConstraints> {
+    static void encode(ArgumentEncoder&, const WebCore::StickyPositionViewportConstraints&);
+    static bool decode(ArgumentDecoder&, WebCore::StickyPositionViewportConstraints&);
+};
+
+#if ENABLE(CSS_FILTERS) && !USE(COORDINATED_GRAPHICS)
+template<> struct ArgumentCoder<WebCore::FilterOperations> {
+    static void encode(ArgumentEncoder&, const WebCore::FilterOperations&);
+    static bool decode(ArgumentDecoder&, WebCore::FilterOperations&);
+};
+#endif
+
+#if ENABLE(INDEXED_DATABASE)
+template<> struct ArgumentCoder<WebCore::IDBDatabaseMetadata> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBDatabaseMetadata&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBDatabaseMetadata&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBGetResult> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBGetResult&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBGetResult&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBIndexMetadata> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBIndexMetadata&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBIndexMetadata&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBKeyData> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBKeyData&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBKeyData&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBKeyPath> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBKeyPath&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBKeyPath&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBKeyRangeData> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBKeyRangeData&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBKeyRangeData&);
+};
+
+template<> struct ArgumentCoder<WebCore::IDBObjectStoreMetadata> {
+    static void encode(ArgumentEncoder&, const WebCore::IDBObjectStoreMetadata&);
+    static bool decode(ArgumentDecoder&, WebCore::IDBObjectStoreMetadata&);
+};
+#endif
+
+} // namespace IPC
 
 #endif // WebCoreArgumentCoders_h

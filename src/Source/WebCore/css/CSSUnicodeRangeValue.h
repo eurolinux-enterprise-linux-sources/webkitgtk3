@@ -34,19 +34,17 @@ namespace WebCore {
 
 class CSSUnicodeRangeValue : public CSSValue {
 public:
-    static PassRefPtr<CSSUnicodeRangeValue> create(UChar32 from, UChar32 to)
+    static PassRef<CSSUnicodeRangeValue> create(UChar32 from, UChar32 to)
     {
-        return adoptRef(new CSSUnicodeRangeValue(from, to));
+        return adoptRef(*new CSSUnicodeRangeValue(from, to));
     }
 
     UChar32 from() const { return m_from; }
     UChar32 to() const { return m_to; }
 
-    String customCssText() const;
+    String customCSSText() const;
 
     bool equals(const CSSUnicodeRangeValue&) const;
-
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     CSSUnicodeRangeValue(UChar32 from, UChar32 to)
@@ -59,6 +57,8 @@ private:
     UChar32 m_from;
     UChar32 m_to;
 };
+
+CSS_VALUE_TYPE_CASTS(CSSUnicodeRangeValue, isUnicodeRangeValue())
 
 } // namespace WebCore
 

@@ -54,9 +54,12 @@ G_BEGIN_DECLS
 G_END_DECLS
 #endif // USE(WEBAUDIO_GSTREAMER)
 
-#if USE(WEBAUDIO_FFMPEG)
+#if USE(WEBAUDIO_OPENMAX_DL_FFT)
+#include "dl/sp/api/armSP.h"
+#include "dl/sp/api/omxSP.h"
+#elif USE(WEBAUDIO_FFMPEG)
 struct RDFTContext;
-#endif // USE(WEBAUDIO_FFMPEG)
+#endif
 
 #endif // !USE_ACCELERATE_FFT
 
@@ -64,8 +67,8 @@ struct RDFTContext;
 #include <ipps.h>
 #endif // USE(WEBAUDIO_IPP)
 
+#include <memory>
 #include <wtf/Forward.h>
-#include <wtf/PassOwnPtr.h>
 #include <wtf/Threading.h>
 
 namespace WebCore {
@@ -97,7 +100,7 @@ public:
     // The remaining public methods have cross-platform implementations:
 
     // Interpolates from frame1 -> frame2 as x goes from 0.0 -> 1.0
-    static PassOwnPtr<FFTFrame> createInterpolatedFrame(const FFTFrame& frame1, const FFTFrame& frame2, double x);
+    static std::unique_ptr<FFTFrame> createInterpolatedFrame(const FFTFrame& frame1, const FFTFrame& frame2, double x);
 
     void doPaddedFFT(const float* data, size_t dataSize); // zero-padding with dataSize <= fftSize
     double extractAverageGroupDelay();
@@ -105,8 +108,6 @@ public:
 
     unsigned fftSize() const { return m_FFTSize; }
     unsigned log2FFTSize() const { return m_log2FFTSize; }
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
 private:
     unsigned m_FFTSize;
@@ -162,7 +163,7 @@ private:
 #if USE(WEBAUDIO_GSTREAMER)
     GstFFTF32* m_fft;
     GstFFTF32* m_inverseFft;
-    GstFFTF32Complex* m_complexData;
+    std::unique_ptr<GstFFTF32Complex[]> m_complexData;
     AudioFloatArray m_realData;
     AudioFloatArray m_imagData;
 #endif // USE(WEBAUDIO_GSTREAMER)
@@ -177,6 +178,17 @@ private:
     AudioFloatArray m_imagData;
 #endif // USE(WEBAUDIO_IPP)
 
+#if USE(WEBAUDIO_OPENMAX_DL_FFT)
+    static OMXFFTSpec_R_F32* contextForSize(unsigned log2FFTSize);
+
+    OMXFFTSpec_R_F32* m_forwardContext;
+    OMXFFTSpec_R_F32* m_inverseContext;
+
+    AudioFloatArray m_complexData;
+    AudioFloatArray m_realData;
+    AudioFloatArray m_imagData;
+#endif
+    
 #endif // !USE_ACCELERATE_FFT
 };
 

@@ -34,35 +34,28 @@
 
 namespace WebKit {
 
-class WebConnection : public APIObject, public CoreIPC::MessageReceiver, public CoreIPC::MessageSender<WebConnection> {
+class WebConnection : public API::ObjectImpl<API::Object::Type::Connection>, public IPC::MessageReceiver, public IPC::MessageSender {
 public:
-    static const Type APIType = TypeConnection;
     virtual ~WebConnection();
 
-    void initializeConnectionClient(const WKConnectionClient*);
-    void postMessage(const String&, APIObject*);
+    void initializeConnectionClient(const WKConnectionClientBase*);
+    void postMessage(const String&, API::Object*);
     void didClose();
-
-    // Used by CoreIPC::MessageSender
-    virtual CoreIPC::Connection* connection() const = 0;
-    virtual uint64_t destinationID() const = 0;
 
 protected:
     explicit WebConnection();
 
-    virtual Type type() const { return APIType; }
+    virtual void encodeMessageBody(IPC::ArgumentEncoder&, API::Object*) = 0;
+    virtual bool decodeMessageBody(IPC::ArgumentDecoder&, RefPtr<API::Object>&) = 0;
 
-    virtual void encodeMessageBody(CoreIPC::ArgumentEncoder&, APIObject*) = 0;
-    virtual bool decodeMessageBody(CoreIPC::ArgumentDecoder&, RefPtr<APIObject>&) = 0;
-
-    // CoreIPC::MessageReceiver
-    void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
     // Implemented in generated WebConnectionMessageReceiver.cpp
-    void didReceiveWebConnectionMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&);
+    void didReceiveWebConnectionMessage(IPC::Connection*, IPC::MessageDecoder&);
 
     // Mesage handling implementation functions.
-    void handleMessage(CoreIPC::MessageDecoder&);
+    void handleMessage(IPC::MessageDecoder&);
 
     virtual bool hasValidConnection() const = 0;
 

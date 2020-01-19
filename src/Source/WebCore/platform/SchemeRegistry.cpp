@@ -38,9 +38,6 @@ static URLSchemesMap& localURLSchemes()
 #if PLATFORM(MAC)
         localSchemes.add("applewebdata");
 #endif
-#if PLATFORM(QT)
-        localSchemes.add("qrc");
-#endif
     }
 
     return localSchemes;
@@ -103,9 +100,6 @@ static URLSchemesMap& canDisplayOnlyIfCanRequestSchemes()
 #if ENABLE(BLOB)
     if (canDisplayOnlyIfCanRequestSchemes.isEmpty()) {
         canDisplayOnlyIfCanRequestSchemes.add("blob");
-#if ENABLE(FILE_SYSTEM)
-        canDisplayOnlyIfCanRequestSchemes.add("filesystem");
-#endif
     }
 #endif // ENABLE(BLOB)
 
@@ -318,6 +312,15 @@ bool SchemeRegistry::schemeShouldBypassContentSecurityPolicy(const String& schem
     if (scheme.isEmpty())
         return false;
     return ContentSecurityPolicyBypassingSchemes().contains(scheme);
+}
+
+bool SchemeRegistry::shouldCacheResponsesFromURLSchemeIndefinitely(const String& scheme)
+{
+#if PLATFORM(MAC)
+    if (equalIgnoringCase(scheme, "applewebdata"))
+        return true;
+#endif
+    return equalIgnoringCase(scheme, "data");
 }
 
 } // namespace WebCore

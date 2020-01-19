@@ -75,11 +75,13 @@ public:
     ComponentTransferFunction transferFunction() const;
 
 protected:
-    SVGComponentTransferFunctionElement(const QualifiedName&, Document*);
+    SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
     
 private:
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGComponentTransferFunctionElement)

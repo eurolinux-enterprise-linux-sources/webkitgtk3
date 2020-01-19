@@ -34,13 +34,13 @@
 #include "FloatSize.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollTypes.h"
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
-#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
 class FloatPoint;
+class PlatformTouchEvent;
 class ScrollableArea;
 class Scrollbar;
 
@@ -61,11 +61,13 @@ public:
 
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
 
-    virtual void setIsActive() { }
-
     virtual bool handleWheelEvent(const PlatformWheelEvent&);
 
-#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+#if ENABLE(TOUCH_EVENTS)
+    virtual bool handleTouchEvent(const PlatformTouchEvent&);
+#endif
+
+#if PLATFORM(MAC)
     virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
 #endif
 
@@ -87,12 +89,16 @@ public:
     virtual void contentAreaDidShow() const { }
     virtual void contentAreaDidHide() const { }
 
-    virtual void finishCurrentScrollAnimations() { }
+    virtual void lockOverlayScrollbarStateToHidden(bool) { }
+    virtual bool scrollbarsCanBeActive() const { return true; }
 
     virtual void didAddVerticalScrollbar(Scrollbar*) { }
     virtual void willRemoveVerticalScrollbar(Scrollbar*) { }
     virtual void didAddHorizontalScrollbar(Scrollbar*) { }
     virtual void willRemoveHorizontalScrollbar(Scrollbar*) { }
+
+    virtual void verticalScrollbarLayerDidChange() { }
+    virtual void horizontalScrollbarLayerDidChange() { }
 
     virtual bool shouldScrollbarParticipateInHitTesting(Scrollbar*) { return true; }
 

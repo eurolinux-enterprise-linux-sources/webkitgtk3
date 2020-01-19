@@ -29,27 +29,32 @@
 #if ENABLE(VIDEO_TRACK)
 
 #include "FloatPoint.h"
-#include "RenderBlock.h"
+#include "RenderBlockFlow.h"
 #include "RenderInline.h"
-#include "RenderView.h"
 
 namespace WebCore {
 
+class RenderBox;
 class TextTrackCueBox;
 
-class RenderTextTrackCue : public RenderBlock {
+class RenderTextTrackCue final : public RenderBlockFlow {
 public:
-    explicit RenderTextTrackCue(TextTrackCueBox*);
+    RenderTextTrackCue(TextTrackCueBox&, PassRef<RenderStyle>);
 
 private:
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
     bool isOutside() const;
+    bool rectIsWithinContainer(const IntRect&) const;
     bool isOverlapping() const;
+    RenderObject* overlappingObject() const;
+    RenderObject* overlappingObjectForRect(const IntRect&) const;
     bool shouldSwitchDirection(InlineFlowBox*, LayoutUnit) const;
 
     void moveBoxesByStep(LayoutUnit);
     bool switchDirection(bool&, LayoutUnit&);
+    void moveIfNecessaryToKeepWithinContainer();
+    bool findNonOverlappingPosition(int& x, int& y) const;
 
     bool initializeLayoutParameters(InlineFlowBox*&, LayoutUnit&, LayoutUnit&);
     void placeBoxInDefaultPosition(LayoutUnit, bool&);

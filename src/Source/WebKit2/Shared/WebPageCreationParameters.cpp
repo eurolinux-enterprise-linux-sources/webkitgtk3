@@ -30,19 +30,17 @@
 
 namespace WebKit {
 
-void WebPageCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
+void WebPageCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
 {
     encoder << viewSize;
-    encoder << isActive;
-    encoder << isFocused;
-    encoder << isVisible;
-    encoder << isInWindow;
+    encoder << viewState;
 
     encoder << store;
     encoder.encodeEnum(drawingAreaType);
     encoder << pageGroupData;
     encoder << drawsBackground;
     encoder << drawsTransparentBackground;
+    encoder << underlayColor;
     encoder << areMemoryCacheClientCallsEnabled;
     encoder << useFixedLayout;
     encoder << fixedLayoutSize;
@@ -58,25 +56,22 @@ void WebPageCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
     encoder << deviceScaleFactor;
     encoder << mediaVolume;
     encoder << mayStartMediaWhenInWindow;
+    encoder << minimumLayoutSize;
+    encoder << autoSizingShouldExpandToViewHeight;
+    encoder.encodeEnum(scrollPinningBehavior);
+    encoder << backgroundExtendsBeyondPage;
+    encoder.encodeEnum(layerHostingMode);
 
 #if PLATFORM(MAC)
-    encoder << isSmartInsertDeleteEnabled;
-    encoder.encodeEnum(layerHostingMode);
     encoder << colorSpace;
 #endif
 }
 
-bool WebPageCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, WebPageCreationParameters& parameters)
+bool WebPageCreationParameters::decode(IPC::ArgumentDecoder& decoder, WebPageCreationParameters& parameters)
 {
     if (!decoder.decode(parameters.viewSize))
         return false;
-    if (!decoder.decode(parameters.isActive))
-        return false;
-    if (!decoder.decode(parameters.isFocused))
-        return false;
-    if (!decoder.decode(parameters.isVisible))
-        return false;
-    if (!decoder.decode(parameters.isInWindow))
+    if (!decoder.decode(parameters.viewState))
         return false;
     if (!decoder.decode(parameters.store))
         return false;
@@ -87,6 +82,8 @@ bool WebPageCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, WebPag
     if (!decoder.decode(parameters.drawsBackground))
         return false;
     if (!decoder.decode(parameters.drawsTransparentBackground))
+        return false;
+    if (!decoder.decode(parameters.underlayColor))
         return false;
     if (!decoder.decode(parameters.areMemoryCacheClientCallsEnabled))
         return false;
@@ -118,12 +115,18 @@ bool WebPageCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, WebPag
         return false;
     if (!decoder.decode(parameters.mayStartMediaWhenInWindow))
         return false;
-
-#if PLATFORM(MAC)
-    if (!decoder.decode(parameters.isSmartInsertDeleteEnabled))
+    if (!decoder.decode(parameters.minimumLayoutSize))
+        return false;
+    if (!decoder.decode(parameters.autoSizingShouldExpandToViewHeight))
+        return false;
+    if (!decoder.decodeEnum(parameters.scrollPinningBehavior))
+        return false;
+    if (!decoder.decode(parameters.backgroundExtendsBeyondPage))
         return false;
     if (!decoder.decodeEnum(parameters.layerHostingMode))
         return false;
+    
+#if PLATFORM(MAC)
     if (!decoder.decode(parameters.colorSpace))
         return false;
 #endif

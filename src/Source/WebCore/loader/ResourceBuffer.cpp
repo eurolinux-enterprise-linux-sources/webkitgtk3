@@ -27,7 +27,6 @@
 #include "ResourceBuffer.h"
 
 #include "PurgeableBuffer.h"
-#include "WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -36,7 +35,7 @@ ResourceBuffer::ResourceBuffer()
 {
 }
 
-ResourceBuffer::ResourceBuffer(const char* data, int size)
+ResourceBuffer::ResourceBuffer(const char* data, unsigned size)
     : m_sharedBuffer(SharedBuffer::create(data, size))
 {
 }
@@ -69,6 +68,11 @@ bool ResourceBuffer::isEmpty() const
 void ResourceBuffer::append(const char* data, unsigned size)
 {
     m_sharedBuffer->append(data, size);
+}
+
+void ResourceBuffer::append(SharedBuffer* buffer)
+{
+    m_sharedBuffer->append(buffer);
 }
 
 #if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
@@ -108,6 +112,14 @@ bool ResourceBuffer::hasPurgeableBuffer() const
     return m_sharedBuffer->hasPurgeableBuffer();
 }
 
+#if PLATFORM(IOS)
+void ResourceBuffer::setShouldUsePurgeableMemory(bool shouldUsePurgeableMemory)
+{
+    ASSERT(m_sharedBuffer);
+    sharedBuffer()->shouldUsePurgeableMemory(shouldUsePurgeableMemory);
+}
+#endif
+
 void ResourceBuffer::createPurgeableBuffer() const
 {
     ASSERT(m_sharedBuffer);
@@ -120,16 +132,18 @@ PassOwnPtr<PurgeableBuffer> ResourceBuffer::releasePurgeableBuffer()
 }
 
 #if USE(CF)
-CFDataRef ResourceBuffer::createCFData()
+RetainPtr<CFDataRef> ResourceBuffer::createCFData()
 {
     return m_sharedBuffer->createCFData();
 }
 #endif
 
-void ResourceBuffer::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+#if ENABLE(DISK_IMAGE_CACHE)
+bool ResourceBuffer::isUsingDiskImageCache() const
 {
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_sharedBuffer, "sharedBuffer");
+    ASSERT(m_sharedBuffer);
+    return m_sharedBuffer && m_sharedBuffer->isAllowedToBeMemoryMapped();
 }
+#endif
 
 } // namespace WebCore

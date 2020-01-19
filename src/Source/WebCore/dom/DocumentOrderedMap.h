@@ -33,51 +33,77 @@
 
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashMap.h>
+#include <wtf/Vector.h>
 #include <wtf/text/AtomicStringImpl.h>
 
 namespace WebCore {
 
 class Element;
+class HTMLImageElement;
+class HTMLLabelElement;
+class HTMLMapElement;
 class TreeScope;
 
 class DocumentOrderedMap {
 public:
-    void add(AtomicStringImpl*, Element*);
-    void remove(AtomicStringImpl*, Element*);
+    void add(const AtomicStringImpl&, Element&, const TreeScope&);
+    void remove(const AtomicStringImpl&, Element&);
     void clear();
 
-    bool contains(AtomicStringImpl*) const;
-    bool containsMultiple(AtomicStringImpl*) const;
+    bool contains(const AtomicStringImpl&) const;
+    bool containsSingle(const AtomicStringImpl&) const;
+    bool containsMultiple(const AtomicStringImpl&) const;
+
     // concrete instantiations of the get<>() method template
-    Element* getElementById(AtomicStringImpl*, const TreeScope*) const;
-    Element* getElementByMapName(AtomicStringImpl*, const TreeScope*) const;
-    Element* getElementByLowercasedMapName(AtomicStringImpl*, const TreeScope*) const;
-    Element* getElementByLabelForAttribute(AtomicStringImpl*, const TreeScope*) const;
+    Element* getElementById(const AtomicStringImpl&, const TreeScope&) const;
+    Element* getElementByName(const AtomicStringImpl&, const TreeScope&) const;
+    HTMLMapElement* getElementByMapName(const AtomicStringImpl&, const TreeScope&) const;
+    HTMLMapElement* getElementByLowercasedMapName(const AtomicStringImpl&, const TreeScope&) const;
+    HTMLImageElement* getElementByLowercasedUsemap(const AtomicStringImpl&, const TreeScope&) const;
+    HTMLLabelElement* getElementByLabelForAttribute(const AtomicStringImpl&, const TreeScope&) const;
+    Element* getElementByWindowNamedItem(const AtomicStringImpl&, const TreeScope&) const;
+    Element* getElementByDocumentNamedItem(const AtomicStringImpl&, const TreeScope&) const;
 
-    void checkConsistency() const;
-
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    const Vector<Element*>* getAllElementsById(const AtomicStringImpl&, const TreeScope&) const;
 
 private:
-    template<bool keyMatches(AtomicStringImpl*, Element*)> Element* get(AtomicStringImpl*, const TreeScope*) const;
+    template<bool keyMatches(const AtomicStringImpl&, const Element&)> Element* get(const AtomicStringImpl&, const TreeScope&) const;
 
-    typedef HashMap<AtomicStringImpl*, Element*> Map;
+    struct MapEntry {
+        MapEntry()
+            : element(0)
+            , count(0)
+        { }
+        explicit MapEntry(Element* firstElement)
+            : element(firstElement)
+            , count(1)
+        { }
 
-    // We maintain the invariant that m_duplicateCounts is the count of all elements with a given key
-    // excluding the one referenced in m_map, if any. This means it one less than the total count
-    // when the first node with a given key is cached, otherwise the same as the total count.
+        Element* element;
+        unsigned count;
+        Vector<Element*> orderedList;
+    };
+
+    typedef HashMap<const AtomicStringImpl*, MapEntry> Map;
+
     mutable Map m_map;
-    mutable HashCountedSet<AtomicStringImpl*> m_duplicateCounts;
 };
 
-inline bool DocumentOrderedMap::contains(AtomicStringImpl* id) const
+inline bool DocumentOrderedMap::containsSingle(const AtomicStringImpl& id) const
 {
-    return m_map.contains(id) || m_duplicateCounts.contains(id);
+    auto it = m_map.find(&id);
+    return it != m_map.end() && it->value.count == 1;
 }
 
-inline bool DocumentOrderedMap::containsMultiple(AtomicStringImpl* id) const
+inline bool DocumentOrderedMap::contains(const AtomicStringImpl& id) const
 {
-    return m_duplicateCounts.contains(id);
+    return m_map.contains(&id);
+}
+
+inline bool DocumentOrderedMap::containsMultiple(const AtomicStringImpl& id) const
+{
+    auto it = m_map.find(&id);
+    return it != m_map.end() && it->value.count > 1;
 }
 
 } // namespace WebCore

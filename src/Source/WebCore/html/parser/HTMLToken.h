@@ -28,6 +28,8 @@
 
 #include "Attribute.h"
 #include "HTMLToken.h"
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 
@@ -88,8 +90,8 @@ public:
         Vector<UChar, 32> value;
     };
 
-    typedef WTF::Vector<Attribute, 10> AttributeList;
-    typedef WTF::Vector<UChar, 1024> DataVector;
+    typedef Vector<Attribute, 10> AttributeList;
+    typedef Vector<UChar, 256> DataVector;
 
     HTMLToken() { clear(); }
 
@@ -151,16 +153,6 @@ public:
         m_orAllData |= character;
     }
 
-    // FIXME: Rename this to copyNameAsString().
-    String nameString() const
-    {
-        if (!m_data.size())
-            return emptyString();
-        if (isAll8BitData())
-            return String::make8BitFrom16BitSource(m_data.data(), m_data.size());
-        return String(m_data);
-    }
-
     /* DOCTYPE Tokens */
 
     bool forceQuirks() const
@@ -179,7 +171,7 @@ public:
     {
         ASSERT(m_type == Uninitialized);
         m_type = DOCTYPE;
-        m_doctypeData = adoptPtr(new DoctypeData);
+        m_doctypeData = std::make_unique<DoctypeData>();
     }
 
     void beginDOCTYPE(UChar character)
@@ -234,9 +226,9 @@ public:
         m_doctypeData->m_systemIdentifier.append(character);
     }
 
-    PassOwnPtr<DoctypeData> releaseDoctypeData()
+    std::unique_ptr<DoctypeData> releaseDoctypeData()
     {
-        return m_doctypeData.release();
+        return std::move(m_doctypeData);
     }
 
     /* Start/End Tag Tokens */
@@ -453,7 +445,7 @@ private:
     Attribute* m_currentAttribute;
 
     // For DOCTYPE
-    OwnPtr<DoctypeData> m_doctypeData;
+    std::unique_ptr<DoctypeData> m_doctypeData;
 };
 
 }

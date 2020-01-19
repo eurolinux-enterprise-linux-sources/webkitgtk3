@@ -28,13 +28,11 @@
 
 #if ENABLE(SVG)
 #include "Document.h"
-#include "NodeTraversal.h"
+#include "ElementIterator.h"
 #include "SVGNames.h"
 #include "SVGSMILElement.h"
 #include "SVGSVGElement.h"
 #include <wtf/CurrentTime.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -43,7 +41,8 @@ static const double animationFrameDelay = 0.025;
 SMILTimeContainer::SMILTimeContainer(SVGSVGElement* owner) 
     : m_beginTime(0)
     , m_pauseTime(0)
-    , m_accumulatedPauseTime(0)
+    , m_accumulatedActiveTime(0)
+    , m_resumeTime(0)
     , m_presetStartTime(0)
     , m_documentOrderIndexesDirty(false)
     , m_timer(this, &SMILTimeContainer::timerFired)
@@ -59,7 +58,6 @@ SMILTimeContainer::~SMILTimeContainer()
 #ifndef NDEBUG
     ASSERT(!m_preventScheduledAnimationsChanges);
 #endif
-    deleteAllValues(m_scheduledAnimations);
 }
 
 void SMILTimeContainer::schedule(SVGSMILElement* animation, SVGElement* target, const QualifiedName& attributeName)
@@ -73,11 +71,9 @@ void SMILTimeContainer::schedule(SVGSMILElement* animation, SVGElement* target, 
 #endif
 
     ElementAttributePair key(target, attributeName);
-    AnimationsVector* scheduled = m_scheduledAnimations.get(key);
-    if (!scheduled) {
-        scheduled = new AnimationsVector();
-        m_scheduledAnimations.set(key, scheduled);
-    }
+    std::unique_ptr<AnimationsVector>& scheduled = m_scheduledAnimations.add(key, nullptr).iterator->value;
+    if (!scheduled)
+        scheduled = std::make_unique<AnimationsVector>();
     ASSERT(!scheduled->contains(animation));
     scheduled->append(animation);
 
@@ -113,7 +109,9 @@ SMILTime SMILTimeContainer::elapsed() const
 {
     if (!m_beginTime)
         return 0;
-    return currentTime() - m_beginTime - m_accumulatedPauseTime;
+    if (isPaused())
+        return m_accumulatedActiveTime;
+    return monotonicallyIncreasingTime() + m_accumulatedActiveTime - m_resumeTime;
 }
 
 bool SMILTimeContainer::isActive() const
@@ -134,11 +132,11 @@ bool SMILTimeContainer::isStarted() const
 void SMILTimeContainer::begin()
 {
     ASSERT(!m_beginTime);
-    double now = currentTime();
+    double now = monotonicallyIncreasingTime();
 
     // If 'm_presetStartTime' is set, the timeline was modified via setElapsed() before the document began.
     // In this case pass on 'seekToTime=true' to updateAnimations().
-    m_beginTime = now - m_presetStartTime;
+    m_beginTime = m_resumeTime = now - m_presetStartTime;
     updateAnimations(SMILTime(m_presetStartTime), m_presetStartTime ? true : false);
     m_presetStartTime = 0;
 
@@ -151,19 +149,19 @@ void SMILTimeContainer::begin()
 void SMILTimeContainer::pause()
 {
     ASSERT(!isPaused());
-    m_pauseTime = currentTime();
 
-    if (m_beginTime)
+    m_pauseTime = monotonicallyIncreasingTime();
+    if (m_beginTime) {
+        m_accumulatedActiveTime += m_pauseTime - m_resumeTime;
         m_timer.stop();
+    }
 }
 
 void SMILTimeContainer::resume()
 {
     ASSERT(isPaused());
 
-    if (m_beginTime)
-        m_accumulatedPauseTime += currentTime() - m_pauseTime;
-
+    m_resumeTime = monotonicallyIncreasingTime();
     m_pauseTime = 0;
     startTimer(0);
 }
@@ -179,19 +177,21 @@ void SMILTimeContainer::setElapsed(SMILTime time)
     if (m_beginTime)
         m_timer.stop();
 
-    double now = currentTime();
+    double now = monotonicallyIncreasingTime();
     m_beginTime = now - time.value();
 
-    m_accumulatedPauseTime = 0;
-    if (m_pauseTime)
-        m_pauseTime = now;
+    if (m_pauseTime) {
+        m_resumeTime = m_pauseTime = now;
+        m_accumulatedActiveTime = time.value();
+    } else
+        m_resumeTime = m_beginTime;
 
 #ifndef NDEBUG
     m_preventScheduledAnimationsChanges = true;
 #endif
     GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
     for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        AnimationsVector* scheduled = it->value;
+        AnimationsVector* scheduled = it->value.get();
         unsigned size = scheduled->size();
         for (unsigned n = 0; n < size; n++)
             scheduled->at(n)->reset();
@@ -211,7 +211,7 @@ void SMILTimeContainer::startTimer(SMILTime fireTime, SMILTime minimumDelay)
     if (!fireTime.isFinite())
         return;
 
-    SMILTime delay = max(fireTime - elapsed(), minimumDelay);
+    SMILTime delay = std::max(fireTime - elapsed(), minimumDelay);
     m_timer.startOneShot(delay.value());
 }
 
@@ -225,10 +225,10 @@ void SMILTimeContainer::timerFired(Timer<SMILTimeContainer>*)
 void SMILTimeContainer::updateDocumentOrderIndexes()
 {
     unsigned timingElementCount = 0;
-    for (Element* element = m_ownerSVGElement; element; element = ElementTraversal::next(element, m_ownerSVGElement)) {
-        if (SVGSMILElement::isSMILElement(element))
-            static_cast<SVGSMILElement*>(element)->setDocumentOrderIndex(timingElementCount++);
-    }
+
+    for (auto& smilElement : descendantsOfType<SVGSMILElement>(*m_ownerSVGElement))
+        smilElement.setDocumentOrderIndex(timingElementCount++);
+
     m_documentOrderIndexesDirty = false;
 }
 
@@ -269,7 +269,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     AnimationsVector animationsToApply;
     GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
     for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        AnimationsVector* scheduled = it->value;
+        AnimationsVector* scheduled = it->value.get();
 
         // Sort according to priority. Elements with later begin time have higher priority.
         // In case of a tie, document order decides. 
@@ -298,7 +298,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
 
             SMILTime nextFireTime = animation->nextProgressTime();
             if (nextFireTime.isFinite())
-                earliestFireTime = min(nextFireTime, earliestFireTime);
+                earliestFireTime = std::min(nextFireTime, earliestFireTime);
         }
 
         if (resultElement)
@@ -323,7 +323,6 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
 #endif
 
     startTimer(earliestFireTime, animationFrameDelay);
-    Document::updateStyleForAllDocuments();
 }
 
 }

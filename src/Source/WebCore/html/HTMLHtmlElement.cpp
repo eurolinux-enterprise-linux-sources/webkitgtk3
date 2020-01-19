@@ -29,24 +29,25 @@
 #include "DocumentLoader.h"
 #include "DocumentParser.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "HTMLNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLHtmlElement::HTMLHtmlElement(const QualifiedName& tagName, Document* document)
+HTMLHtmlElement::HTMLHtmlElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(htmlTag));
 }
 
-PassRefPtr<HTMLHtmlElement> HTMLHtmlElement::create(Document* document)
+PassRefPtr<HTMLHtmlElement> HTMLHtmlElement::create(Document& document)
 {
     return adoptRef(new HTMLHtmlElement(htmlTag, document));
 }
 
-PassRefPtr<HTMLHtmlElement> HTMLHtmlElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLHtmlElement> HTMLHtmlElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLHtmlElement(tagName, document));
 }
@@ -59,13 +60,13 @@ bool HTMLHtmlElement::isURLAttribute(const Attribute& attribute) const
 void HTMLHtmlElement::insertedByParser()
 {
     // When parsing a fragment, its dummy document has a null parser.
-    if (!document()->parser() || !document()->parser()->documentWasLoadedAsPartOfNavigation())
+    if (!document().parser() || !document().parser()->documentWasLoadedAsPartOfNavigation())
         return;
 
-    if (!document()->frame())
+    if (!document().frame())
         return;
 
-    DocumentLoader* documentLoader = document()->frame()->loader()->documentLoader();
+    DocumentLoader* documentLoader = document().frame()->loader().documentLoader();
     if (!documentLoader)
         return;
 
@@ -73,7 +74,7 @@ void HTMLHtmlElement::insertedByParser()
     if (manifest.isEmpty())
         documentLoader->applicationCacheHost()->selectCacheWithoutManifest();
     else
-        documentLoader->applicationCacheHost()->selectCacheWithManifest(document()->completeURL(manifest));
+        documentLoader->applicationCacheHost()->selectCacheWithManifest(document().completeURL(manifest));
 }
 
 }

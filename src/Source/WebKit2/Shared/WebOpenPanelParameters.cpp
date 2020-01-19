@@ -27,8 +27,8 @@
 #include "config.h"
 #include "WebOpenPanelParameters.h"
 
-#include "ImmutableArray.h"
-#include "WebString.h"
+#include "APIArray.h"
+#include "APIString.h"
 #include <wtf/Vector.h>
 
 using namespace WebCore;
@@ -49,16 +49,9 @@ WebOpenPanelParameters::~WebOpenPanelParameters()
 {
 }
 
-PassRefPtr<ImmutableArray> WebOpenPanelParameters::acceptMIMETypes() const
+PassRefPtr<API::Array> WebOpenPanelParameters::acceptMIMETypes() const
 {
-    size_t size = m_settings.acceptMIMETypes.size();
-
-    Vector<RefPtr<APIObject> > vector;
-    vector.reserveInitialCapacity(size);
-    
-    for (size_t i = 0; i < size; ++i)
-        vector.uncheckedAppend(WebString::create(m_settings.acceptMIMETypes[i]));
-    return ImmutableArray::adopt(vector);
+    return API::Array::createStringArray(m_settings.acceptMIMETypes);
 }
 
 #if ENABLE(MEDIA_CAPTURE)
@@ -68,5 +61,9 @@ String WebOpenPanelParameters::capture() const
 }
 #endif
 
+PassRefPtr<API::Array> WebOpenPanelParameters::selectedFileNames() const
+{
+    return API::Array::createStringArray(m_settings.selectedFiles);
+}
 
 } // namespace WebCore

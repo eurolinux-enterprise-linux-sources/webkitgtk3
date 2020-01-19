@@ -2,7 +2,7 @@
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2005, 2006, 2008, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,13 +23,9 @@
 #include "config.h"
 #include "Event.h"
 
-#include "EventDispatcher.h"
-#include "EventNames.h"
 #include "EventTarget.h"
 #include "UserGestureIndicator.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/CurrentTime.h>
-#include <wtf/text/AtomicString.h>
 
 namespace WebCore {
 
@@ -39,6 +35,11 @@ EventInit::EventInit()
 {
 }
 
+EventInit::EventInit(bool b, bool c)
+    : bubbles(b)
+    , cancelable(c)
+{
+}
 
 Event::Event()
     : m_canBubble(false)
@@ -66,6 +67,21 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_eventPhase(0)
     , m_currentTarget(0)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
+{
+}
+
+Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, double timestamp)
+    : m_type(eventType)
+    , m_canBubble(canBubbleArg)
+    , m_cancelable(cancelableArg)
+    , m_propagationStopped(false)
+    , m_immediatePropagationStopped(false)
+    , m_defaultPrevented(false)
+    , m_defaultHandled(false)
+    , m_cancelBubble(false)
+    , m_eventPhase(0)
+    , m_currentTarget(0)
+    , m_createTime(convertSecondsToDOMTimeStamp(timestamp))
 {
 }
 
@@ -102,14 +118,9 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_cancelable = cancelableArg;
 }
 
-const AtomicString& Event::interfaceName() const
+EventInterface Event::eventInterface() const
 {
-    return eventNames().interfaceForEvent;
-}
-
-bool Event::hasInterface(const AtomicString& name) const
-{
-    return interfaceName() == name;
+    return EventInterfaceType;
 }
 
 bool Event::isUIEvent() const
@@ -147,27 +158,14 @@ bool Event::isClipboardEvent() const
     return false;
 }
 
-bool Event::storesResultAsString() const
-{
-    return false;
-}
-
 bool Event::isBeforeTextInsertedEvent() const
 {
     return false;
 }
 
-void Event::storeResult(const String&)
+bool Event::isBeforeUnloadEvent() const
 {
-}
-
-void Event::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    info.addMember(m_type, "type");
-    info.addMember(m_currentTarget, "currentTarget");
-    info.addMember(m_target, "target");
-    info.addMember(m_underlyingEvent, "underlyingEvent");
+    return false;
 }
 
 PassRefPtr<Event> Event::cloneFor(HTMLIFrameElement*) const

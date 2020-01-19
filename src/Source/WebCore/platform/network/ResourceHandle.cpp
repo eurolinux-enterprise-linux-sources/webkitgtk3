@@ -27,9 +27,9 @@
 #include "ResourceHandle.h"
 #include "ResourceHandleInternal.h"
 
-#include "BlobRegistry.h"
 #include "Logging.h"
 #include "NetworkingContext.h"
+#include "NotImplemented.h"
 #include "ResourceHandleClient.h"
 #include "Timer.h"
 #include <algorithm>
@@ -43,7 +43,11 @@ static bool shouldForceContentSniffing;
 typedef HashMap<AtomicString, ResourceHandle::BuiltinConstructor> BuiltinResourceHandleConstructorMap;
 static BuiltinResourceHandleConstructorMap& builtinResourceHandleConstructorMap()
 {
+#if PLATFORM(IOS)
+    ASSERT(WebThreadIsLockedOrDisabled());
+#else
     ASSERT(isMainThread());
+#endif
     DEFINE_STATIC_LOCAL(BuiltinResourceHandleConstructorMap, map, ());
     return map;
 }
@@ -104,7 +108,7 @@ void ResourceHandle::scheduleFailure(FailureType type)
     d->m_failureTimer.startOneShot(0);
 }
 
-void ResourceHandle::fireFailure(Timer<ResourceHandle>*)
+void ResourceHandle::failureTimerFired(Timer<ResourceHandle>&)
 {
     if (!client())
         return;
@@ -148,6 +152,31 @@ void ResourceHandle::setClient(ResourceHandleClient* client)
     d->m_client = client;
 }
 
+#if !PLATFORM(MAC) && !USE(CFNETWORK) && !USE(SOUP)
+// ResourceHandle never uses async client calls on these platforms yet.
+void ResourceHandle::continueWillSendRequest(const ResourceRequest&)
+{
+    notImplemented();
+}
+
+void ResourceHandle::continueDidReceiveResponse()
+{
+    notImplemented();
+}
+
+void ResourceHandle::continueShouldUseCredentialStorage(bool)
+{
+    notImplemented();
+}
+
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
+void ResourceHandle::continueCanAuthenticateAgainstProtectionSpace(bool)
+{
+    notImplemented();
+}
+#endif
+#endif
+
 ResourceRequest& ResourceHandle::firstRequest()
 {
     return d->m_firstRequest;
@@ -181,7 +210,7 @@ bool ResourceHandle::shouldContentSniff() const
     return d->m_shouldContentSniff;
 }
 
-bool ResourceHandle::shouldContentSniffURL(const KURL& url)
+bool ResourceHandle::shouldContentSniffURL(const URL& url)
 {
 #if PLATFORM(MAC)
     if (shouldForceContentSniffing)
@@ -216,11 +245,6 @@ void ResourceHandle::setDefersLoading(bool defers)
 }
 
 void ResourceHandle::didChangePriority(ResourceLoadPriority)
-{
-    // Optionally implemented by platform.
-}
-
-void ResourceHandle::cacheMetadata(const ResourceResponse&, const Vector<char>&)
 {
     // Optionally implemented by platform.
 }

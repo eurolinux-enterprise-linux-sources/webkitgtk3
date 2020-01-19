@@ -26,7 +26,7 @@
 #include "config.h"
 #include "PluginControllerProxy.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "DataReference.h"
 #include "NPObjectProxy.h"
@@ -53,11 +53,6 @@
 using namespace WebCore;
 
 namespace WebKit {
-
-PassOwnPtr<PluginControllerProxy> PluginControllerProxy::create(WebProcessConnection* connection, const PluginCreationParameters& creationParameters)
-{
-    return adoptPtr(new PluginControllerProxy(connection, creationParameters));
-}
 
 PluginControllerProxy::PluginControllerProxy(WebProcessConnection* connection, const PluginCreationParameters& creationParameters)
     : m_connection(connection)
@@ -107,8 +102,9 @@ PassRefPtr<Messages::WebProcessConnection::CreatePlugin::DelayedReply> PluginCon
 bool PluginControllerProxy::initialize(const PluginCreationParameters& creationParameters)
 {
     ASSERT(!m_plugin);
-    
-    TemporaryChange<bool> initializing(m_isInitializing, true);
+
+    ASSERT(!m_isInitializing);
+    m_isInitializing = true; // Cannot use TemporaryChange here, because this object can be deleted before the function returns.
 
     m_plugin = NetscapePlugin::create(PluginProcess::shared().netscapePluginModule());
     if (!m_plugin) {
@@ -136,6 +132,7 @@ bool PluginControllerProxy::initialize(const PluginCreationParameters& creationP
 
     platformInitialize(creationParameters);
 
+    m_isInitializing = false;
     return true;
 }
 
@@ -143,7 +140,8 @@ void PluginControllerProxy::destroy()
 {
     ASSERT(m_plugin);
 
-    if (m_pluginDestructionProtectCount) {
+    // FIXME: Consider removing m_pluginDestructionProtectCount and always use inSendSync here.
+    if (m_pluginDestructionProtectCount || m_connection->connection()->inSendSync()) {
         // We have plug-in code on the stack so we can't destroy it right now.
         // Destroy it later.
         m_pluginDestroyTimer.startOneShot(0);
@@ -182,7 +180,7 @@ void PluginControllerProxy::paint()
     ASSERT(m_plugin);
 
     // Create a graphics context.
-    OwnPtr<GraphicsContext> graphicsContext = m_backingStore->createGraphicsContext();
+    auto graphicsContext = m_backingStore->createGraphicsContext();
 
 #if PLATFORM(MAC)
     // FIXME: We should really call applyDeviceScaleFactor instead of scale, but that ends up calling into WKSI
@@ -431,6 +429,12 @@ void PluginControllerProxy::geometryDidChange(const IntSize& pluginSize, const I
     m_plugin->geometryDidChange(pluginSize, clipRect, pluginToRootViewTransform);
 }
 
+void PluginControllerProxy::visibilityDidChange(bool isVisible)
+{
+    ASSERT(m_plugin);
+    m_plugin->visibilityDidChange(isVisible);
+}
+
 void PluginControllerProxy::didEvaluateJavaScript(uint64_t requestID, const String& result)
 {
     m_plugin->didEvaluateJavaScript(requestID, result);
@@ -438,10 +442,10 @@ void PluginControllerProxy::didEvaluateJavaScript(uint64_t requestID, const Stri
 
 void PluginControllerProxy::streamDidReceiveResponse(uint64_t streamID, const String& responseURLString, uint32_t streamLength, uint32_t lastModifiedTime, const String& mimeType, const String& headers)
 {
-    m_plugin->streamDidReceiveResponse(streamID, KURL(ParsedURLString, responseURLString), streamLength, lastModifiedTime, mimeType, headers, String());
+    m_plugin->streamDidReceiveResponse(streamID, URL(ParsedURLString, responseURLString), streamLength, lastModifiedTime, mimeType, headers, String());
 }
 
-void PluginControllerProxy::streamDidReceiveData(uint64_t streamID, const CoreIPC::DataReference& data)
+void PluginControllerProxy::streamDidReceiveData(uint64_t streamID, const IPC::DataReference& data)
 {
     m_plugin->streamDidReceiveData(streamID, reinterpret_cast<const char*>(data.data()), data.size());
 }
@@ -461,10 +465,10 @@ void PluginControllerProxy::manualStreamDidReceiveResponse(const String& respons
     if (m_pluginCanceledManualStreamLoad)
         return;
 
-    m_plugin->manualStreamDidReceiveResponse(KURL(ParsedURLString, responseURLString), streamLength, lastModifiedTime, mimeType, headers, String());
+    m_plugin->manualStreamDidReceiveResponse(URL(ParsedURLString, responseURLString), streamLength, lastModifiedTime, mimeType, headers, String());
 }
 
-void PluginControllerProxy::manualStreamDidReceiveData(const CoreIPC::DataReference& data)
+void PluginControllerProxy::manualStreamDidReceiveData(const IPC::DataReference& data)
 {
     if (m_pluginCanceledManualStreamLoad)
         return;
@@ -545,6 +549,11 @@ void PluginControllerProxy::paintEntirePlugin()
     paint();
 }
 
+void PluginControllerProxy::supportsSnapshotting(bool& isSupported)
+{
+    isSupported = m_plugin->supportsSnapshotting();
+}
+
 void PluginControllerProxy::snapshot(ShareableBitmap::Handle& backingStoreHandle)
 {
     ASSERT(m_plugin);
@@ -610,8 +619,13 @@ void PluginControllerProxy::windowedPluginGeometryDidChange(const IntRect& frame
 {
     m_connection->connection()->send(Messages::PluginProxy::WindowedPluginGeometryDidChange(frameRect, clipRect, windowID), m_pluginInstanceID);
 }
+
+void PluginControllerProxy::windowedPluginVisibilityDidChange(bool isVisible, uint64_t windowID)
+{
+    m_connection->connection()->send(Messages::PluginProxy::WindowedPluginVisibilityDidChange(isVisible, windowID), m_pluginInstanceID);
+}
 #endif
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

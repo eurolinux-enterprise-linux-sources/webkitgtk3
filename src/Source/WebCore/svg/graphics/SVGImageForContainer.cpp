@@ -37,15 +37,21 @@ IntSize SVGImageForContainer::size() const
 }
 
 void SVGImageForContainer::draw(GraphicsContext* context, const FloatRect& dstRect,
-    const FloatRect& srcRect, ColorSpace colorSpace, CompositeOperator compositeOp, BlendMode blendMode)
+    const FloatRect& srcRect, ColorSpace colorSpace, CompositeOperator compositeOp, BlendMode blendMode, ImageOrientationDescription)
 {
     m_image->drawForContainer(context, m_containerSize, m_zoom, dstRect, srcRect, colorSpace, compositeOp, blendMode);
 }
 
 void SVGImageForContainer::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const AffineTransform& patternTransform,
-    const FloatPoint& phase, ColorSpace colorSpace, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode)
+    const FloatPoint& phase, ColorSpace colorSpace, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode)
 {
-    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, patternTransform, phase, colorSpace, compositeOp, dstRect);
+    m_image->setSpaceSize(spaceSize());
+    m_image->drawPatternForContainer(context, m_containerSize, m_zoom, srcRect, patternTransform, phase, colorSpace, compositeOp, dstRect, blendMode);
+}
+
+PassNativeImagePtr SVGImageForContainer::nativeImageForCurrentFrame()
+{
+    return m_image->nativeImageForCurrentFrame();
 }
 
 } // namespace WebCore

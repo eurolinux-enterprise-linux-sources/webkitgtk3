@@ -33,6 +33,10 @@
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
+class Font;
+#endif
+
 class Locale {
     WTF_MAKE_NONCOPYABLE(Locale);
 
@@ -52,11 +56,6 @@ public:
     // callers of this function are responsible to check the format of the
     // resultant string.
     String convertFromLocalizedNumber(const String&);
-
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    // Returns localized decimal separator, e.g. "." for English, "," for French.
-    String localizedDecimalSeparator();
-#endif
 
 #if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     // Returns date format in Unicode TR35 LDML[1] containing day of month,
@@ -111,20 +110,6 @@ public:
     virtual const Vector<String>& monthLabels() = 0;
 #endif
 
-#if ENABLE(CALENDAR_PICKER)
-    // Returns a vector of string of which size is 7. The first item is a
-    // localized short string of Monday, and the last item is a localized
-    // short string of Saturday. These strings should be short.
-    virtual const Vector<String>& weekDayShortLabels() = 0;
-
-    // The first day of a week. 0 is Sunday, and 6 is Saturday.
-    virtual unsigned firstDayOfWeek() = 0;
-
-    // Returns true if people use right-to-left writing in the locale for this
-    // object.
-    virtual bool isRTL() = 0;
-#endif
-
 #if ENABLE(DATE_AND_TIME_INPUT_TYPES)
     enum FormatType { FormatTypeUnspecified, FormatTypeShort, FormatTypeMedium };
 
@@ -132,7 +117,17 @@ public:
     // display to the user. If an implementation doesn't support
     // localized dates the function should return an empty string.
     // FormatType can be used to specify if you want the short format. 
+#if !PLATFORM(IOS)
     String formatDateTime(const DateComponents&, FormatType = FormatTypeUnspecified);
+#else
+    virtual String formatDateTime(const DateComponents&, FormatType = FormatTypeUnspecified) = 0;
+#endif // !PLATFORM(IOS)
+#endif
+
+#if PLATFORM(IOS)
+    // FIXME: This code should be merged with Open Source in a way that is future compatible.
+    // Maximum width for a formatted date string with a specified font.
+    virtual float maximumWidthForDateType(DateComponents::Type, const Font&) = 0;
 #endif
 
     virtual ~Locale();

@@ -38,7 +38,6 @@ audio {
     height: inherit;
     position: relative;
     display: -webkit-flex;
-    direction: ltr;
     -webkit-align-items: flex-start;
     -webkit-justify-content: flex-end;
     -webkit-flex-direction: column;
@@ -46,6 +45,7 @@ audio {
 
 audio::-webkit-media-controls-panel, video::-webkit-media-controls-panel {
     display: -webkit-flex;
+    direction: ltr;
     -webkit-flex-direction: row;
     -webkit-align-items: center;
     -webkit-user-select: none;
@@ -104,6 +104,7 @@ audio::-webkit-media-controls-timeline-container, video::-webkit-media-controls-
     -webkit-flex: 1 1;
     -webkit-user-select: none;
     height: 16px;
+    min-width: 0;
 }
 
 audio::-webkit-media-controls-current-time-display, video::-webkit-media-controls-current-time-display {
@@ -124,6 +125,7 @@ audio::-webkit-media-controls-timeline, video::-webkit-media-controls-timeline {
     border: initial;
     color: inherit;
     margin: initial;
+    min-width: 0;
 }
 
 audio::-webkit-media-controls-volume-slider, video::-webkit-media-controls-volume-slider {
@@ -221,8 +223,6 @@ video::-webkit-media-text-track-container {
     overflow: hidden;
     padding-bottom: 5px;
 
-    font-size: 22px;
-    font-family: sans-serif;
     text-align: center;
     color: rgba(255, 255, 255, 1);
 
@@ -236,19 +236,20 @@ video::-webkit-media-text-track-container {
     word-break: break-word;
 
     -webkit-flex: 1 1;
+
+    -webkit-line-box-contain: block inline-box replaced;
 }
 
-video::-webkit-media-text-track-all-nodes {
-    display: inline;
-
+video::cue {
     background-color: rgba(0, 0, 0, 0.8);
-    padding: 2px 2px;
 }
 
 video::-webkit-media-text-track-display {
     position: absolute;
     overflow: hidden;
     white-space: pre-wrap;
+    -webkit-box-sizing: border-box;
+    font: 22px sans-serif;
 }
 
 video::cue(:future) {

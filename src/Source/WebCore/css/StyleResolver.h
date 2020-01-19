@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,8 +22,7 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
-#include "CSSRule.h"
-#include "CSSRuleList.h"
+#include "CSSToStyleMap.h"
 #include "CSSValueList.h"
 #include "DocumentRuleSets.h"
 #include "InspectorCSSOMWrappers.h"
@@ -33,14 +32,13 @@
 #include "RuleFeature.h"
 #include "RuleSet.h"
 #include "RuntimeEnabledFeatures.h"
+#include "ScrollTypes.h"
 #include "SelectorChecker.h"
 #include "SelectorFilter.h"
 #include "StyleInheritedData.h"
 #include "StyleScopeResolver.h"
 #include "ViewportStyleResolver.h"
-#if ENABLE(CSS_FILTERS) && ENABLE(SVG)
-#include "WebKitCSSSVGDocumentValue.h"
-#endif
+#include <memory>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/RefPtr.h>
@@ -49,8 +47,6 @@
 #include <wtf/text/StringHash.h>
 
 namespace WebCore {
-
-enum ESmartMinimumForFontSize { DoNotUseSmartMinimumForFontSize, UseSmartMinimumForFontFize };
 
 class CSSCursorImageValue;
 class CSSFontSelector;
@@ -62,34 +58,30 @@ class CSSImageValue;
 class CSSPageRule;
 class CSSPrimitiveValue;
 class CSSProperty;
-class CSSRuleList;
 class CSSSelector;
 class CSSStyleSheet;
 class CSSValue;
 class ContainerNode;
-class CustomFilterOperation;
-class CustomFilterParameter;
-class CustomFilterParameterList;
 class Document;
+class DeprecatedStyleBuilder;
 class Element;
 class Frame;
 class FrameView;
-class KURL;
+class URL;
 class KeyframeList;
 class KeyframeValue;
 class MediaQueryEvaluator;
 class Node;
 class RenderRegion;
+class RenderScrollbar;
 class RuleData;
 class RuleSet;
 class Settings;
-class StaticCSSRuleList;
-class StyleBuilder;
 class StyleScopeResolver;
 class StyleImage;
 class StyleKeyframe;
 class StylePendingImage;
-class StylePropertySet;
+class StyleProperties;
 class StyleRule;
 #if ENABLE(SHADOW_DOM)
 class StyleRuleHost;
@@ -97,14 +89,11 @@ class StyleRuleHost;
 class StyleRuleKeyframes;
 class StyleRulePage;
 class StyleRuleRegion;
-class StyleShader;
 class StyleSheet;
 class StyleSheetList;
 class StyledElement;
 class ViewportStyleResolver;
 class WebKitCSSFilterValue;
-class WebKitCSSShaderValue;
-class WebKitCSSSVGDocumentValue;
 
 class MediaQueryResult {
     WTF_MAKE_NONCOPYABLE(MediaQueryResult); WTF_MAKE_FAST_ALLOCATED;
@@ -114,7 +103,6 @@ public:
         , m_result(result)
     {
     }
-    void reportMemoryUsage(MemoryObjectInfo*) const;
 
     MediaQueryExp m_expression;
     bool m_result;
@@ -135,24 +123,25 @@ enum RuleMatchingBehavior {
     MatchOnlyUserAgentRules,
 };
 
-class MatchRequest {
+class PseudoStyleRequest {
 public:
-    MatchRequest(RuleSet* ruleSet, bool includeEmptyRules = false, const ContainerNode* scope = 0, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary)
-        : ruleSet(ruleSet)
-        , includeEmptyRules(includeEmptyRules)
-        , scope(scope)
-        , behaviorAtBoundary(behaviorAtBoundary) { }
-    const RuleSet* ruleSet;
-    const bool includeEmptyRules;
-    const ContainerNode* scope;
-    const SelectorChecker::BehaviorAtBoundary behaviorAtBoundary;
+    PseudoStyleRequest(PseudoId pseudoId, RenderScrollbar* scrollbar = 0, ScrollbarPart scrollbarPart = NoPart)
+        : pseudoId(pseudoId)
+        , scrollbarPart(scrollbarPart)
+        , scrollbar(scrollbar)
+    {
+    }
+
+    PseudoId pseudoId;
+    ScrollbarPart scrollbarPart;
+    RenderScrollbar* scrollbar;
 };
 
 // This class selects a RenderStyle for a given element based on a collection of stylesheets.
 class StyleResolver {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED;
 public:
-    StyleResolver(Document*, bool matchAuthorAndUserStyles);
+    StyleResolver(Document&, bool matchAuthorAndUserStyles);
     ~StyleResolver();
 
     // Using these during tree walk will allow style selector to optimize child and descendant selector lookups.
@@ -164,58 +153,52 @@ public:
     void addHostRule(StyleRuleHost* rule, bool hasDocumentSecurityOrigin, const ContainerNode* scope) { ensureScopeResolver()->addHostRule(rule, hasDocumentSecurityOrigin, scope); }
 #endif
 
-    PassRefPtr<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
+    PassRef<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules, RenderRegion* regionForStyling = 0);
 
     void keyframeStylesForAnimation(Element*, const RenderStyle*, KeyframeList&);
 
-    PassRefPtr<RenderStyle> pseudoStyleForElement(PseudoId, Element*, RenderStyle* parentStyle);
+    PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
 
-    PassRefPtr<RenderStyle> styleForPage(int pageIndex);
-    PassRefPtr<RenderStyle> defaultStyleForElement();
-    PassRefPtr<RenderStyle> styleForText(Text*);
+    PassRef<RenderStyle> styleForPage(int pageIndex);
+    PassRef<RenderStyle> defaultStyleForElement();
 
-    static PassRefPtr<RenderStyle> styleForDocument(Document*, CSSFontSelector* = 0);
-
-    Document* document() { return m_document; }
+    RenderStyle* style() const { return m_state.style(); }
+    RenderStyle* parentStyle() const { return m_state.parentStyle(); }
+    RenderStyle* rootElementStyle() const { return m_state.rootElementStyle(); }
+    Element* element() { return m_state.element(); }
+    Document& document() { return m_document; }
     StyleScopeResolver* scopeResolver() const { return m_scopeResolver.get(); }
+    bool hasParentNode() const { return m_state.parentNode(); }
 
     // FIXME: It could be better to call m_ruleSets.appendAuthorStyleSheets() directly after we factor StyleRsolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
-    void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >&);
+    void appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet>>&);
 
     DocumentRuleSets& ruleSets() { return m_ruleSets; }
     const DocumentRuleSets& ruleSets() const { return m_ruleSets; }
+    SelectorFilter& selectorFilter() { return m_selectorFilter; }
 
-#if ENABLE(STYLE_SCOPED) || ENABLE(SHADOW_DOM)
+#if ENABLE(SHADOW_DOM)
     StyleScopeResolver* ensureScopeResolver()
     {
-#if ENABLE(STYLE_SCOPED)
-#if ENABLE(SHADOW_DOM)
-        ASSERT(RuntimeEnabledFeatures::shadowDOMEnabled() || RuntimeEnabledFeatures::styleScopedEnabled());
-#else
-        ASSERT(RuntimeEnabledFeatures::styleScopedEnabled());
-#endif
-#else
-        ASSERT(RuntimeEnabledFeatures::shadowDOMEnabled());
-#endif
+        ASSERT(RuntimeEnabledFeatures::sharedFeatures().shadowDOMEnabled());
         if (!m_scopeResolver)
-            m_scopeResolver = adoptPtr(new StyleScopeResolver());
+            m_scopeResolver = std::make_unique<StyleScopeResolver>();
         return m_scopeResolver.get();
     }
 #endif
-    class State;
 
 private:
-    void initElement(State&, Element*);
-    RenderStyle* locateSharedStyle(State&);
-    bool styleSharingCandidateMatchesRuleSet(Element*, RuleSet*);
-    bool styleSharingCandidateMatchesHostRules(State&);
+    void initElement(Element*);
+    RenderStyle* locateSharedStyle();
+    bool styleSharingCandidateMatchesRuleSet(RuleSet*);
+    bool styleSharingCandidateMatchesHostRules();
     Node* locateCousinList(Element* parent, unsigned& visitedNodeCount) const;
-    StyledElement* findSiblingForStyleSharing(const State&, Node*, unsigned& count) const;
-    bool canShareStyleWithElement(const State&, StyledElement*) const;
+    StyledElement* findSiblingForStyleSharing(Node*, unsigned& count) const;
+    bool canShareStyleWithElement(StyledElement*) const;
 
-    PassRefPtr<RenderStyle> styleForKeyframe(State&, const RenderStyle*, const StyleKeyframe*, KeyframeValue&);
+    PassRef<RenderStyle> styleForKeyframe(const RenderStyle*, const StyleKeyframe*, KeyframeValue&);
 
 public:
     // These methods will give back the set of rules that matched for a given element (or a pseudo-element).
@@ -227,32 +210,24 @@ public:
         AllButEmptyCSSRules = UAAndUserCSSRules | AuthorCSSRules | CrossOriginCSSRules,
         AllCSSRules         = AllButEmptyCSSRules | EmptyCSSRules,
     };
-    PassRefPtr<CSSRuleList> styleRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules);
-    PassRefPtr<CSSRuleList> pseudoStyleRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules);
-
-    // Given a CSS keyword in the range (xx-small to -webkit-xxx-large), this function will return
-    // the correct font size scaled relative to the user's default (medium).
-    static float fontSizeForKeyword(Document*, int keyword, bool shouldUseFixedDefaultSize);
-
-    // Given a font size in pixel, this function will return legacy font size between 1 and 7.
-    static int legacyFontSize(Document*, int pixelFontSize, bool shouldUseFixedDefaultSize);
+    Vector<RefPtr<StyleRuleBase>> styleRulesForElement(Element*, unsigned rulesToInclude = AllButEmptyCSSRules);
+    Vector<RefPtr<StyleRuleBase>> pseudoStyleRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules);
 
 public:
-    void applyFontPropertyToStyle(RenderStyle*, const StylePropertySet*);
+    void applyPropertyToStyle(CSSPropertyID, CSSValue*, RenderStyle*);
 
-    void updateFont(State&);
-    void initializeFontStyle(State&, Settings*);
+    void applyPropertyToCurrentStyle(CSSPropertyID, CSSValue*);
 
-    static float getComputedSizeFromSpecifiedSize(Document*, float zoomFactor, bool isAbsoluteSize, float specifiedSize, ESmartMinimumForFontSize = UseSmartMinimumForFontFize);
+    void updateFont();
+    void initializeFontStyle(Settings*);
 
-    static void setFontSize(State&, FontDescription&, float size);
-
-private:
-    static float getComputedSizeFromSpecifiedSize(Document*, RenderStyle*, bool isAbsoluteSize, float specifiedSize, bool useSVGZoomRules);
+    void setFontSize(FontDescription&, float size);
 
 public:
+    bool useSVGZoomRules();
+
     static bool colorFromPrimitiveValueIsDerivedFromElement(CSSPrimitiveValue*);
-    static Color colorFromPrimitiveValue(const State&, CSSPrimitiveValue*, bool forVisitedLink = false);
+    Color colorFromPrimitiveValue(CSSPrimitiveValue*, bool forVisitedLink = false) const;
 
     bool hasSelectorForId(const AtomicString&) const;
     bool hasSelectorForClass(const AtomicString&) const;
@@ -274,40 +249,19 @@ public:
     bool usesSiblingRules() const { return !m_ruleSets.features().siblingRules.isEmpty(); }
     bool usesFirstLineRules() const { return m_ruleSets.features().usesFirstLineRules; }
     bool usesBeforeAfterRules() const { return m_ruleSets.features().usesBeforeAfterRules; }
-
-    static bool createTransformOperations(CSSValue* inValue, RenderStyle* inStyle, RenderStyle* rootStyle, TransformOperations& outOperations);
     
     void invalidateMatchedPropertiesCache();
 
 #if ENABLE(CSS_FILTERS)
-    bool createFilterOperations(State&, CSSValue* inValue, RenderStyle* inStyle, RenderStyle* rootStyle, FilterOperations& outOperations);
-#if ENABLE(CSS_SHADERS)
-    StyleShader* styleShader(State&, CSSValue*);
-    StyleShader* cachedOrPendingStyleShaderFromValue(State&, WebKitCSSShaderValue*);
-    bool parseCustomFilterParameterList(State&, CSSValue*, CustomFilterParameterList&);
-    PassRefPtr<CustomFilterParameter> parseCustomFilterParameter(State&, const String& name, CSSValue*);
-    PassRefPtr<CustomFilterParameter> parseCustomFilterArrayParameter(const String& name, CSSValueList*);
-    PassRefPtr<CustomFilterParameter> parseCustomFilterNumberParameter(const String& name, CSSValueList*);
-    PassRefPtr<CustomFilterParameter> parseCustomFilterTransformParameter(State&, const String& name, CSSValueList*);
-    PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithAtRuleReferenceSyntax(WebKitCSSFilterValue*);
-    PassRefPtr<CustomFilterOperation> createCustomFilterOperationWithInlineSyntax(State&, WebKitCSSFilterValue*);
-    PassRefPtr<CustomFilterOperation> createCustomFilterOperation(State&, WebKitCSSFilterValue*);
-    void loadPendingShaders(State&);
-#endif
+    bool createFilterOperations(CSSValue* inValue, FilterOperations& outOperations);
 #if ENABLE(SVG)
-    void loadPendingSVGDocuments(State&);
+    void loadPendingSVGDocuments();
 #endif
 #endif // ENABLE(CSS_FILTERS)
 
-    void loadPendingResources(State&);
+    void loadPendingResources();
 
-private:
-    // This function fixes up the default font size if it detects that the current generic font family has changed. -dwh
-    void checkForGenericFamilyChange(State&, RenderStyle*, RenderStyle* parentStyle);
-    void checkForZoomChange(State&, RenderStyle*, RenderStyle* parentStyle);
-    void checkForTextSizeAdjust(State&);
-
-    void adjustRenderStyle(State&, RenderStyle* styleToAdjust, RenderStyle* parentStyle, Element*);
+    int viewportPercentageValue(CSSPrimitiveValue& unit, int percentage);
 
     struct RuleRange {
         RuleRange(int& firstRuleIndex, int& lastRuleIndex): firstRuleIndex(firstRuleIndex), lastRuleIndex(lastRuleIndex) { }
@@ -329,10 +283,10 @@ private:
     };
 
     struct MatchedProperties {
-        MatchedProperties() : possiblyPaddedMember(0) { }
-        void reportMemoryUsage(MemoryObjectInfo*) const;
+        MatchedProperties();
+        ~MatchedProperties();
         
-        RefPtr<StylePropertySet> properties;
+        RefPtr<StyleProperties> properties;
         union {
             struct {
                 unsigned linkMatchType : 2;
@@ -349,90 +303,66 @@ private:
         Vector<StyleRule*, 64> matchedRules;
         MatchRanges ranges;
         bool isCacheable;
+
+        void addMatchedProperties(const StyleProperties&, StyleRule* = 0, unsigned linkMatchType = SelectorChecker::MatchAll, PropertyWhitelistType = PropertyWhitelistNone);
     };
 
-    static void addMatchedProperties(MatchResult&, const StylePropertySet* properties, StyleRule* = 0, unsigned linkMatchType = SelectorChecker::MatchAll, PropertyWhitelistType = PropertyWhitelistNone);
-    void addElementStyleProperties(MatchResult&, const StylePropertySet*, bool isCacheable = true);
+private:
+    // This function fixes up the default font size if it detects that the current generic font family has changed. -dwh
+    void checkForGenericFamilyChange(RenderStyle*, RenderStyle* parentStyle);
+    void checkForZoomChange(RenderStyle*, RenderStyle* parentStyle);
+#if ENABLE(IOS_TEXT_AUTOSIZING)
+    void checkForTextSizeAdjust(RenderStyle*);
+#endif
 
-    void matchAllRules(State&, MatchResult&, bool includeSMILProperties);
-    void matchUARules(State&, MatchResult&);
-    void matchUARules(State&, MatchResult&, RuleSet*);
-    void matchAuthorRules(State&, MatchResult&, bool includeEmptyRules);
-    void matchUserRules(State&, MatchResult&, bool includeEmptyRules);
-    void matchScopedAuthorRules(State&, MatchResult&, bool includeEmptyRules);
-    void matchHostRules(State&, MatchResult&, bool includeEmptyRules);
-
-    void collectMatchingRules(State&, const MatchRequest&, RuleRange&);
-    void collectMatchingRulesForRegion(State&, const MatchRequest&, RuleRange&);
-    void collectMatchingRulesForList(State&, const Vector<RuleData>*, const MatchRequest&, RuleRange&);
+    void adjustRenderStyle(RenderStyle& styleToAdjust, const RenderStyle& parentStyle, Element*);
+    void adjustGridItemPosition(RenderStyle& styleToAdjust, const RenderStyle& parentStyle) const;
 
     bool fastRejectSelector(const RuleData&) const;
-    void sortMatchedRules(State&);
-    void sortAndTransferMatchedRules(State&, MatchResult&);
 
-    bool ruleMatches(State&, const RuleData&, const ContainerNode* scope, PseudoId&, SelectorChecker::BehaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary);
-    bool checkRegionSelector(const CSSSelector* regionSelector, Element* regionElement);
-    void applyMatchedProperties(State&, const MatchResult&, const Element*);
-    enum StyleApplicationPass {
-#if ENABLE(CSS_VARIABLES)
-        VariableDefinitions,
-#endif
-        HighPriorityProperties,
-        LowPriorityProperties
-    };
-    template <StyleApplicationPass pass>
-    void applyMatchedProperties(State&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
-    template <StyleApplicationPass pass>
-    void applyProperties(State&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
-#if ENABLE(CSS_VARIABLES)
-    void resolveVariables(State&, CSSPropertyID, CSSValue*, Vector<std::pair<CSSPropertyID, String> >& knownExpressions);
-#endif
+    enum ShouldUseMatchedPropertiesCache { DoNotUseMatchedPropertiesCache = 0, UseMatchedPropertiesCache };
+    void applyMatchedProperties(const MatchResult&, const Element*, ShouldUseMatchedPropertiesCache = UseMatchedPropertiesCache);
+
+    class CascadedProperties;
+
+    void applyCascadedProperties(CascadedProperties&, int firstProperty, int lastProperty);
+    void cascadeMatches(CascadedProperties&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
+
     static bool isValidRegionStyleProperty(CSSPropertyID);
 #if ENABLE(VIDEO_TRACK)
     static bool isValidCueStyleProperty(CSSPropertyID);
 #endif
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
     void matchPageRulesForList(Vector<StyleRulePage*>& matchedRules, const Vector<StyleRulePage*>&, bool isLeftPage, bool isFirstPage, const String& pageName);
-    Settings* documentSettings() { return m_document->settings(); }
+    Settings* documentSettings() { return m_document.settings(); }
 
-    bool isLeftPage(State&, int pageIndex) const;
-    bool isRightPage(State& state, int pageIndex) const { return !isLeftPage(state, pageIndex); }
+    bool isLeftPage(int pageIndex) const;
+    bool isRightPage(int pageIndex) const { return !isLeftPage(pageIndex); }
     bool isFirstPage(int pageIndex) const;
     String pageName(int pageIndex) const;
 
     DocumentRuleSets m_ruleSets;
 
-    typedef HashMap<AtomicStringImpl*, RefPtr<StyleRuleKeyframes> > KeyframesRuleMap;
+    typedef HashMap<AtomicStringImpl*, RefPtr<StyleRuleKeyframes>> KeyframesRuleMap;
     KeyframesRuleMap m_keyframesRuleMap;
 
 public:
+    typedef HashMap<CSSPropertyID, RefPtr<CSSValue>> PendingImagePropertyMap;
 
-    typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
-#if ENABLE(CSS_FILTERS) && ENABLE(SVG)
-    typedef HashMap<FilterOperation*, RefPtr<WebKitCSSSVGDocumentValue> > PendingSVGDocumentMap;
-#endif
     class State {
         WTF_MAKE_NONCOPYABLE(State);
     public:
-        State(Document* document)
-        : m_document(document)
-        , m_element(0)
+        State()
+        : m_element(0)
         , m_styledElement(0)
         , m_parentNode(0)
         , m_parentStyle(0)
         , m_rootElementStyle(0)
         , m_regionForStyling(0)
-        , m_sameOriginOnly(false)
-        , m_pseudoStyle(NOPSEUDO)
         , m_elementLinkState(NotInsideLink)
-        , m_distributedToInsertionPoint(false)
         , m_elementAffectedByClassRules(false)
-        , m_mode(SelectorChecker::ResolvingStyle)
         , m_applyPropertyToRegularStyle(true)
         , m_applyPropertyToVisitedLinkStyle(false)
-#if ENABLE(CSS_SHADERS)
-        , m_hasPendingShaders(false)
-#endif
         , m_lineHeightValue(0)
         , m_fontDirty(false)
         , m_hasUAAppearance(false)
@@ -440,46 +370,33 @@ public:
 
     public:
         void initElement(Element*);
-        void initForStyleResolve(Document*, Element*, RenderStyle* parentStyle = 0, PseudoId = NOPSEUDO, RenderRegion* regionForStyling = 0);
+        void initForStyleResolve(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
         void clear();
 
-        Document* document() const { return m_document; }
+        Document& document() const { return m_element->document(); }
         Element* element() const { return m_element; }
         StyledElement* styledElement() const { return m_styledElement; }
-        void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
+        void setStyle(PassRef<RenderStyle> style) { m_style = std::move(style); }
         RenderStyle* style() const { return m_style.get(); }
-        PassRefPtr<RenderStyle> takeStyle() { return m_style.release(); }
-
-        StaticCSSRuleList* ensureRuleList();
-        PassRefPtr<CSSRuleList> takeRuleList() { return m_ruleList.release(); }
+        PassRef<RenderStyle> takeStyle() { return m_style.releaseNonNull(); }
 
         const ContainerNode* parentNode() const { return m_parentNode; }
-        void setParentStyle(RenderStyle* parentStyle) { m_parentStyle = parentStyle; }
-        RenderStyle* parentStyle() const { return m_parentStyle; }
+        void setParentStyle(PassRef<RenderStyle> parentStyle) { m_parentStyle = std::move(parentStyle); }
+        RenderStyle* parentStyle() const { return m_parentStyle.get(); }
         RenderStyle* rootElementStyle() const { return m_rootElementStyle; }
 
         const RenderRegion* regionForStyling() const { return m_regionForStyling; }
-        void setSameOriginOnly(bool isSameOriginOnly) { m_sameOriginOnly = isSameOriginOnly; }
-        bool isSameOriginOnly() const { return m_sameOriginOnly; }
-        PseudoId pseudoStyle() const { return m_pseudoStyle; }
         EInsideLink elementLinkState() const { return m_elementLinkState; }
-        bool distributedToInsertionPoint() const { return m_distributedToInsertionPoint; }
         void setElementAffectedByClassRules(bool isAffected) { m_elementAffectedByClassRules = isAffected; }
         bool elementAffectedByClassRules() const { return m_elementAffectedByClassRules; }
-        void setMode(SelectorChecker::Mode mode) { m_mode = mode; }
-        SelectorChecker::Mode mode() const { return m_mode; }
-        
+
         void setApplyPropertyToRegularStyle(bool isApply) { m_applyPropertyToRegularStyle = isApply; }
         void setApplyPropertyToVisitedLinkStyle(bool isApply) { m_applyPropertyToVisitedLinkStyle = isApply; }
         bool applyPropertyToRegularStyle() const { return m_applyPropertyToRegularStyle; }
         bool applyPropertyToVisitedLinkStyle() const { return m_applyPropertyToVisitedLinkStyle; }
         PendingImagePropertyMap& pendingImageProperties() { return m_pendingImageProperties; }
 #if ENABLE(CSS_FILTERS) && ENABLE(SVG)
-        PendingSVGDocumentMap& pendingSVGDocuments() { return m_pendingSVGDocuments; }
-#endif
-#if ENABLE(CSS_SHADERS)
-        void setHasPendingShaders(bool hasPendingShaders) { m_hasPendingShaders = hasPendingShaders; }
-        bool hasPendingShaders() const { return m_hasPendingShaders; }
+        Vector<RefPtr<ReferenceFilterOperation>>& filtersWithPendingSVGDocuments() { return m_filtersWithPendingSVGDocuments; }
 #endif
 
         void setLineHeightValue(CSSValue* value) { m_lineHeightValue = value; }
@@ -498,49 +415,35 @@ public:
         void setFontDescription(const FontDescription& fontDescription) { m_fontDirty |= m_style->setFontDescription(fontDescription); }
         void setZoom(float f) { m_fontDirty |= m_style->setZoom(f); }
         void setEffectiveZoom(float f) { m_fontDirty |= m_style->setEffectiveZoom(f); }
-        void setTextSizeAdjust(bool b) { m_fontDirty |= m_style->setTextSizeAdjust(b); }
         void setWritingMode(WritingMode writingMode) { m_fontDirty |= m_style->setWritingMode(writingMode); }
         void setTextOrientation(TextOrientation textOrientation) { m_fontDirty |= m_style->setTextOrientation(textOrientation); }
 
-        Vector<const RuleData*, 32>& matchedRules() { return m_matchedRules; }
-        void addMatchedRule(const RuleData* rule) { m_matchedRules.append(rule); }
         bool useSVGZoomRules() const { return m_element && m_element->isSVGElement(); }
-        
+
     private:
-        Document* m_document;
+        // FIXME(bug 108563): to make it easier to review, these member
+        // variables are public. However we should add methods to access
+        // these variables.
         Element* m_element;
         RefPtr<RenderStyle> m_style;
         StyledElement* m_styledElement;
         ContainerNode* m_parentNode;
-        RenderStyle* m_parentStyle;
+        RefPtr<RenderStyle> m_parentStyle;
         RenderStyle* m_rootElementStyle;
-        
-        RenderRegion* m_regionForStyling;
-        bool m_sameOriginOnly;
-        PseudoId m_pseudoStyle;
 
+        // Required to ASSERT in applyProperties.
+        RenderRegion* m_regionForStyling;
+        
         EInsideLink m_elementLinkState;
 
-        bool m_distributedToInsertionPoint;
-
         bool m_elementAffectedByClassRules;
-
-        SelectorChecker::Mode m_mode;
-
-        // A buffer used to hold the set of matched rules for an element,
-        // and a temporary buffer used for merge sorting.
-        Vector<const RuleData*, 32> m_matchedRules;
-        RefPtr<StaticCSSRuleList> m_ruleList;
 
         bool m_applyPropertyToRegularStyle;
         bool m_applyPropertyToVisitedLinkStyle;
 
         PendingImagePropertyMap m_pendingImageProperties;
-#if ENABLE(CSS_SHADERS)
-        bool m_hasPendingShaders;
-#endif
 #if ENABLE(CSS_FILTERS) && ENABLE(SVG)
-        PendingSVGDocumentMap m_pendingSVGDocuments;
+        Vector<RefPtr<ReferenceFilterOperation>> m_filtersWithPendingSVGDocuments;
 #endif
         CSSValue* m_lineHeightValue;
         bool m_fontDirty;
@@ -551,44 +454,57 @@ public:
         Color m_backgroundColor;
     };
 
+    State& state() { return m_state; }
+
     static RenderStyle* styleNotYetAvailable() { return s_styleNotYetAvailable; }
 
-    static PassRefPtr<StyleImage> styleImage(State&, CSSPropertyID, CSSValue*);
-    static PassRefPtr<StyleImage> cachedOrPendingFromValue(State&, CSSPropertyID, CSSImageValue*);
-    static PassRefPtr<StyleImage> generatedOrPendingFromValue(State&, CSSPropertyID, CSSImageGeneratorValue*);
+    PassRefPtr<StyleImage> styleImage(CSSPropertyID, CSSValue*);
+    PassRefPtr<StyleImage> cachedOrPendingFromValue(CSSPropertyID, CSSImageValue*);
+    PassRefPtr<StyleImage> generatedOrPendingFromValue(CSSPropertyID, CSSImageGeneratorValue&);
 #if ENABLE(CSS_IMAGE_SET)
-    static PassRefPtr<StyleImage> setOrPendingFromValue(State&, CSSPropertyID, CSSImageSetValue*);
+    PassRefPtr<StyleImage> setOrPendingFromValue(CSSPropertyID, CSSImageSetValue*);
 #endif
-    static PassRefPtr<StyleImage> cursorOrPendingFromValue(State&, CSSPropertyID, CSSCursorImageValue*);
+    PassRefPtr<StyleImage> cursorOrPendingFromValue(CSSPropertyID, CSSCursorImageValue*);
 
-    static Length convertToIntLength(CSSPrimitiveValue*, RenderStyle*, RenderStyle* rootStyle, double multiplier = 1);
-    static Length convertToFloatLength(CSSPrimitiveValue*, RenderStyle*, RenderStyle* rootStyle, double multiplier = 1);
+    bool applyPropertyToRegularStyle() const { return m_state.applyPropertyToRegularStyle(); }
+    bool applyPropertyToVisitedLinkStyle() const { return m_state.applyPropertyToVisitedLinkStyle(); }
 
+    static Length convertToIntLength(const CSSPrimitiveValue*, const RenderStyle*, const RenderStyle* rootStyle, double multiplier = 1);
+    static Length convertToFloatLength(const CSSPrimitiveValue*, const RenderStyle*, const RenderStyle* rootStyle, double multiplier = 1);
+
+    CSSToStyleMap* styleMap() { return &m_styleMap; }
     InspectorCSSOMWrappers& inspectorCSSOMWrappers() { return m_inspectorCSSOMWrappers; }
-    
-    void reportMemoryUsage(MemoryObjectInfo*) const;
-    
+    const FontDescription& fontDescription() { return m_state.fontDescription(); }
+    const FontDescription& parentFontDescription() { return m_state.parentFontDescription(); }
+    void setFontDescription(const FontDescription& fontDescription) { m_state.setFontDescription(fontDescription); }
+    void setZoom(float f) { m_state.setZoom(f); }
+    void setEffectiveZoom(float f) { m_state.setEffectiveZoom(f); }
+    void setWritingMode(WritingMode writingMode) { m_state.setWritingMode(writingMode); }
+    void setTextOrientation(TextOrientation textOrientation) { m_state.setTextOrientation(textOrientation); }
+
 private:
     static RenderStyle* s_styleNotYetAvailable;
 
     void cacheBorderAndBackground();
 
 private:
-    bool canShareStyleWithControl(const State&, StyledElement*) const;
+    bool canShareStyleWithControl(StyledElement*) const;
 
-    void applyPropertyWithNullCheck(State&, CSSPropertyID, CSSValue*);
-    void applyProperty(State&, CSSPropertyID, CSSValue*);
+    void applyProperty(CSSPropertyID, CSSValue*);
 
 #if ENABLE(SVG)
-    void applySVGProperty(const State&, CSSPropertyID, CSSValue*);
+    void applySVGProperty(CSSPropertyID, CSSValue*);
 #endif
 
-    PassRefPtr<StyleImage> loadPendingImage(State&, StylePendingImage*);
-    void loadPendingImages(State&);
+    PassRefPtr<StyleImage> loadPendingImage(StylePendingImage*, const ResourceLoaderOptions&);
+    PassRefPtr<StyleImage> loadPendingImage(StylePendingImage*);
+    void loadPendingImages();
+#if ENABLE(CSS_SHAPES)
+    void loadPendingShapeImage(ShapeValue*);
+#endif
 
     static unsigned computeMatchedPropertiesHash(const MatchedProperties*, unsigned size);
     struct MatchedPropertiesCacheItem {
-        void reportMemoryUsage(MemoryObjectInfo*) const;
         Vector<MatchedProperties> matchedProperties;
         MatchRanges ranges;
         RefPtr<RenderStyle> renderStyle;
@@ -602,7 +518,8 @@ private:
     void sweepMatchedPropertiesCache(Timer<StyleResolver>*);
 
     bool classNamesAffectedByRules(const SpaceSplitString&) const;
-    bool sharingCandidateHasIdenticalStyleAffectingAttributes(const State&, StyledElement*) const;
+    bool sharingCandidateHasIdenticalStyleAffectingAttributes(StyledElement*) const;
+
 
     unsigned m_matchedPropertiesCacheAdditionsSinceLastSweep;
 
@@ -611,27 +528,30 @@ private:
 
     Timer<StyleResolver> m_matchedPropertiesCacheSweepTimer;
 
-    OwnPtr<MediaQueryEvaluator> m_medium;
+    std::unique_ptr<MediaQueryEvaluator> m_medium;
     RefPtr<RenderStyle> m_rootDefaultStyle;
 
-    Document* m_document;
+    Document& m_document;
     SelectorFilter m_selectorFilter;
 
     bool m_matchAuthorAndUserStyles;
 
     RefPtr<CSSFontSelector> m_fontSelector;
-    Vector<OwnPtr<MediaQueryResult> > m_viewportDependentMediaQueryResults;
+    Vector<std::unique_ptr<MediaQueryResult>> m_viewportDependentMediaQueryResults;
 
 #if ENABLE(CSS_DEVICE_ADAPTATION)
     RefPtr<ViewportStyleResolver> m_viewportStyleResolver;
 #endif
 
-    const StyleBuilder& m_styleBuilder;
+    const DeprecatedStyleBuilder& m_deprecatedStyleBuilder;
 
-    OwnPtr<StyleScopeResolver> m_scopeResolver;
+    std::unique_ptr<StyleScopeResolver> m_scopeResolver;
+    CSSToStyleMap m_styleMap;
     InspectorCSSOMWrappers m_inspectorCSSOMWrappers;
 
-    friend class StyleBuilder;
+    State m_state;
+
+    friend class DeprecatedStyleBuilder;
     friend bool operator==(const MatchedProperties&, const MatchedProperties&);
     friend bool operator!=(const MatchedProperties&, const MatchedProperties&);
     friend bool operator==(const MatchRanges&, const MatchRanges&);
@@ -655,6 +575,51 @@ inline bool StyleResolver::hasSelectorForId(const AtomicString& idValue) const
     ASSERT(!idValue.isEmpty());
     return m_ruleSets.features().idsInRules.contains(idValue.impl());
 }
+
+inline bool checkRegionSelector(const CSSSelector* regionSelector, Element* regionElement)
+{
+    if (!regionSelector || !regionElement)
+        return false;
+
+    SelectorChecker selectorChecker(regionElement->document(), SelectorChecker::QueryingRules);
+    for (const CSSSelector* s = regionSelector; s; s = CSSSelectorList::next(s)) {
+        SelectorChecker::SelectorCheckingContext selectorCheckingContext(s, regionElement, SelectorChecker::VisitedMatchDisabled);
+        PseudoId ignoreDynamicPseudo = NOPSEUDO;
+        if (selectorChecker.match(selectorCheckingContext, ignoreDynamicPseudo))
+            return true;
+    }
+    return false;
+}
+
+class StyleResolverParentPusher {
+public:
+    StyleResolverParentPusher(Element* parent)
+        : m_parent(parent)
+        , m_pushedStyleResolver(0)
+    { }
+    void push()
+    {
+        if (m_pushedStyleResolver)
+            return;
+        m_pushedStyleResolver = &m_parent->document().ensureStyleResolver();
+        m_pushedStyleResolver->pushParentElement(m_parent);
+    }
+    ~StyleResolverParentPusher()
+    {
+        if (!m_pushedStyleResolver)
+            return;
+        // This tells us that our pushed style selector is in a bad state,
+        // so we should just bail out in that scenario.
+        ASSERT(m_pushedStyleResolver == &m_parent->document().ensureStyleResolver());
+        if (m_pushedStyleResolver != &m_parent->document().ensureStyleResolver())
+            return;
+        m_pushedStyleResolver->popParentElement(m_parent);
+    }
+    
+private:
+    Element* m_parent;
+    StyleResolver* m_pushedStyleResolver;
+};
 
 } // namespace WebCore
 

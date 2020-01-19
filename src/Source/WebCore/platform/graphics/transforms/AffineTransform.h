@@ -27,23 +27,13 @@
 #ifndef AffineTransform_h
 #define AffineTransform_h
 
-#include "TransformationMatrix.h"
-
 #include <string.h> // for memcpy
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 
 #if USE(CG)
-#include <CoreGraphics/CGAffineTransform.h>
+typedef struct CGAffineTransform CGAffineTransform;
 #elif USE(CAIRO)
 #include <cairo.h>
-#elif PLATFORM(OPENVG)
-#include "VGUtils.h"
-#elif PLATFORM(QT)
-#include <QTransform>
-#elif USE(SKIA)
-#include <SkMatrix.h>
-#elif PLATFORM(WX) && USE(WXGC)
-#include <wx/graphics.h>
 #endif
 
 namespace WebCore {
@@ -51,7 +41,9 @@ namespace WebCore {
 class FloatPoint;
 class FloatQuad;
 class FloatRect;
+class FloatSize;
 class IntPoint;
+class IntSize;
 class IntRect;
 class TransformationMatrix;
 
@@ -118,6 +110,8 @@ public:
     AffineTransform& skewX(double angle);
     AffineTransform& skewY(double angle);
 
+    // These functions get the length of an axis-aligned unit vector
+    // once it has been mapped through the transform
     double xScale() const;
     double yScale() const;
 
@@ -174,14 +168,6 @@ public:
     operator CGAffineTransform() const;
 #elif USE(CAIRO)
     operator cairo_matrix_t() const;
-#elif PLATFORM(OPENVG)
-    operator VGMatrix() const;
-#elif PLATFORM(QT)
-    operator QTransform() const;
-#elif USE(SKIA)
-    operator SkMatrix() const;
-#elif PLATFORM(WX) && USE(WXGC)
-    operator wxGraphicsMatrix() const;
 #endif
 
     static AffineTransform translation(double x, double y)

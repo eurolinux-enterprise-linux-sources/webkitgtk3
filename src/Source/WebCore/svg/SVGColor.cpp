@@ -27,7 +27,6 @@
 #include "CSSParser.h"
 #include "RGBColor.h"
 #include "SVGException.h"
-#include "WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -74,7 +73,7 @@ void SVGColor::setColor(unsigned short, const String&, const String&, ExceptionC
     ec = NO_MODIFICATION_ALLOWED_ERR;
 }
 
-String SVGColor::customCssText() const
+String SVGColor::customCSSText() const
 {
     switch (m_colorType) {
     case SVG_COLORTYPE_UNKNOWN:
@@ -108,11 +107,6 @@ PassRefPtr<SVGColor> SVGColor::cloneForCSSOM() const
 bool SVGColor::equals(const SVGColor& other) const
 {
     return m_colorType == other.m_colorType && m_color == other.m_color;
-}
-
-void SVGColor::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
 }
 
 }

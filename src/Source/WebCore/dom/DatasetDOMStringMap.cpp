@@ -26,7 +26,6 @@
 #include "config.h"
 #include "DatasetDOMStringMap.h"
 
-#include "Attribute.h"
 #include "Element.h"
 #include "ExceptionCode.h"
 #include <wtf/ASCIICType.h>
@@ -39,10 +38,9 @@ static bool isValidAttributeName(const String& name)
     if (!name.startsWith("data-"))
         return false;
 
-    const UChar* characters = name.characters();
     unsigned length = name.length();
     for (unsigned i = 5; i < length; ++i) {
-        if (isASCIIUpper(characters[i]))
+        if (isASCIIUpper(name[i]))
             return false;
     }
 
@@ -53,15 +51,14 @@ static String convertAttributeNameToPropertyName(const String& name)
 {
     StringBuilder stringBuilder;
 
-    const UChar* characters = name.characters();
     unsigned length = name.length();
     for (unsigned i = 5; i < length; ++i) {
-        UChar character = characters[i];
+        UChar character = name[i];
         if (character != '-')
             stringBuilder.append(character);
         else {
-            if ((i + 1 < length) && isASCIILower(characters[i + 1])) {
-                stringBuilder.append(toASCIIUpper(characters[i + 1]));
+            if ((i + 1 < length) && isASCIILower(name[i + 1])) {
+                stringBuilder.append(toASCIIUpper(name[i + 1]));
                 ++i;
             } else
                 stringBuilder.append(character);
@@ -76,19 +73,18 @@ static bool propertyNameMatchesAttributeName(const String& propertyName, const S
     if (!attributeName.startsWith("data-"))
         return false;
 
-    const UChar* property = propertyName.characters();
-    const UChar* attribute = attributeName.characters();
     unsigned propertyLength = propertyName.length();
     unsigned attributeLength = attributeName.length();
-   
+
     unsigned a = 5;
     unsigned p = 0;
     bool wordBoundary = false;
     while (a < attributeLength && p < propertyLength) {
-        if (attribute[a] == '-' && a + 1 < attributeLength && attribute[a + 1] != '-')
+        const UChar currentAttributeNameChar = attributeName[a];
+        if (currentAttributeNameChar == '-' && a + 1 < attributeLength && attributeName[a + 1] != '-')
             wordBoundary = true;
         else {
-            if ((wordBoundary ? toASCIIUpper(attribute[a]) : attribute[a]) != property[p])
+            if ((wordBoundary ? toASCIIUpper(currentAttributeNameChar) : currentAttributeNameChar) != propertyName[p])
                 return false;
             p++;
             wordBoundary = false;
@@ -101,10 +97,9 @@ static bool propertyNameMatchesAttributeName(const String& propertyName, const S
 
 static bool isValidPropertyName(const String& name)
 {
-    const UChar* characters = name.characters();
     unsigned length = name.length();
     for (unsigned i = 0; i < length; ++i) {
-        if (characters[i] == '-' && (i + 1 < length) && isASCIILower(characters[i + 1]))
+        if (name[i] == '-' && (i + 1 < length) && isASCIILower(name[i + 1]))
             return false;
     }
     return true;
@@ -115,10 +110,9 @@ static String convertPropertyNameToAttributeName(const String& name)
     StringBuilder builder;
     builder.append("data-");
 
-    const UChar* characters = name.characters();
     unsigned length = name.length();
     for (unsigned i = 0; i < length; ++i) {
-        UChar character = characters[i];
+        UChar character = name[i];
         if (isASCIIUpper(character)) {
             builder.append('-');
             builder.append(toASCIILower(character));
@@ -131,37 +125,33 @@ static String convertPropertyNameToAttributeName(const String& name)
 
 void DatasetDOMStringMap::ref()
 {
-    m_element->ref();
+    m_element.ref();
 }
 
 void DatasetDOMStringMap::deref()
 {
-    m_element->deref();
+    m_element.deref();
 }
 
 void DatasetDOMStringMap::getNames(Vector<String>& names)
 {
-    if (!m_element->hasAttributes())
+    if (!m_element.hasAttributes())
         return;
 
-    unsigned length = m_element->attributeCount();
-    for (unsigned i = 0; i < length; i++) {
-        const Attribute* attribute = m_element->attributeItem(i);
-        if (isValidAttributeName(attribute->localName()))
-            names.append(convertAttributeNameToPropertyName(attribute->localName()));
+    for (const Attribute& attribute : m_element.attributesIterator()) {
+        if (isValidAttributeName(attribute.localName()))
+            names.append(convertAttributeNameToPropertyName(attribute.localName()));
     }
 }
 
 String DatasetDOMStringMap::item(const String& name)
 {
-    if (!m_element->hasAttributes())
+    if (!m_element.hasAttributes())
         return String();
 
-    unsigned length = m_element->attributeCount();
-    for (unsigned i = 0; i < length; i++) {
-        const Attribute* attribute = m_element->attributeItem(i);
-        if (propertyNameMatchesAttributeName(name, attribute->localName()))
-            return attribute->value();
+    for (const Attribute& attribute : m_element.attributesIterator()) {
+        if (propertyNameMatchesAttributeName(name, attribute.localName()))
+            return attribute.value();
     }
 
     return String();
@@ -169,13 +159,11 @@ String DatasetDOMStringMap::item(const String& name)
 
 bool DatasetDOMStringMap::contains(const String& name)
 {
-    if (!m_element->hasAttributes())
+    if (!m_element.hasAttributes())
         return false;
 
-    unsigned length = m_element->attributeCount();
-    for (unsigned i = 0; i < length; i++) {
-        const Attribute* attribute = m_element->attributeItem(i);
-        if (propertyNameMatchesAttributeName(name, attribute->localName()))
+    for (const Attribute& attribute : m_element.attributesIterator()) {
+        if (propertyNameMatchesAttributeName(name, attribute.localName()))
             return true;
     }
 
@@ -189,7 +177,7 @@ void DatasetDOMStringMap::setItem(const String& name, const String& value, Excep
         return;
     }
 
-    m_element->setAttribute(convertPropertyNameToAttributeName(name), value, ec);
+    m_element.setAttribute(convertPropertyNameToAttributeName(name), value, ec);
 }
 
 void DatasetDOMStringMap::deleteItem(const String& name, ExceptionCode& ec)
@@ -199,7 +187,7 @@ void DatasetDOMStringMap::deleteItem(const String& name, ExceptionCode& ec)
         return;
     }
 
-    m_element->removeAttribute(convertPropertyNameToAttributeName(name));
+    m_element.removeAttribute(convertPropertyNameToAttributeName(name));
 }
 
 } // namespace WebCore

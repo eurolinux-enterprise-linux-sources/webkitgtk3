@@ -34,11 +34,11 @@
 
 #include "CSSValueKeywords.h"
 #include "ExceptionCodePlaceholder.h"
-#include "FloatConversion.h"
 #include "HTMLNames.h"
 #include "MouseEvent.h"
 #include "RenderMedia.h"
 #include "RenderMediaControlElements.h"
+#include "StyleProperties.h"
 
 namespace WebCore {
 
@@ -47,52 +47,31 @@ using namespace HTMLNames;
 class Event;
 
 // FIXME: These constants may need to be tweaked to better match the seeking in the QuickTime plug-in.
-static const float cSkipRepeatDelay = 0.1f;
-static const float cSkipTime = 0.2f;
-static const float cScanRepeatDelay = 1.5f;
-static const float cScanMaximumRate = 8;
+static const double cSkipRepeatDelay = 0.1;
+static const double cSkipTime = 0.2;
+static const double cScanRepeatDelay = 1.5;
+static const double cScanMaximumRate = 8;
 
-HTMLMediaElement* toParentMediaElement(Node* node)
+HTMLMediaElement* parentMediaElement(Node* node)
 {
     if (!node)
-        return 0;
+        return nullptr;
     Node* mediaNode = node->shadowHost();
     if (!mediaNode)
         mediaNode = node;
-    if (!mediaNode || !mediaNode->isElementNode() || !static_cast<Element*>(mediaNode)->isMediaElement())
-        return 0;
-
-    return static_cast<HTMLMediaElement*>(mediaNode);
+    if (!mediaNode->isElementNode() || !toElement(mediaNode)->isMediaElement())
+        return nullptr;
+    return toHTMLMediaElement(mediaNode);
 }
 
 MediaControlElementType mediaControlElementType(Node* node)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(node->isMediaControlElement());
     HTMLElement* element = toHTMLElement(node);
-    if (element->hasTagName(inputTag))
+    if (isHTMLInputElement(element))
         return static_cast<MediaControlInputElement*>(element)->displayType();
     return static_cast<MediaControlDivElement*>(element)->displayType();
 }
-
-#if ENABLE(VIDEO_TRACK)
-const AtomicString& trackIndexAttributeName()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("x-webkit-track-index", AtomicString::ConstructFromLiteral));
-    return name;
-}
-
-int trackListIndexForElement(Element* element)
-{
-    const AtomicString trackIndexAttributeValue = element->getAttribute(trackIndexAttributeName());
-    if (trackIndexAttributeValue.isNull() || trackIndexAttributeValue.isEmpty())
-        return HTMLMediaElement::textTracksIndexNotFound();
-    bool ok;
-    int trackIndex = trackIndexAttributeValue.toInt(&ok);
-    if (!ok)
-        return HTMLMediaElement::textTracksIndexNotFound();
-    return trackIndex;
-}
-#endif
 
 MediaControlElement::MediaControlElement(MediaControlElementType displayType, HTMLElement* element)
     : m_mediaController(0)
@@ -113,7 +92,7 @@ void MediaControlElement::show()
 
 bool MediaControlElement::isShowing() const
 {
-    const StylePropertySet* propertySet = m_element->inlineStyle();
+    const StyleProperties* propertySet = m_element->inlineStyle();
     // Following the code from show() and hide() above, we only have
     // to check for the presense of inline display.
     return (!propertySet || !propertySet->getPropertyCSSValue(CSSPropertyDisplay));
@@ -125,13 +104,13 @@ void MediaControlElement::setDisplayType(MediaControlElementType displayType)
         return;
 
     m_displayType = displayType;
-    if (RenderObject* object = m_element->renderer())
+    if (auto object = m_element->renderer())
         object->repaint();
 }
 
 // ----------------------------
 
-MediaControlDivElement::MediaControlDivElement(Document* document, MediaControlElementType displayType)
+MediaControlDivElement::MediaControlDivElement(Document& document, MediaControlElementType displayType)
     : HTMLDivElement(divTag, document)
     , MediaControlElement(displayType, this)
 {
@@ -139,7 +118,7 @@ MediaControlDivElement::MediaControlDivElement(Document* document, MediaControlE
 
 // ----------------------------
 
-MediaControlInputElement::MediaControlInputElement(Document* document, MediaControlElementType displayType)
+MediaControlInputElement::MediaControlInputElement(Document& document, MediaControlElementType displayType)
     : HTMLInputElement(inputTag, document, 0, false)
     , MediaControlElement(displayType, this)
 {
@@ -147,25 +126,20 @@ MediaControlInputElement::MediaControlInputElement(Document* document, MediaCont
 
 // ----------------------------
 
-MediaControlTimeDisplayElement::MediaControlTimeDisplayElement(Document* document, MediaControlElementType displayType)
+MediaControlTimeDisplayElement::MediaControlTimeDisplayElement(Document& document, MediaControlElementType displayType)
     : MediaControlDivElement(document, displayType)
     , m_currentValue(0)
 {
 }
 
-void MediaControlTimeDisplayElement::setCurrentValue(float time)
+void MediaControlTimeDisplayElement::setCurrentValue(double time)
 {
     m_currentValue = time;
 }
 
-RenderObject* MediaControlTimeDisplayElement::createRenderer(RenderArena* arena, RenderStyle*)
-{
-    return new (arena) RenderMediaControlTimeDisplay(this);
-}
-
 // ----------------------------
 
-MediaControlMuteButtonElement::MediaControlMuteButtonElement(Document* document, MediaControlElementType displayType)
+MediaControlMuteButtonElement::MediaControlMuteButtonElement(Document& document, MediaControlElementType displayType)
     : MediaControlInputElement(document, displayType)
 {
 }
@@ -192,7 +166,7 @@ void MediaControlMuteButtonElement::updateDisplayType()
 
 // ----------------------------
 
-MediaControlSeekButtonElement::MediaControlSeekButtonElement(Document* document, MediaControlElementType displayType)
+MediaControlSeekButtonElement::MediaControlSeekButtonElement(Document& document, MediaControlElementType displayType)
     : MediaControlInputElement(document, displayType)
     , m_actionOnStop(Nothing)
     , m_seekType(Skip)
@@ -253,26 +227,26 @@ void MediaControlSeekButtonElement::stopTimer()
         m_seekTimer.stop();
 }
 
-float MediaControlSeekButtonElement::nextRate() const
+double MediaControlSeekButtonElement::nextRate() const
 {
-    float rate = std::min(cScanMaximumRate, fabsf(mediaController()->playbackRate() * 2));
+    double rate = std::min(cScanMaximumRate, fabs(mediaController()->playbackRate() * 2));
     if (!isForwardButton())
         rate *= -1;
     return rate;
 }
 
-void MediaControlSeekButtonElement::seekTimerFired(Timer<MediaControlSeekButtonElement>*)
+void MediaControlSeekButtonElement::seekTimerFired(Timer<MediaControlSeekButtonElement>&)
 {
     if (m_seekType == Skip) {
-        float skipTime = isForwardButton() ? cSkipTime : -cSkipTime;
-        mediaController()->setCurrentTime(mediaController()->currentTime() + skipTime, IGNORE_EXCEPTION);
+        double skipTime = isForwardButton() ? cSkipTime : -cSkipTime;
+        mediaController()->setCurrentTime(mediaController()->currentTime() + skipTime);
     } else
         mediaController()->setPlaybackRate(nextRate());
 }
 
 // ----------------------------
 
-MediaControlVolumeSliderElement::MediaControlVolumeSliderElement(Document* document)
+MediaControlVolumeSliderElement::MediaControlVolumeSliderElement(Document& document)
     : MediaControlInputElement(document, MediaVolumeSlider)
     , m_clearMutedOnUserInteraction(false)
 {
@@ -284,7 +258,7 @@ void MediaControlVolumeSliderElement::defaultEventHandler(Event* event)
     if (event->isMouseEvent() && static_cast<MouseEvent*>(event)->button())
         return;
 
-    if (!attached())
+    if (!renderer())
         return;
 
     MediaControlInputElement::defaultEventHandler(event);
@@ -292,7 +266,7 @@ void MediaControlVolumeSliderElement::defaultEventHandler(Event* event)
     if (event->type() == eventNames().mouseoverEvent || event->type() == eventNames().mouseoutEvent || event->type() == eventNames().mousemoveEvent)
         return;
 
-    float volume = narrowPrecisionToFloat(value().toDouble());
+    double volume = value().toDouble();
     if (volume != mediaController()->volume())
         mediaController()->setVolume(volume, ASSERT_NO_EXCEPTION);
     if (m_clearMutedOnUserInteraction)
@@ -302,7 +276,7 @@ void MediaControlVolumeSliderElement::defaultEventHandler(Event* event)
 
 bool MediaControlVolumeSliderElement::willRespondToMouseMoveEvents()
 {
-    if (!attached())
+    if (!renderer())
         return false;
 
     return MediaControlInputElement::willRespondToMouseMoveEvents();
@@ -310,15 +284,15 @@ bool MediaControlVolumeSliderElement::willRespondToMouseMoveEvents()
 
 bool MediaControlVolumeSliderElement::willRespondToMouseClickEvents()
 {
-    if (!attached())
+    if (!renderer())
         return false;
 
     return MediaControlInputElement::willRespondToMouseClickEvents();
 }
 
-void MediaControlVolumeSliderElement::setVolume(float volume)
+void MediaControlVolumeSliderElement::setVolume(double volume)
 {
-    if (value().toFloat() != volume)
+    if (value().toDouble() != volume)
         setValue(String::number(volume));
 }
 

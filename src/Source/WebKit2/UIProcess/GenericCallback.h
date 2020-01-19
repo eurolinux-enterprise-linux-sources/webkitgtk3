@@ -26,9 +26,9 @@
 #ifndef GenericCallback_h
 #define GenericCallback_h
 
+#include "APIError.h"
 #include "ShareableBitmap.h"
 #include "WKAPICast.h"
-#include "WebError.h"
 #include <wtf/HashMap.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
@@ -79,7 +79,8 @@ public:
 
     void performCallback()
     {
-        ASSERT(m_callback);
+        if (!m_callback)
+            return;
 
         m_callback(0, context());
 
@@ -88,9 +89,10 @@ public:
     
     void invalidate()
     {
-        ASSERT(m_callback);
+        if (!m_callback)
+            return;
 
-        RefPtr<WebError> error = WebError::create();
+        RefPtr<API::Error> error = API::Error::create();
         m_callback(toAPI(error.get()), context());
         
         m_callback = 0;
@@ -134,7 +136,7 @@ public:
     {
         ASSERT(m_callback);
 
-        RefPtr<WebError> error = WebError::create();
+        RefPtr<API::Error> error = API::Error::create();
         m_callback(0, toAPI(error.get()), context());
         
         m_callback = 0;
@@ -178,7 +180,7 @@ public:
     {
         ASSERT(m_callback);
 
-        RefPtr<WebError> error = WebError::create();
+        RefPtr<API::Error> error = API::Error::create();
         m_callback(Vector<WebCore::IntRect>(), 0, toAPI(error.get()), context());
         
         m_callback = 0;
@@ -222,7 +224,7 @@ public:
     {
         ASSERT(m_callback);
 
-        RefPtr<WebError> error = WebError::create();
+        RefPtr<API::Error> error = API::Error::create();
         ShareableBitmap::Handle handle;
         m_callback(handle, toAPI(error.get()), context());
 

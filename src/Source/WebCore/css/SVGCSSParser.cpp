@@ -32,8 +32,6 @@
 #include "RenderTheme.h"
 #include "SVGPaint.h"
 
-using namespace std;
-
 namespace WebCore {
 
 bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
@@ -42,7 +40,7 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
     if (!value)
         return false;
 
-    int id = value->id;
+    CSSValueID id = value->id;
 
     bool valid_primitive = false;
     RefPtr<CSSValue> parsedValue;
@@ -131,10 +129,14 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
             valid_primitive = true;
         break;
 
-    case CSSPropertyImageRendering:  // auto | optimizeSpeed |
-    case CSSPropertyColorRendering:  // optimizeQuality | inherit
+    case CSSPropertyColorRendering: // auto | optimizeSpeed | optimizeQuality | inherit
         if (id == CSSValueAuto || id == CSSValueOptimizespeed ||
             id == CSSValueOptimizequality)
+            valid_primitive = true;
+        break;
+
+    case CSSPropertyBufferedRendering: // auto | dynamic | static
+        if (id == CSSValueAuto || id == CSSValueDynamic || id == CSSValueStatic)
             valid_primitive = true;
         break;
 
@@ -163,7 +165,8 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
             valid_primitive = true;
             break;
         }
-    /* fallthrough intentional */
+        FALLTHROUGH;
+
     case CSSPropertyGlyphOrientationHorizontal: // <angle> (restricted to _deg_ per SVG 1.1 spec) | inherit
         if (value->unit == CSSPrimitiveValue::CSS_DEG || value->unit == CSSPrimitiveValue::CSS_NUMBER) {
             parsedValue = CSSPrimitiveValue::create(value->fValue, CSSPrimitiveValue::CSS_DEG);
@@ -268,6 +271,7 @@ bool CSSParser::parseSVGValue(CSSPropertyID propId, bool important)
             }
             return false;
         }
+        break;
 
     case CSSPropertyMaskType: // luminance | alpha | inherit
         if (id == CSSValueLuminance || id == CSSValueAlpha)

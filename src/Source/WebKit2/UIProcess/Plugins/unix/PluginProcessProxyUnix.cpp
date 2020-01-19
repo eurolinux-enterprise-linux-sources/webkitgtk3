@@ -37,13 +37,16 @@
 #include <wtf/text/WTFString.h>
 #if PLATFORM(GTK) || PLATFORM(EFL)
 #include <glib.h>
+#include <wtf/gobject/GUniquePtr.h>
 #endif
+
+#include <sys/wait.h>
 
 using namespace WebCore;
 
 namespace WebKit {
 
-void PluginProcessProxy::platformGetLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions, const PluginModuleInfo& pluginInfo)
+void PluginProcessProxy::platformGetLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions, const PluginProcessAttributes& pluginProcessAttributes)
 {
 #if PLATFORM(EFL) && !defined(NDEBUG)
     const char* commandPrefix = getenv("PLUGIN_PROCESS_COMMAND_PREFIX");
@@ -51,13 +54,14 @@ void PluginProcessProxy::platformGetLaunchOptions(ProcessLauncher::LaunchOptions
         launchOptions.processCmdPrefix = String::fromUTF8(commandPrefix);
 #endif
 
-    launchOptions.extraInitializationData.add("plugin-path", pluginInfo.path);
+    launchOptions.extraInitializationData.add("plugin-path", pluginProcessAttributes.moduleInfo.path);
 }
 
 void PluginProcessProxy::platformInitializePluginProcess(PluginProcessCreationParameters&)
 {
 }
 
+#if PLUGIN_ARCHITECTURE(X11)
 bool PluginProcessProxy::scanPlugin(const String& pluginPath, RawPluginMetaData& result)
 {
 #if PLATFORM(GTK) || PLATFORM(EFL)
@@ -70,30 +74,29 @@ bool PluginProcessProxy::scanPlugin(const String& pluginPath, RawPluginMetaData&
     argv[3] = 0;
 
     int status;
-    char* stdOut = 0;
+    GUniqueOutPtr<char> stdOut;
 
     // If the disposition of SIGCLD signal is set to SIG_IGN (default)
     // then the signal will be ignored and g_spawn_sync() will not be
     // able to return the status.
     // As a consequence, we make sure that the disposition is set to
     // SIG_DFL before calling g_spawn_sync().
+#if defined(SIGCLD)
     struct sigaction action;
     sigaction(SIGCLD, 0, &action);
     if (action.sa_handler == SIG_IGN) {
         action.sa_handler = SIG_DFL;
         sigaction(SIGCLD, &action, 0);
     }
+#endif
 
-    if (!g_spawn_sync(0, argv, 0, G_SPAWN_STDERR_TO_DEV_NULL, 0, 0, &stdOut, 0, &status, 0))
+    if (!g_spawn_sync(0, argv, 0, G_SPAWN_STDERR_TO_DEV_NULL, 0, 0, &stdOut.outPtr(), 0, &status, 0))
         return false;
 
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS || !stdOut) {
-        free(stdOut);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS || !stdOut)
         return false;
-    }
 
-    String stdOutString(reinterpret_cast<const UChar*>(stdOut));
-    free(stdOut);
+    String stdOutString = String::fromUTF8(stdOut.get());
 
     Vector<String> lines;
     stdOutString.split(UChar('\n'), true, lines);
@@ -109,6 +112,7 @@ bool PluginProcessProxy::scanPlugin(const String& pluginPath, RawPluginMetaData&
     return false;
 #endif // PLATFORM(GTK) || PLATFORM(EFL)
 }
+#endif // PLUGIN_ARCHITECTURE(X11)
 
 } // namespace WebKit
 

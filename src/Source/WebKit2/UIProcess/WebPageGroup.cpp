@@ -26,10 +26,12 @@
 #include "config.h"
 #include "WebPageGroup.h"
 
+#include "APIArray.h"
 #include "WebPageGroupProxyMessages.h"
 #include "WebPageProxy.h"
 #include "WebPreferences.h"
 #include <wtf/HashMap.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/text/StringConcatenate.h>
 
 namespace WebKit {
@@ -44,17 +46,18 @@ typedef HashMap<uint64_t, WebPageGroup*> WebPageGroupMap;
 
 static WebPageGroupMap& webPageGroupMap()
 {
-    DEFINE_STATIC_LOCAL(WebPageGroupMap, map, ());
+    static NeverDestroyed<WebPageGroupMap> map;
     return map;
 }
 
 PassRefPtr<WebPageGroup> WebPageGroup::create(const String& identifier, bool visibleToInjectedBundle, bool visibleToHistoryClient)
 {
-    RefPtr<WebPageGroup> pageGroup = adoptRef(new WebPageGroup(identifier, visibleToInjectedBundle, visibleToHistoryClient));
+    return adoptRef(new WebPageGroup(identifier, visibleToInjectedBundle, visibleToHistoryClient));
+}
 
-    webPageGroupMap().set(pageGroup->pageGroupID(), pageGroup.get());
-
-    return pageGroup.release();
+PassRef<WebPageGroup> WebPageGroup::createNonNull(const String& identifier, bool visibleToInjectedBundle, bool visibleToHistoryClient)
+{
+    return adoptRef(*new WebPageGroup(identifier, visibleToInjectedBundle, visibleToHistoryClient));
 }
 
 WebPageGroup* WebPageGroup::get(uint64_t pageGroupID)
@@ -66,13 +69,15 @@ WebPageGroup::WebPageGroup(const String& identifier, bool visibleToInjectedBundl
 {
     m_data.pageGroupID = generatePageGroupID();
 
-    if (!identifier.isNull())
+    if (!identifier.isEmpty())
         m_data.identifer = identifier;
     else
         m_data.identifer = m_data.identifer = makeString("__uniquePageGroupID-", String::number(m_data.pageGroupID));
 
     m_data.visibleToInjectedBundle = visibleToInjectedBundle;
     m_data.visibleToHistoryClient = visibleToHistoryClient;
+    
+    webPageGroupMap().set(m_data.pageGroupID, this);
 }
 
 WebPageGroup::~WebPageGroup()
@@ -129,43 +134,23 @@ void WebPageGroup::preferencesDidChange()
     }
 }
 
-static Vector<String> toStringVector(ImmutableArray* array)
-{
-    Vector<String> patternVector;
-    if (!array)
-        return patternVector;
-
-    size_t size = array->size();
-    if (!size)
-        return patternVector;
-    
-    patternVector.reserveInitialCapacity(size);
-    for (size_t i = 0; i < size; ++i) {
-        WebString* webString = array->at<WebString>(i);
-        ASSERT(webString);
-        patternVector.uncheckedAppend(webString->string());
-    }
-    
-    return patternVector;
-}
-
-void WebPageGroup::addUserStyleSheet(const String& source, const String& baseURL, ImmutableArray* whitelist, ImmutableArray* blacklist, WebCore::UserContentInjectedFrames injectedFrames, WebCore::UserStyleLevel level)
+void WebPageGroup::addUserStyleSheet(const String& source, const String& baseURL, API::Array* whitelist, API::Array* blacklist, WebCore::UserContentInjectedFrames injectedFrames, WebCore::UserStyleLevel level)
 {
     if (source.isEmpty())
         return;
 
-    WebCore::UserStyleSheet userStyleSheet = WebCore::UserStyleSheet(source, (baseURL.isEmpty() ? WebCore::blankURL() : WebCore::KURL(WebCore::KURL(), baseURL)), toStringVector(whitelist), toStringVector(blacklist), injectedFrames, level);
+    WebCore::UserStyleSheet userStyleSheet = WebCore::UserStyleSheet(source, (baseURL.isEmpty() ? WebCore::blankURL() : WebCore::URL(WebCore::URL(), baseURL)), whitelist ? whitelist->toStringVector() : Vector<String>(), blacklist ? blacklist->toStringVector() : Vector<String>(), injectedFrames, level);
 
     m_data.userStyleSheets.append(userStyleSheet);
     sendToAllProcessesInGroup(Messages::WebPageGroupProxy::AddUserStyleSheet(userStyleSheet), m_data.pageGroupID);
 }
 
-void WebPageGroup::addUserScript(const String& source, const String& baseURL, ImmutableArray* whitelist, ImmutableArray* blacklist, WebCore::UserContentInjectedFrames injectedFrames, WebCore::UserScriptInjectionTime injectionTime)
+void WebPageGroup::addUserScript(const String& source, const String& baseURL, API::Array* whitelist, API::Array* blacklist, WebCore::UserContentInjectedFrames injectedFrames, WebCore::UserScriptInjectionTime injectionTime)
 {
     if (source.isEmpty())
         return;
 
-    WebCore::UserScript userScript = WebCore::UserScript(source, (baseURL.isEmpty() ? WebCore::blankURL() : WebCore::KURL(WebCore::KURL(), baseURL)), toStringVector(whitelist), toStringVector(blacklist), injectionTime, injectedFrames);
+    WebCore::UserScript userScript = WebCore::UserScript(source, (baseURL.isEmpty() ? WebCore::blankURL() : WebCore::URL(WebCore::URL(), baseURL)), whitelist ? whitelist->toStringVector() : Vector<String>(), blacklist ? blacklist->toStringVector() : Vector<String>(), injectionTime, injectedFrames);
 
     m_data.userScripts.append(userScript);
     sendToAllProcessesInGroup(Messages::WebPageGroupProxy::AddUserScript(userScript), m_data.pageGroupID);

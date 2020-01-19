@@ -33,6 +33,7 @@
 #include "DOMWindow.h"
 #include "Document.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "SchemeRegistry.h"
 #include "SecurityOrigin.h"
@@ -42,23 +43,18 @@
 
 namespace WebCore {
 
-MixedContentChecker::MixedContentChecker(Frame* frame)
+MixedContentChecker::MixedContentChecker(Frame& frame)
     : m_frame(frame)
 {
 }
 
-FrameLoaderClient* MixedContentChecker::client() const
+FrameLoaderClient& MixedContentChecker::client() const
 {
-    return m_frame->loader()->client();
-}
-
-static inline CString asUTF8(const KURL& url)
-{
-    return url.string().utf8();
+    return m_frame.loader().client();
 }
 
 // static
-bool MixedContentChecker::isMixedContent(SecurityOrigin* securityOrigin, const KURL& url)
+bool MixedContentChecker::isMixedContent(SecurityOrigin* securityOrigin, const URL& url)
 {
     if (securityOrigin->protocol() != "https")
         return false; // We only care about HTTPS security origins.
@@ -67,42 +63,38 @@ bool MixedContentChecker::isMixedContent(SecurityOrigin* securityOrigin, const K
     return !SecurityOrigin::isSecure(url);
 }
 
-bool MixedContentChecker::canDisplayInsecureContent(SecurityOrigin* securityOrigin, const KURL& url) const
+bool MixedContentChecker::canDisplayInsecureContent(SecurityOrigin* securityOrigin, const URL& url) const
 {
     if (!isMixedContent(securityOrigin, url))
         return true;
 
-    Settings* settings = m_frame->settings();
-    bool allowed = client()->allowDisplayingInsecureContent(settings && settings->allowDisplayOfInsecureContent(), securityOrigin, url);
+    bool allowed = client().allowDisplayingInsecureContent(m_frame.settings().allowDisplayOfInsecureContent(), securityOrigin, url);
     logWarning(allowed, "displayed", url);
 
     if (allowed)
-        client()->didDisplayInsecureContent();
+        client().didDisplayInsecureContent();
 
     return allowed;
 }
 
-bool MixedContentChecker::canRunInsecureContent(SecurityOrigin* securityOrigin, const KURL& url) const
+bool MixedContentChecker::canRunInsecureContent(SecurityOrigin* securityOrigin, const URL& url) const
 {
     if (!isMixedContent(securityOrigin, url))
         return true;
 
-    Settings* settings = m_frame->settings();
-    bool allowed = client()->allowRunningInsecureContent(settings && settings->allowRunningOfInsecureContent(), securityOrigin, url);
+    bool allowed = client().allowRunningInsecureContent(m_frame.settings().allowRunningOfInsecureContent(), securityOrigin, url);
     logWarning(allowed, "ran", url);
 
     if (allowed)
-        client()->didRunInsecureContent(securityOrigin, url);
+        client().didRunInsecureContent(securityOrigin, url);
 
     return allowed;
 }
 
-void MixedContentChecker::logWarning(bool allowed, const String& action, const KURL& target) const
+void MixedContentChecker::logWarning(bool allowed, const String& action, const URL& target) const
 {
-    // FIXME: Why does this message not have a source URL or a line number? webkit.org/b/97979
-    String message = String::format("%sThe page at %s %s insecure content from %s.\n",
-        (allowed ? "" : "[blocked] "), asUTF8(m_frame->document()->url()).data(), action.utf8().data(), asUTF8(target).data());
-    m_frame->document()->addConsoleMessage(HTMLMessageSource, WarningMessageLevel, message);
+    String message = makeString((allowed ? "" : "[blocked] "), "The page at ", m_frame.document()->url().stringCenterEllipsizedToLength(), " ", action, " insecure content from ", target.stringCenterEllipsizedToLength(), ".\n");
+    m_frame.document()->addConsoleMessage(SecurityMessageSource, WarningMessageLevel, message);
 }
 
 } // namespace WebCore

@@ -24,7 +24,6 @@
 #include "HTMLCollection.h"
 #include "HTMLFormControlsCollection.h"
 #include "HTMLOptionsCollection.h"
-#include "HTMLPropertiesCollection.h"
 #include "JSDOMBinding.h"
 #include "JSHTMLAllCollection.h"
 #include "JSHTMLFormControlsCollection.h"
@@ -33,9 +32,7 @@
 #include "JSNodeList.h"
 #include "JSRadioNodeList.h"
 #include "Node.h"
-#include "PropertyNodeList.h"
 #include "RadioNodeList.h"
-#include "StaticNodeList.h"
 #include <wtf/Vector.h>
 #include <wtf/text/AtomicString.h>
 
@@ -48,16 +45,11 @@ bool JSHTMLCollection::canGetItemsForName(ExecState*, HTMLCollection* collection
     return collection->hasNamedItem(propertyNameToAtomicString(propertyName));
 }
 
-JSValue JSHTMLCollection::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+EncodedJSValue JSHTMLCollection::nameGetter(ExecState* exec, EncodedJSValue slotBase, EncodedJSValue, PropertyName propertyName)
 {
-    JSHTMLCollection* collection = jsCast<JSHTMLCollection*>(asObject(slotBase));
+    JSHTMLCollection* collection = jsCast<JSHTMLCollection*>(JSValue::decode(slotBase));
     const AtomicString& name = propertyNameToAtomicString(propertyName);
-    HTMLCollection* impl = collection->impl();
-#if ENABLE(MICRODATA)
-    if (impl->type() == ItemProperties)
-        return toJS(exec, collection->globalObject(), static_cast<HTMLPropertiesCollection*>(impl)->propertyNodeList(name));
-#endif
-    return toJS(exec, collection->globalObject(), impl->namedItem(name));
+    return JSValue::encode(toJS(exec, collection->globalObject(), collection->impl().namedItem(name)));
 }
 
 JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, HTMLCollection* collection)
@@ -65,7 +57,7 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, HTMLCollection* c
     if (!collection)
         return jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), collection);
+    JSObject* wrapper = getCachedWrapper(currentWorld(exec), collection);
 
     if (wrapper)
         return wrapper;

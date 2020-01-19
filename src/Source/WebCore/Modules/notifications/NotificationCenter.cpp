@@ -38,7 +38,7 @@
 #include "Document.h"
 #include "NotificationClient.h"
 #include "SecurityOrigin.h"
-#include "WorkerContext.h"
+#include "WorkerGlobalScope.h"
 
 namespace WebCore {
 
@@ -50,7 +50,7 @@ PassRefPtr<NotificationCenter> NotificationCenter::create(ScriptExecutionContext
 }
 
 NotificationCenter::NotificationCenter(ScriptExecutionContext* context, NotificationClient* client)
-    : ActiveDOMObject(context, this)
+    : ActiveDOMObject(context)
     , m_client(client)
 {
 }
@@ -129,9 +129,10 @@ void NotificationCenter::NotificationRequestCallback::startTimer()
     m_timer.startOneShot(0);
 }
 
-void NotificationCenter::NotificationRequestCallback::timerFired(Timer<NotificationCenter::NotificationRequestCallback>*)
+void NotificationCenter::NotificationRequestCallback::timerFired(Timer<NotificationCenter::NotificationRequestCallback>&)
 {
-    m_callback->handleEvent();
+    if (m_callback)
+        m_callback->handleEvent();
     m_notificationCenter->requestTimedOut(this);
 }
 

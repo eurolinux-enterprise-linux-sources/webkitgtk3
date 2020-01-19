@@ -44,7 +44,8 @@ enum TextIteratorBehavior {
     TextIteratorIgnoresStyleVisibility = 1 << 3,
     TextIteratorEmitsObjectReplacementCharacters = 1 << 4,
     TextIteratorEmitsOriginalText = 1 << 5,
-    TextIteratorStopsOnFormControls = 1 << 6
+    TextIteratorStopsOnFormControls = 1 << 6,
+    TextIteratorEmitsImageAltText = 1 << 7,
 };
     
 // FIXME: Can't really answer this question correctly without knowing the white-space mode.
@@ -62,6 +63,7 @@ inline bool isCollapsibleWhitespace(UChar c)
 
 String plainText(const Range*, TextIteratorBehavior defaultBehavior = TextIteratorDefaultBehavior, bool isDisplayString = false);
 PassRefPtr<Range> findPlainText(const Range*, const String&, FindOptions);
+bool isRendererReplacedElement(RenderObject*);
 
 class BitStack {
 public:
@@ -85,15 +87,14 @@ private:
 
 class TextIterator {
 public:
-    TextIterator();
-    ~TextIterator();
     explicit TextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    ~TextIterator();
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
     
     int length() const { return m_textLength; }
-    const UChar* characters() const { return m_textCharacters ? m_textCharacters : m_text.characters() + startOffset(); }
+    const UChar* characters() const { return m_textCharacters ? m_textCharacters : m_text.deprecatedCharacters() + startOffset(); }
     UChar characterAt(unsigned index) const;
     void appendTextToStringBuilder(StringBuilder&) const;
     
@@ -187,12 +188,14 @@ private:
     bool m_handledFirstLetter;
     // Used when the visibility of the style should not affect text gathering.
     bool m_ignoresStyleVisibility;
-    // Used when emitting the special 0xFFFC character is required.
+    // Used when emitting the special 0xFFFC character is required. Children for replaced objects will be ignored.
     bool m_emitsObjectReplacementCharacters;
     // Used when the iteration should stop if form controls are reached.
     bool m_stopsOnFormControls;
     // Used when m_stopsOnFormControls is set to determine if the iterator should keep advancing.
     bool m_shouldStop;
+
+    bool m_emitsImageAltText;
 };
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
@@ -200,12 +203,12 @@ private:
 // chunks so as to optimize for performance of the iteration.
 class SimplifiedBackwardsTextIterator {
 public:
-    SimplifiedBackwardsTextIterator();
     explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
     
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
-    
+
+    Node* node() const { return m_node; }
     int length() const { return m_textLength; }
     const UChar* characters() const { return m_textCharacters; }
     
@@ -260,13 +263,15 @@ private:
 
     // Used when m_stopsOnFormControls is set to determine if the iterator should keep advancing.
     bool m_shouldStop;
+
+    // Used in pasting inside password field.
+    bool m_emitsOriginalText;
 };
 
 // Builds on the text iterator, adding a character position so we can walk one
 // character at a time, or faster, as needed. Useful for searching.
 class CharacterIterator {
 public:
-    CharacterIterator();
     explicit CharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
     
     void advance(int numCharacters);
@@ -291,7 +296,6 @@ private:
     
 class BackwardsCharacterIterator {
 public:
-    BackwardsCharacterIterator();
     explicit BackwardsCharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
 
     void advance(int);
@@ -312,7 +316,6 @@ private:
 // meaning they never end split up a word.  This is useful for spellcheck or (perhaps one day) searching.
 class WordAwareIterator {
 public:
-    WordAwareIterator();
     explicit WordAwareIterator(const Range*);
     ~WordAwareIterator();
 

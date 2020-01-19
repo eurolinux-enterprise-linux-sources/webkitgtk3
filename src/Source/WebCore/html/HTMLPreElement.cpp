@@ -27,17 +27,18 @@
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
+#include "StyleProperties.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document* document)
+inline HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
 }
 
-PassRefPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLPreElement(tagName, document));
 }
@@ -49,12 +50,12 @@ bool HTMLPreElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLPreElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLPreElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == wrapAttr)
-        style->setProperty(CSSPropertyWhiteSpace, CSSValuePreWrap);
+    if (name == wrapAttr)
+        style.setProperty(CSSPropertyWhiteSpace, CSSValuePreWrap);
     else
-        HTMLElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 }

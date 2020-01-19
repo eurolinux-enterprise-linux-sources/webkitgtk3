@@ -22,8 +22,6 @@
 #ifndef EventNames_h
 #define EventNames_h
 
-#include "EventInterfaces.h"
-#include "EventTargetInterfaces.h"
 #include "ThreadGlobalData.h"
 #include <wtf/text/AtomicString.h>
 
@@ -84,9 +82,13 @@ namespace WebCore {
     macro(keyup) \
     macro(levelchange) \
     macro(load) \
+    macro(loading) \
+    macro(loadingdone) \
     macro(loadstart) \
     macro(message) \
     macro(mousedown) \
+    macro(mouseenter) \
+    macro(mouseleave) \
     macro(mousemove) \
     macro(mouseout) \
     macro(mouseover) \
@@ -117,7 +119,8 @@ namespace WebCore {
     macro(updateready) \
     macro(upgradeneeded) \
     macro(versionchange) \
-    macro(webkitvisibilitychange) \
+    macro(visibilitychange) \
+    macro(wheel) \
     macro(write) \
     macro(writeend) \
     macro(writestart) \
@@ -162,6 +165,14 @@ namespace WebCore {
     macro(webkitbeginfullscreen) \
     macro(webkitendfullscreen) \
     \
+    macro(addsourcebuffer) \
+    macro(removesourcebuffer) \
+    macro(sourceopen) \
+    macro(sourceended) \
+    macro(sourceclose) \
+    macro(update) \
+    macro(updateend) \
+    macro(updatestart) \
     macro(webkitaddsourcebuffer) \
     macro(webkitremovesourcebuffer) \
     macro(webkitsourceopen) \
@@ -225,15 +236,16 @@ namespace WebCore {
     macro(connecting) \
     macro(addstream) \
     macro(removestream) \
-    macro(statechange) \
+    macro(signalingstatechange) \
     macro(removetrack) \
+    macro(overconstrained) \
     macro(mute) \
     macro(unmute) \
-    macro(icechange) \
+    macro(started) \
+    macro(iceconnectionstatechange) \
     macro(icecandidate) \
     macro(negotiationneeded) \
     macro(datachannel) \
-    macro(gatheringchange) \
     macro(tonechange) \
     \
     macro(show) \
@@ -243,73 +255,70 @@ namespace WebCore {
     \
     macro(webkitregionlayoutupdate) \
     \
+    macro(webkitregionoversetchange) \
+    \
     macro(webkitnetworkinfochange) \
     \
     macro(webkitresourcetimingbufferfull) \
     \
     macro(webkitdeviceproximity) \
     \
-    macro(autocomplete) \
-    macro(autocompleteerror) \
+    macro(securitypolicyviolation) \
     \
-    macro(webkitprerenderstart) \
-    macro(webkitprerenderstop) \
-    macro(webkitprerenderload) \
-    macro(webkitprerenderdomcontentloaded) \
+    /* ENABLE(IOS_AIRPLAY) */ \
+    macro(webkitcurrentplaybacktargetiswirelesschanged) \
+    macro(webkitplaybacktargetavailabilitychanged) \
+    /* End of ENABLE(IOS_AIRPLAY) */ \
     \
+    /* ENABLE(IOS_GESTURE_EVENTS) */ \
+    macro(gesturestart) \
+    macro(gesturechange) \
+    macro(gestureend) \
+    /* End of ENABLE(IOS_GESTURE_EVENTS) */ \
 
 // end of DOM_EVENT_NAMES_FOR_EACH
 
-    class EventNames {
-        WTF_MAKE_NONCOPYABLE(EventNames); WTF_MAKE_FAST_ALLOCATED;
-        int dummy; // Needed to make initialization macro work.
-        // Private to prevent accidental call to EventNames() instead of eventNames()
-        EventNames();
-        friend class ThreadGlobalData;
+class EventNames {
+    WTF_MAKE_NONCOPYABLE(EventNames); WTF_MAKE_FAST_ALLOCATED;
+    int dummy; // Needed to make initialization macro work.
+    // Private to prevent accidental call to EventNames() instead of eventNames()
+    EventNames();
+    friend class ThreadGlobalData;
 
-    public:
-        #define DOM_EVENT_NAMES_DECLARE(name) AtomicString name##Event;
-        DOM_EVENT_NAMES_FOR_EACH(DOM_EVENT_NAMES_DECLARE)
-        #undef DOM_EVENT_NAMES_DECLARE
+public:
+    #define DOM_EVENT_NAMES_DECLARE(name) AtomicString name##Event;
+    DOM_EVENT_NAMES_FOR_EACH(DOM_EVENT_NAMES_DECLARE)
+    #undef DOM_EVENT_NAMES_DECLARE
 
-        #define DOM_EVENT_INTERFACE_DECLARE(name) AtomicString interfaceFor##name;
-        DOM_EVENT_INTERFACES_FOR_EACH(DOM_EVENT_INTERFACE_DECLARE)
-        DOM_EVENT_TARGET_INTERFACES_FOR_EACH(DOM_EVENT_INTERFACE_DECLARE)
-        #undef DOM_EVENT_INTERFACE_DECLARE
-
-        inline bool isTouchEventType(const AtomicString& eventType) const
-        {
-            return eventType == touchstartEvent
-                || eventType == touchmoveEvent
-                || eventType == touchendEvent
-                || eventType == touchcancelEvent;
-        }
-
-        inline bool isGestureEventType(const AtomicString& eventType) const
-        {
-            return eventType == gesturetapEvent
-                || eventType == gesturetapdownEvent
-                || eventType == gesturescrollstartEvent
-                || eventType == gesturescrollendEvent
-                || eventType == gesturescrollupdateEvent;
-        }
-
-        Vector<AtomicString> touchEventNames() const
-        {
-            Vector<AtomicString> names;
-            names.reserveCapacity(4);
-            names.append(touchstartEvent);
-            names.append(touchmoveEvent);
-            names.append(touchendEvent);
-            names.append(touchcancelEvent);
-            return names;
-        }
-    };
-
-    inline EventNames& eventNames()
+    inline bool isGestureEventType(const AtomicString& eventType) const
     {
-        return threadGlobalData().eventNames();
+        return eventType == gesturestartEvent || eventType == gesturechangeEvent || eventType == gestureendEvent;
     }
+
+    inline bool isTouchEventType(const AtomicString& eventType) const
+    {
+        return eventType == touchstartEvent
+            || eventType == touchmoveEvent
+            || eventType == touchendEvent
+            || eventType == touchcancelEvent;
+    }
+
+    Vector<AtomicString> touchEventNames() const
+    {
+        Vector<AtomicString> names;
+        names.reserveCapacity(4);
+        names.append(touchstartEvent);
+        names.append(touchmoveEvent);
+        names.append(touchendEvent);
+        names.append(touchcancelEvent);
+        return names;
+    }
+};
+
+inline EventNames& eventNames()
+{
+    return threadGlobalData().eventNames();
+}
 
 }
 

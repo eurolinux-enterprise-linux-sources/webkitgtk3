@@ -36,13 +36,9 @@
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 OBJC_CLASS NSMenuItem;
-#elif PLATFORM(WIN)
-typedef struct tagMENUITEMINFOW MENUITEMINFO;
 #elif PLATFORM(GTK)
 typedef struct _GtkMenuItem GtkMenuItem;
 typedef struct _GtkAction GtkAction;
-#elif PLATFORM(WX)
-class wxMenuItem;
 #endif
 #endif // ENABLE(CONTEXT_MENUS)
 
@@ -60,7 +56,7 @@ namespace WebCore {
         ContextMenuItemTagOpenImageInNewWindow,
         ContextMenuItemTagDownloadImageToDisk,
         ContextMenuItemTagCopyImageToClipboard,
-#if PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
+#if PLATFORM(GTK) || PLATFORM(EFL)
         ContextMenuItemTagCopyImageUrlToClipboard,
 #endif
         ContextMenuItemTagOpenFrameInNewWindow,
@@ -74,7 +70,7 @@ namespace WebCore {
 #if PLATFORM(GTK)
         ContextMenuItemTagDelete,
 #endif
-#if PLATFORM(GTK) || PLATFORM(QT) || PLATFORM (EFL)
+#if PLATFORM(GTK) || PLATFORM (EFL)
         ContextMenuItemTagSelectAll,
 #endif
 #if PLATFORM(GTK)
@@ -157,6 +153,7 @@ namespace WebCore {
         ContextMenuItemTagChangeBack,
 #endif
         ContextMenuItemTagOpenMediaInNewWindow,
+        ContextMenuItemTagDownloadMediaToDisk,
         ContextMenuItemTagCopyMediaLinkToClipboard,
         ContextMenuItemTagToggleMediaControls,
         ContextMenuItemTagToggleMediaLoop,
@@ -165,6 +162,7 @@ namespace WebCore {
         ContextMenuItemTagMediaMute,
         ContextMenuItemTagDictationAlternative,
         ContextMenuItemTagOpenLinkInThisWindow,
+        ContextMenuItemTagToggleVideoFullscreen,
         ContextMenuItemBaseCustomTag = 5000,
         ContextMenuItemCustomTagNoAction = 5998,
         ContextMenuItemLastCustomTag = 5999,
@@ -181,54 +179,8 @@ namespace WebCore {
 #if ENABLE(CONTEXT_MENUS)
 #if PLATFORM(MAC)
     typedef NSMenuItem* PlatformMenuItemDescription;
-#elif PLATFORM(QT)
-    struct PlatformMenuItemDescription {
-        PlatformMenuItemDescription()
-            : type(ActionType),
-              action(ContextMenuItemTagNoAction),
-              checked(false),
-              enabled(true)
-        {}
-
-        ContextMenuItemType type;
-        ContextMenuAction action;
-        String title;
-        QList<ContextMenuItem> subMenuItems;
-        bool checked;
-        bool enabled;
-    };
 #elif PLATFORM(GTK)
     typedef GtkMenuItem* PlatformMenuItemDescription;
-#elif PLATFORM(WX)
-    struct PlatformMenuItemDescription {
-        PlatformMenuItemDescription()
-            : type(ActionType),
-              action(ContextMenuItemTagNoAction),
-              checked(false),
-              enabled(true)
-        {}
-
-        ContextMenuItemType type;
-        ContextMenuAction action;
-        String title;
-        wxMenu * subMenu;
-        bool checked;
-        bool enabled;
-    };
-#elif PLATFORM(CHROMIUM) || PLATFORM(EFL)
-    struct PlatformMenuItemDescription {
-        PlatformMenuItemDescription()
-            : type(ActionType)
-            , action(ContextMenuItemTagNoAction)
-            , checked(false)
-            , enabled(true) { }
-        ContextMenuItemType type;
-        ContextMenuAction action;
-        String title;
-        Vector<ContextMenuItem> subMenuItems;
-        bool checked;
-        bool enabled;
-    };
 #else
     typedef void* PlatformMenuItemDescription;
 #endif
@@ -260,17 +212,12 @@ namespace WebCore {
 #endif
 
 #if USE(CROSS_PLATFORM_CONTEXT_MENUS)
-#if PLATFORM(WIN)
-        typedef MENUITEMINFO NativeItem;
-#elif PLATFORM(EFL)
-        typedef void* NativeItem;
-#endif
         ContextMenuItem(ContextMenuAction, const String&, bool enabled, bool checked, const Vector<ContextMenuItem>& subMenuItems);
-        explicit ContextMenuItem(const NativeItem&);
+        explicit ContextMenuItem(const PlatformContextMenuItem&);
 
         // On Windows, the title (dwTypeData of the MENUITEMINFO) is not set in this function. Callers can set the title themselves,
         // and handle the lifetime of the title, if they need it.
-        NativeItem nativeMenuItem() const;
+        PlatformContextMenuItem platformContextMenuItem() const;
 
         void setTitle(const String& title) { m_title = title; }
         const String& title() const { return m_title; }

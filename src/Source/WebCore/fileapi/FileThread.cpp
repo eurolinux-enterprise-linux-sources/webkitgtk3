@@ -34,8 +34,8 @@
 
 #include "FileThread.h"
 
-#include "AutodrainedPool.h"
 #include "Logging.h"
+#include <wtf/AutodrainedPool.h>
 
 namespace WebCore {
 
@@ -64,15 +64,15 @@ void FileThread::stop()
     m_queue.kill();
 }
 
-void FileThread::postTask(PassOwnPtr<Task> task)
+void FileThread::postTask(std::unique_ptr<Task> task)
 {
-    m_queue.append(task);
+    m_queue.append(std::move(task));
 }
 
 class SameInstancePredicate {
 public:
     SameInstancePredicate(const void* instance) : m_instance(instance) { }
-    bool operator()(FileThread::Task* task) const { return task->instance() == m_instance; }
+    bool operator()(FileThread::Task& task) const { return task.instance() == m_instance; }
 private:
     const void* m_instance;
 };
@@ -98,10 +98,10 @@ void FileThread::runLoop()
         LOG(FileAPI, "Started FileThread %p", this);
     }
 
-    AutodrainedPool pool;
-    while (OwnPtr<Task> task = m_queue.waitForMessage()) {
+    while (auto task = m_queue.waitForMessage()) {
+        AutodrainedPool pool;
+
         task->performTask();
-        pool.cycle();
     }
 
     LOG(FileAPI, "About to detach thread %i and clear the ref to FileThread %p, which currently has %i ref(s)", m_threadID, this, refCount());

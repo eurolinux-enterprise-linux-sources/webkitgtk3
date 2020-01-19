@@ -38,33 +38,34 @@ public:
 
     static JSNameScope* create(ExecState* exec, const Identifier& identifier, JSValue value, unsigned attributes)
     {
-        JSNameScope* scopeObject = new (NotNull, allocateCell<JSNameScope>(*exec->heap())) JSNameScope(exec, exec->scope());
-        scopeObject->finishCreation(exec, identifier, value, attributes);
+        VM& vm = exec->vm();
+        JSNameScope* scopeObject = new (NotNull, allocateCell<JSNameScope>(vm.heap)) JSNameScope(exec, exec->scope());
+        scopeObject->finishCreation(vm, identifier, value, attributes);
         return scopeObject;
     }
 
     static JSNameScope* create(ExecState* exec, const Identifier& identifier, JSValue value, unsigned attributes, JSScope* next)
     {
-        JSNameScope* scopeObject = new (NotNull, allocateCell<JSNameScope>(*exec->heap())) JSNameScope(exec, next);
-        scopeObject->finishCreation(exec, identifier, value, attributes);
+        VM& vm = exec->vm();
+        JSNameScope* scopeObject = new (NotNull, allocateCell<JSNameScope>(vm.heap)) JSNameScope(exec, next);
+        scopeObject->finishCreation(vm, identifier, value, attributes);
         return scopeObject;
     }
 
     static void visitChildren(JSCell*, SlotVisitor&);
-    bool isDynamicScope(bool& requiresDynamicChecks) const;
-    static JSObject* toThisObject(JSCell*, ExecState*);
-    static bool getOwnPropertySlot(JSCell*, ExecState*, PropertyName, PropertySlot&);
+    static JSValue toThis(JSCell*, ExecState*, ECMAMode);
+    static bool getOwnPropertySlot(JSObject*, ExecState*, PropertyName, PropertySlot&);
     static void put(JSCell*, ExecState*, PropertyName, JSValue, PutPropertySlot&);
 
-    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue proto) { return Structure::create(globalData, globalObject, proto, TypeInfo(NameScopeObjectType, StructureFlags), &s_info); }
+    static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue proto) { return Structure::create(vm, globalObject, proto, TypeInfo(NameScopeObjectType, StructureFlags), info()); }
 
-    static const ClassInfo s_info;
+    DECLARE_INFO;
 
 protected:
-    void finishCreation(ExecState* exec, const Identifier& identifier, JSValue value, unsigned attributes)
+    void finishCreation(VM& vm, const Identifier& identifier, JSValue value, unsigned attributes)
     {
-        Base::finishCreation(exec->globalData());
-        m_registerStore.set(exec->globalData(), this, value);
+        Base::finishCreation(vm);
+        m_registerStore.set(vm, this, value);
         symbolTable()->add(identifier.impl(), SymbolTableEntry(-1, attributes));
     }
 
@@ -73,7 +74,7 @@ protected:
 private:
     JSNameScope(ExecState* exec, JSScope* next)
         : Base(
-            exec->globalData(),
+            exec->vm(),
             exec->lexicalGlobalObject()->nameScopeStructure(),
             reinterpret_cast<Register*>(&m_registerStore + 1),
             next
@@ -83,11 +84,6 @@ private:
 
     WriteBarrier<Unknown> m_registerStore;
 };
-
-inline bool JSNameScope::isDynamicScope(bool&) const
-{
-    return false;
-}
 
 }
 

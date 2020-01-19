@@ -28,10 +28,64 @@
 
 namespace JSC {
 
-static void addSimpleSwitchTargets(SimpleJumpTable& jumpTable, unsigned bytecodeOffset, Vector<unsigned, 32>& out)
+template <size_t vectorSize>
+static void getJumpTargetsForBytecodeOffset(CodeBlock* codeBlock, Interpreter* interpreter, Instruction* instructionsBegin, unsigned bytecodeOffset, Vector<unsigned, vectorSize>& out)
 {
-    for (unsigned i = jumpTable.branchOffsets.size(); i--;)
-        out.append(bytecodeOffset + jumpTable.branchOffsets[i]);
+    OpcodeID opcodeID = interpreter->getOpcodeID(instructionsBegin[bytecodeOffset].u.opcode);
+    Instruction* current = instructionsBegin + bytecodeOffset;
+    switch (opcodeID) {
+    case op_jmp:
+        out.append(bytecodeOffset + current[1].u.operand);
+        break;
+    case op_jtrue:
+    case op_jfalse:
+    case op_jeq_null:
+    case op_jneq_null:
+        out.append(bytecodeOffset + current[2].u.operand);
+        break;
+    case op_jneq_ptr:
+    case op_jless:
+    case op_jlesseq:
+    case op_jgreater:
+    case op_jgreatereq:
+    case op_jnless:
+    case op_jnlesseq:
+    case op_jngreater:
+    case op_jngreatereq:
+        out.append(bytecodeOffset + current[3].u.operand);
+        break;
+    case op_switch_imm:
+    case op_switch_char: {
+        SimpleJumpTable& table = codeBlock->switchJumpTable(current[1].u.operand);
+        for (unsigned i = table.branchOffsets.size(); i--;)
+            out.append(bytecodeOffset + table.branchOffsets[i]);
+        out.append(bytecodeOffset + current[2].u.operand);
+        break;
+    }
+    case op_switch_string: {
+        StringJumpTable& table = codeBlock->stringSwitchJumpTable(current[1].u.operand);
+        StringJumpTable::StringOffsetTable::iterator iter = table.offsetTable.begin();
+        StringJumpTable::StringOffsetTable::iterator end = table.offsetTable.end();
+        for (; iter != end; ++iter)
+            out.append(bytecodeOffset + iter->value.branchOffset);
+        out.append(bytecodeOffset + current[2].u.operand);
+        break;
+    }
+    case op_get_pnames:
+        out.append(bytecodeOffset + current[5].u.operand);
+        break;
+    case op_next_pname:
+        out.append(bytecodeOffset + current[6].u.operand);
+        break;
+    case op_check_has_instance:
+        out.append(bytecodeOffset + current[4].u.operand);
+        break;
+    case op_loop_hint:
+        out.append(bytecodeOffset);
+        break;
+    default:
+        break;
+    }
 }
 
 void computePreciseJumpTargets(CodeBlock* codeBlock, Vector<unsigned, 32>& out)
@@ -46,70 +100,12 @@ void computePreciseJumpTargets(CodeBlock* codeBlock, Vector<unsigned, 32>& out)
     for (unsigned i = codeBlock->numberOfExceptionHandlers(); i--;)
         out.append(codeBlock->exceptionHandler(i).target);
     
-    Interpreter* interpreter = codeBlock->globalData()->interpreter;
+    Interpreter* interpreter = codeBlock->vm()->interpreter;
     Instruction* instructionsBegin = codeBlock->instructions().begin();
     unsigned instructionCount = codeBlock->instructions().size();
     for (unsigned bytecodeOffset = 0; bytecodeOffset < instructionCount;) {
         OpcodeID opcodeID = interpreter->getOpcodeID(instructionsBegin[bytecodeOffset].u.opcode);
-        Instruction* current = instructionsBegin + bytecodeOffset;
-        switch (opcodeID) {
-        case op_jmp:
-        case op_loop:
-            out.append(bytecodeOffset + current[1].u.operand);
-            break;
-        case op_jtrue:
-        case op_jfalse:
-        case op_jeq_null:
-        case op_jneq_null:
-        case op_jmp_scopes:
-        case op_loop_if_true:
-        case op_loop_if_false:
-            out.append(bytecodeOffset + current[2].u.operand);
-            break;
-        case op_jneq_ptr:
-        case op_jless:
-        case op_jlesseq:
-        case op_jgreater:
-        case op_jgreatereq:
-        case op_jnless:
-        case op_jnlesseq:
-        case op_jngreater:
-        case op_jngreatereq:
-        case op_loop_if_less:
-        case op_loop_if_lesseq:
-        case op_loop_if_greater:
-        case op_loop_if_greatereq:
-            out.append(bytecodeOffset + current[3].u.operand);
-            break;
-        case op_switch_imm:
-            addSimpleSwitchTargets(codeBlock->immediateSwitchJumpTable(current[1].u.operand), bytecodeOffset, out);
-            out.append(bytecodeOffset + current[2].u.operand);
-            break;
-        case op_switch_char:
-            addSimpleSwitchTargets(codeBlock->characterSwitchJumpTable(current[1].u.operand), bytecodeOffset, out);
-            out.append(bytecodeOffset + current[2].u.operand);
-            break;
-        case op_switch_string: {
-            StringJumpTable& table = codeBlock->stringSwitchJumpTable(current[1].u.operand);
-            StringJumpTable::StringOffsetTable::iterator iter = table.offsetTable.begin();
-            StringJumpTable::StringOffsetTable::iterator end = table.offsetTable.end();
-            for (; iter != end; ++iter)
-                out.append(bytecodeOffset + iter->value.branchOffset);
-            out.append(bytecodeOffset + current[2].u.operand);
-            break;
-        }
-        case op_get_pnames:
-            out.append(bytecodeOffset + current[5].u.operand);
-            break;
-        case op_next_pname:
-            out.append(bytecodeOffset + current[6].u.operand);
-            break;
-        case op_check_has_instance:
-            out.append(bytecodeOffset + current[4].u.operand);
-            break;
-        default:
-            break;
-        }
+        getJumpTargetsForBytecodeOffset(codeBlock, interpreter, instructionsBegin, bytecodeOffset, out);
         bytecodeOffset += opcodeLengths[opcodeID];
     }
     
@@ -127,6 +123,13 @@ void computePreciseJumpTargets(CodeBlock* codeBlock, Vector<unsigned, 32>& out)
         lastValue = value;
     }
     out.resize(toIndex);
+}
+
+void findJumpTargetsForBytecodeOffset(CodeBlock* codeBlock, unsigned bytecodeOffset, Vector<unsigned, 1>& out)
+{
+    Interpreter* interpreter = codeBlock->vm()->interpreter;
+    Instruction* instructionsBegin = codeBlock->instructions().begin();
+    getJumpTargetsForBytecodeOffset(codeBlock, interpreter, instructionsBegin, bytecodeOffset, out);
 }
 
 } // namespace JSC

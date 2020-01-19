@@ -26,12 +26,10 @@
 
 #include "config.h"
 
-#if ENABLE(JAVASCRIPT_DEBUGGER)
-
 #include "ScriptProfile.h"
 
-#include "InspectorValues.h"
 #include "JSDOMBinding.h"
+#include <inspector/InspectorValues.h>
 #include <profiler/Profile.h>
 #include <profiler/ProfileNode.h>
 
@@ -68,52 +66,42 @@ ScriptProfileNode* ScriptProfile::head() const
     return m_profile->head();
 }
 
-PassRefPtr<ScriptProfileNode> ScriptProfile::bottomUpHead() const
-{
-    // FIXME: implement building bottom-up profiles in C++ code,
-    // but consider https://bugs.webkit.org/show_bug.cgi?id=24604
-    return 0;
-}
-
 double ScriptProfile::idleTime() const
 {
     return 0.0;
 }
 
 #if ENABLE(INSPECTOR)
-static PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectFor(const JSC::ProfileNode* node)
+static PassRefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectFor(const JSC::ProfileNode* node)
 {
-    typedef Vector<RefPtr<JSC::ProfileNode> > ProfileNodesList;
+    typedef Vector<RefPtr<JSC::ProfileNode>> ProfileNodesList;
     const ProfileNodesList& nodeChildren = node->children();
     ProfileNodesList::const_iterator end = nodeChildren.end();
-    RefPtr<TypeBuilder::Array<TypeBuilder::Profiler::CPUProfileNode> > children = TypeBuilder::Array<TypeBuilder::Profiler::CPUProfileNode>::create();
+    RefPtr<Inspector::TypeBuilder::Array<Inspector::TypeBuilder::Profiler::CPUProfileNode>> children = Inspector::TypeBuilder::Array<Inspector::TypeBuilder::Profiler::CPUProfileNode>::create();
     for (ProfileNodesList::const_iterator iter = nodeChildren.begin(); iter != end; ++iter)
         children->addItem(buildInspectorObjectFor(iter->get()));
 
-    RefPtr<TypeBuilder::Profiler::CPUProfileNode> result = TypeBuilder::Profiler::CPUProfileNode::create()
+    RefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> result = Inspector::TypeBuilder::Profiler::CPUProfileNode::create()
         .setFunctionName(node->functionName())
         .setUrl(node->url())
         .setLineNumber(node->lineNumber())
         .setTotalTime(node->totalTime())
         .setSelfTime(node->selfTime())
         .setNumberOfCalls(node->numberOfCalls())
-        .setVisible(node->visible())
         .setCallUID(node->callIdentifier().hash())
         .setChildren(children.release());
     return result.release();
 }
 
-PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> ScriptProfile::buildInspectorObjectForHead() const
+PassRefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> ScriptProfile::buildInspectorObjectForHead() const
 {
     return buildInspectorObjectFor(m_profile->head());
 }
 
-PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> ScriptProfile::buildInspectorObjectForBottomUpHead() const
+PassRefPtr<Inspector::TypeBuilder::Profiler::CPUProfileNode> ScriptProfile::buildInspectorObjectForBottomUpHead() const
 {
     return 0;
 }
 #endif
 
 } // namespace WebCore
-
-#endif // ENABLE(JAVASCRIPT_DEBUGGER)

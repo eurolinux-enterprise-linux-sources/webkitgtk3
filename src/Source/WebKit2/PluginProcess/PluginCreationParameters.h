@@ -26,11 +26,11 @@
 #ifndef PluginCreationParameters_h
 #define PluginCreationParameters_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "Plugin.h"
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -40,8 +40,8 @@ namespace WebKit {
 struct PluginCreationParameters {
     PluginCreationParameters();
 
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, PluginCreationParameters&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, PluginCreationParameters&);
 
     // The unique ID of this plug-in instance.
     uint64_t pluginInstanceID;
@@ -75,6 +75,6 @@ struct PluginCreationParameters {
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginCreationParameters_h

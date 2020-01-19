@@ -25,15 +25,15 @@
 #ifndef GainNode_h
 #define GainNode_h
 
-#include "AudioGain.h"
 #include "AudioNode.h"
+#include "AudioParam.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/Threading.h>
 
 namespace WebCore {
 
 class AudioContext;
-    
+
 // GainNode is an AudioNode with one input and one output which applies a gain (volume) change to the audio signal.
 // De-zippering (smoothing) is applied when the gain value is changed dynamically.
 
@@ -41,27 +41,27 @@ class GainNode : public AudioNode {
 public:
     static PassRefPtr<GainNode> create(AudioContext* context, float sampleRate)
     {
-        return adoptRef(new GainNode(context, sampleRate));      
+        return adoptRef(new GainNode(context, sampleRate));
     }
-    
+
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
+    virtual void process(size_t framesToProcess) override;
+    virtual void reset() override;
 
     // Called in the main thread when the number of channels for the input may have changed.
-    virtual void checkNumberOfChannelsForInput(AudioNodeInput*);
+    virtual void checkNumberOfChannelsForInput(AudioNodeInput*) override;
 
     // JavaScript interface
-    AudioGain* gain() { return m_gain.get(); }                                   
-    
+    AudioParam* gain() { return m_gain.get(); }
+
 private:
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE { return 0; }
+    virtual double tailTime() const override { return 0; }
+    virtual double latencyTime() const override { return 0; }
 
     GainNode(AudioContext*, float sampleRate);
 
     float m_lastGain; // for de-zippering
-    RefPtr<AudioGain> m_gain;
+    RefPtr<AudioParam> m_gain;
 
     AudioFloatArray m_sampleAccurateGainValues;
 };

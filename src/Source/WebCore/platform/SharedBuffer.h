@@ -37,7 +37,11 @@
 #include <wtf/RetainPtr.h>
 #endif
 
-#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
+#if USE(SOUP)
+#include "GUniquePtrSoup.h"
+#endif
+
+#if PLATFORM(MAC)
 OBJC_CLASS NSData;
 #endif
 
@@ -48,9 +52,9 @@ class PurgeableBuffer;
 class SharedBuffer : public RefCounted<SharedBuffer> {
 public:
     static PassRefPtr<SharedBuffer> create() { return adoptRef(new SharedBuffer); }
-    static PassRefPtr<SharedBuffer> create(size_t size) { return adoptRef(new SharedBuffer(size)); }
-    static PassRefPtr<SharedBuffer> create(const char* c, int i) { return adoptRef(new SharedBuffer(c, i)); }
-    static PassRefPtr<SharedBuffer> create(const unsigned char* c, int i) { return adoptRef(new SharedBuffer(c, i)); }
+    static PassRefPtr<SharedBuffer> create(unsigned size) { return adoptRef(new SharedBuffer(size)); }
+    static PassRefPtr<SharedBuffer> create(const char* c, unsigned i) { return adoptRef(new SharedBuffer(c, i)); }
+    static PassRefPtr<SharedBuffer> create(const unsigned char* c, unsigned i) { return adoptRef(new SharedBuffer(c, i)); }
 
     static PassRefPtr<SharedBuffer> createWithContentsOfFile(const String& filePath);
 
@@ -62,13 +66,33 @@ public:
     
     ~SharedBuffer();
     
-#if PLATFORM(MAC) || (PLATFORM(QT) && USE(QTKIT))
-    NSData *createNSData();
+#if PLATFORM(MAC)
+    // FIXME: This class exists as a temporary workaround so that code that does:
+    // [buffer->createNSData() autorelease] will fail to compile.
+    // Once both Mac and iOS builds with this change we can change the return type to be RetainPtr<NSData>,
+    // since we're mostly worried about existing code breaking (it's unlikely that we'd use retain/release together
+    // with RetainPtr in new code.
+    class NSDataRetainPtrWithoutImplicitConversionOperator : public RetainPtr<NSData*> {
+    public:
+        template<typename T>
+        NSDataRetainPtrWithoutImplicitConversionOperator(RetainPtr<T*>&& other)
+            : RetainPtr<NSData*>(std::move(other))
+        {
+        }
+
+        explicit operator PtrType() = delete;
+    };
+
+    NSDataRetainPtrWithoutImplicitConversionOperator createNSData();
     static PassRefPtr<SharedBuffer> wrapNSData(NSData *data);
 #endif
 #if USE(CF)
-    CFDataRef createCFData();
+    RetainPtr<CFDataRef> createCFData();
     static PassRefPtr<SharedBuffer> wrapCFData(CFDataRef);
+#endif
+
+#if USE(SOUP)
+    static PassRefPtr<SharedBuffer> wrapSoupBuffer(SoupBuffer*);
 #endif
 
     // Calling this function will force internal segmented buffers
@@ -114,15 +138,41 @@ public:
     //      }
     unsigned getSomeData(const char*& data, unsigned position = 0) const;
 
-    void reportMemoryUsage(MemoryObjectInfo*) const;
+    void shouldUsePurgeableMemory(bool use) { m_shouldUsePurgeableMemory = use; }
+
+#if ENABLE(DISK_IMAGE_CACHE)
+    enum MemoryMappingState { QueuedForMapping, PreviouslyQueuedForMapping, SuccessAlreadyMapped, FailureCacheFull };
+
+    // Calling this will cause this buffer to be memory mapped.
+    MemoryMappingState allowToBeMemoryMapped();
+    bool isAllowedToBeMemoryMapped() const;
+
+    // This is called to indicate that the memory mapping failed.
+    void failedMemoryMap();
+
+    // This is called only once the buffer has been completely memory mapped.
+    void markAsMemoryMapped();
+    bool isMemoryMapped() const { return m_isMemoryMapped; }
+
+    // This callback function will be called when either the buffer has been memory mapped or failed to be memory mapped.
+    enum CompletionStatus { Failed, Succeeded };
+    typedef void* MemoryMappedNotifyCallbackData;
+    typedef void (*MemoryMappedNotifyCallback)(PassRefPtr<SharedBuffer>, CompletionStatus, MemoryMappedNotifyCallbackData);
+
+    MemoryMappedNotifyCallbackData memoryMappedNotificationCallbackData() const;
+    MemoryMappedNotifyCallback memoryMappedNotificationCallback() const;
+    void setMemoryMappedNotificationCallback(MemoryMappedNotifyCallback, MemoryMappedNotifyCallbackData);
+#endif
 
     void createPurgeableBuffer() const;
 
+    void tryReplaceContentsWithPlatformBuffer(SharedBuffer*);
+
 private:
     SharedBuffer();
-    explicit SharedBuffer(size_t);
-    SharedBuffer(const char*, int);
-    SharedBuffer(const unsigned char*, int);
+    explicit SharedBuffer(unsigned);
+    SharedBuffer(const char*, unsigned);
+    SharedBuffer(const unsigned char*, unsigned);
     
     // Calling this function will force internal segmented buffers
     // to be merged into a flat buffer. Use getSomeData() whenever possible
@@ -134,20 +184,34 @@ private:
     void clearPlatformData();
     void maybeTransferPlatformData();
     bool hasPlatformData() const;
-    
+
+    void copyBufferAndClear(char* destination, unsigned bytesToCopy) const;
+
     unsigned m_size;
     mutable Vector<char> m_buffer;
-    mutable Vector<char*> m_segments;
+    bool m_shouldUsePurgeableMemory;
     mutable OwnPtr<PurgeableBuffer> m_purgeableBuffer;
 #if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
-    mutable Vector<RetainPtr<CFDataRef> > m_dataArray;
-    void copyDataArrayAndClear(char *destination, unsigned bytesToCopy) const;
+    mutable Vector<RetainPtr<CFDataRef>> m_dataArray;
     unsigned copySomeDataFromDataArray(const char*& someData, unsigned position) const;
     const char *singleDataArrayBuffer() const;
+#else
+    mutable Vector<char*> m_segments;
+#endif
+#if ENABLE(DISK_IMAGE_CACHE)
+    bool m_isMemoryMapped;
+    unsigned m_diskImageCacheId; // DiskImageCacheId is unsigned.
+    MemoryMappedNotifyCallback m_notifyMemoryMappedCallback;
+    MemoryMappedNotifyCallbackData m_notifyMemoryMappedCallbackData;
 #endif
 #if USE(CF)
     explicit SharedBuffer(CFDataRef);
     RetainPtr<CFDataRef> m_cfData;
+#endif
+
+#if USE(SOUP)
+    explicit SharedBuffer(SoupBuffer*);
+    GUniquePtr<SoupBuffer> m_soupBuffer;
 #endif
 };
 

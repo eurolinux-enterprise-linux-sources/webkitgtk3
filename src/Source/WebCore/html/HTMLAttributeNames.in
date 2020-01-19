@@ -37,11 +37,13 @@ aria-multiline
 aria-multiselectable
 aria-orientation
 aria-owns
+aria-posinset
 aria-pressed
 aria-readonly
 aria-relevant
 aria-required
 aria-selected
+aria-setsize
 aria-sort
 aria-valuemax
 aria-valuemin
@@ -124,6 +126,7 @@ http_equiv
 id
 incremental
 indeterminate
+is
 ismap
 itemid
 itemprop
@@ -166,8 +169,6 @@ novalidate
 nowrap
 object
 onabort
-onautocomplete
-onautocompleteerror
 onbeforecopy
 onbeforecut
 onbeforeload
@@ -202,11 +203,16 @@ oninvalid
 onkeydown
 onkeypress
 onkeyup
+ongesturestart
+ongesturechange
+ongestureend
 onload
 onloadeddata
 onloadedmetadata
 onloadstart
 onmousedown
+onmouseenter
+onmouseleave
 onmousemove
 onmouseout
 onmouseover
@@ -234,6 +240,7 @@ onselect
 onselectstart
 onselectionchange
 onwebkitspeechchange
+onwheel
 onstalled
 onstorage
 onsuspend
@@ -280,7 +287,6 @@ pseudo
 readonly
 rel
 required
-reset-style-inheritance
 results
 rev
 reversed
@@ -308,6 +314,7 @@ x-webkit-speech
 x-webkit-grammar
 spellcheck
 src
+srcset
 srcdoc
 srclang
 standby
@@ -325,6 +332,7 @@ topmargin
 translate
 truespeed
 type
+uiactions
 usemap
 valign
 value
@@ -337,3 +345,12 @@ webkitallowfullscreen
 webkitdirectory
 width
 wrap
+
+autocorrect
+autocapitalize
+data-youtube-id
+onwebkitcurrentplaybacktargetiswirelesschanged
+onwebkitplaybacktargetavailabilitychanged
+webkit-playsinline
+x-webkit-airplay
+x-webkit-wirelessvideoplaybackdisabled

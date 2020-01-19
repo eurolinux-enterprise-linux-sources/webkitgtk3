@@ -28,10 +28,9 @@
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGAnimatedRect.h"
+#include "SVGElement.h"
 #include "SVGExternalResourcesRequired.h"
 #include "SVGFitToViewBox.h"
-#include "SVGLangSpace.h"
-#include "SVGStyledElement.h"
 
 namespace WebCore {
 
@@ -95,10 +94,9 @@ struct SVGPropertyTraits<SVGMarkerOrientType> {
     }
 };
 
-class SVGMarkerElement : public SVGStyledElement,
-                         public SVGLangSpace,
-                         public SVGExternalResourcesRequired,
-                         public SVGFitToViewBox {
+class SVGMarkerElement final : public SVGElement,
+                               public SVGExternalResourcesRequired,
+                               public SVGFitToViewBox {
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -113,7 +111,7 @@ public:
         SVG_MARKER_ORIENT_ANGLE = SVGMarkerOrientAngle
     };
 
-    static PassRefPtr<SVGMarkerElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGMarkerElement> create(const QualifiedName&, Document&);
 
     AffineTransform viewBoxToViewTransform(float viewWidth, float viewHeight) const;
 
@@ -123,19 +121,19 @@ public:
     static const SVGPropertyInfo* orientTypePropertyInfo();
 
 private:
-    SVGMarkerElement(const QualifiedName&, Document*);
+    SVGMarkerElement(const QualifiedName&, Document&);
 
-    virtual bool needsPendingResourceHandling() const { return false; }
+    virtual bool needsPendingResourceHandling() const override { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual void childrenChanged(const ChildChange&) override;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) { return true; }
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return true; }
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const override;
 
     void synchronizeOrientType();
 
@@ -156,16 +154,18 @@ private:
   
 public:
     // Custom 'orientType' property.
-    static void synchronizeOrientType(void* contextElement);
-    static PassRefPtr<SVGAnimatedProperty> lookupOrCreateOrientTypeWrapper(void* contextElement);
+    static void synchronizeOrientType(SVGElement* contextElement);
+    static PassRefPtr<SVGAnimatedProperty> lookupOrCreateOrientTypeWrapper(SVGElement* contextElement);
     SVGMarkerOrientType& orientType() const { return m_orientType.value; }
     SVGMarkerOrientType& orientTypeBaseValue() const { return m_orientType.value; }
     void setOrientTypeBaseValue(const SVGMarkerOrientType& type) { m_orientType.value = type; }
-    PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType> > orientTypeAnimated();
+    PassRefPtr<SVGAnimatedEnumerationPropertyTearOff<SVGMarkerOrientType>> orientTypeAnimated();
 
 private:
     mutable SVGSynchronizableAnimatedProperty<SVGMarkerOrientType> m_orientType;
 };
+
+NODE_TYPE_CASTS(SVGMarkerElement)
 
 }
 

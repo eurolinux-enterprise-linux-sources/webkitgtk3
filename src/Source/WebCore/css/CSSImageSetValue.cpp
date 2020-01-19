@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,12 +34,12 @@
 #include "CachedResourceLoader.h"
 #include "CachedResourceRequest.h"
 #include "CachedResourceRequestInitiators.h"
+#include "CrossOriginAccessControl.h"
 #include "Document.h"
 #include "Page.h"
 #include "StyleCachedImageSet.h"
 #include "StylePendingImage.h"
-#include "WebCoreMemoryInstrumentation.h"
-#include <wtf/MemoryInstrumentationVector.h>
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -50,8 +50,16 @@ CSSImageSetValue::CSSImageSetValue()
 {
 }
 
+inline void CSSImageSetValue::detachPendingImage()
+{
+    if (m_imageSet && m_imageSet->isPendingImage())
+        static_cast<StylePendingImage&>(*m_imageSet).detachFromCSSValue();
+}
+
 CSSImageSetValue::~CSSImageSetValue()
 {
+    detachPendingImage();
+
     if (m_imageSet && m_imageSet->isCachedImageSet())
         static_cast<StyleCachedImageSet*>(m_imageSet.get())->clearImageSetValue();
 }
@@ -62,14 +70,13 @@ void CSSImageSetValue::fillImageSet()
     size_t i = 0;
     while (i < length) {
         CSSValue* imageValue = item(i);
-        ASSERT_WITH_SECURITY_IMPLICATION(imageValue->isImageValue());
-        String imageURL = static_cast<CSSImageValue*>(imageValue)->url();
+        String imageURL = toCSSImageValue(imageValue)->url();
 
         ++i;
         ASSERT_WITH_SECURITY_IMPLICATION(i < length);
         CSSValue* scaleFactorValue = item(i);
         ASSERT_WITH_SECURITY_IMPLICATION(scaleFactorValue->isPrimitiveValue());
-        float scaleFactor = static_cast<CSSPrimitiveValue*>(scaleFactorValue)->getFloatValue();
+        float scaleFactor = toCSSPrimitiveValue(scaleFactorValue)->getFloatValue();
 
         ImageWithScale image;
         image.imageURL = imageURL;
@@ -94,7 +101,7 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor()
     return image;
 }
 
-StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* loader)
+StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* loader, const ResourceLoaderOptions& options)
 {
     ASSERT(loader);
 
@@ -112,9 +119,12 @@ StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* load
         // All forms of scale should be included: Page::pageScaleFactor(), Frame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
-        CachedResourceRequest request(ResourceRequest(document->completeURL(image.imageURL)));
+        CachedResourceRequest request(ResourceRequest(document->completeURL(image.imageURL)), options);
         request.setInitiator(cachedResourceRequestInitiators().css);
+        if (options.requestOriginPolicy == PotentiallyCrossOriginEnabled)
+            updateRequestForAccessControl(request.mutableResourceRequest(), document->securityOrigin(), options.allowCredentials);
         if (CachedResourceHandle<CachedImage> cachedImage = loader->requestImage(request)) {
+            detachPendingImage();
             m_imageSet = StyleCachedImageSet::create(cachedImage.get(), image.scaleFactor, this);
             m_accessedBestFitImage = true;
         }
@@ -123,13 +133,18 @@ StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* load
     return (m_imageSet && m_imageSet->isCachedImageSet()) ? static_cast<StyleCachedImageSet*>(m_imageSet.get()) : 0;
 }
 
-StyleImage* CSSImageSetValue::cachedOrPendingImageSet(Document* document)
+StyleCachedImageSet* CSSImageSetValue::cachedImageSet(CachedResourceLoader* loader)
+{
+    return cachedImageSet(loader, CachedResourceLoader::defaultCachedResourceOptions());
+}
+
+StyleImage* CSSImageSetValue::cachedOrPendingImageSet(Document& document)
 {
     if (!m_imageSet)
         m_imageSet = StylePendingImage::create(this);
-    else if (document && !m_imageSet->isPendingImage()) {
+    else if (!m_imageSet->isPendingImage()) {
         float deviceScaleFactor = 1;
-        if (Page* page = document->page())
+        if (Page* page = document.page())
             deviceScaleFactor = page->deviceScaleFactor();
 
         // If the deviceScaleFactor has changed, we may not have the best image loaded, so we have to re-assess.
@@ -142,16 +157,16 @@ StyleImage* CSSImageSetValue::cachedOrPendingImageSet(Document* document)
     return m_imageSet.get();
 }
 
-String CSSImageSetValue::customCssText() const
+String CSSImageSetValue::customCSSText() const
 {
     StringBuilder result;
-    result.append("-webkit-image-set(");
+    result.appendLiteral("-webkit-image-set(");
 
     size_t length = this->length();
     size_t i = 0;
     while (i < length) {
         if (i > 0)
-            result.append(", ");
+            result.appendLiteral(", ");
 
         const CSSValue* imageValue = item(i);
         result.append(imageValue->cssText());
@@ -168,7 +183,7 @@ String CSSImageSetValue::customCssText() const
         ++i;
     }
 
-    result.append(")");
+    result.append(')');
     return result.toString();
 }
 
@@ -193,19 +208,6 @@ CSSImageSetValue::CSSImageSetValue(const CSSImageSetValue& cloneFrom)
 PassRefPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
 {
     return adoptRef(new CSSImageSetValue(*this));
-}
-
-void CSSImageSetValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSValueList::reportDescendantMemoryUsage(memoryObjectInfo);
-    info.addMember(m_imagesInSet, "imagesInSet");
-}
-
-void CSSImageSetValue::ImageWithScale::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(imageURL, "imageURL");
 }
 
 } // namespace WebCore

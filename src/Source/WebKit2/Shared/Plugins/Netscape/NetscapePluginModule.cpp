@@ -31,14 +31,14 @@
 #include "Module.h"
 #include "NPRuntimeUtilities.h"
 #include "NetscapeBrowserFuncs.h"
-#include <wtf/PassOwnPtr.h>
+#include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
 
 namespace WebKit {
 
 static Vector<NetscapePluginModule*>& initializedNetscapePluginModules()
 {
-    DEFINE_STATIC_LOCAL(Vector<NetscapePluginModule*>, initializedNetscapePluginModules, ());
+    static NeverDestroyed<Vector<NetscapePluginModule*>> initializedNetscapePluginModules;
     return initializedNetscapePluginModules;
 }
 
@@ -197,11 +197,27 @@ bool NetscapePluginModule::load()
     return true;
 }
 
+#if PLATFORM(GTK)
+static bool moduleMixesGtkSymbols(Module* module)
+{
+#ifdef GTK_API_VERSION_2
+    return module->functionPointer<gpointer>("gtk_application_get_type");
+#else
+    return module->functionPointer<gpointer>("gtk_object_get_type");
+#endif
+}
+#endif
+
 bool NetscapePluginModule::tryLoad()
 {
-    m_module = adoptPtr(new Module(m_pluginPath));
+    m_module = std::make_unique<Module>(m_pluginPath);
     if (!m_module->load())
         return false;
+
+#if PLATFORM(GTK)
+    if (moduleMixesGtkSymbols(m_module.get()))
+        return false;
+#endif
 
     NP_InitializeFuncPtr initializeFuncPtr = m_module->functionPointer<NP_InitializeFuncPtr>("NP_Initialize");
     if (!initializeFuncPtr)
@@ -226,10 +242,8 @@ bool NetscapePluginModule::tryLoad()
 #if PLUGIN_ARCHITECTURE(MAC)
 #ifndef NP_NO_CARBON
 
-#if COMPILER(CLANG)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
 
     // Plugins (at least QT) require that you call UseResFile on the resource file before loading it.
     ResFileRefNum currentResourceFile = CurResFile();
@@ -244,9 +258,7 @@ bool NetscapePluginModule::tryLoad()
     // Restore the resource file.
     UseResFile(currentResourceFile);
 
-#if COMPILER(CLANG)
 #pragma clang diagnostic pop
-#endif
 
 #endif
 

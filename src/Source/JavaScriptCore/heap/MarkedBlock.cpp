@@ -26,6 +26,7 @@
 #include "config.h"
 #include "MarkedBlock.h"
 
+#include "DelayedReleaseScope.h"
 #include "IncrementalSweeper.h"
 #include "JSCell.h"
 #include "JSDestructibleObject.h"
@@ -35,6 +36,7 @@ namespace JSC {
 
 MarkedBlock* MarkedBlock::create(DeadBlock* block, MarkedAllocator* allocator, size_t cellSize, DestructorType destructorType)
 {
+    ASSERT(reinterpret_cast<size_t>(block) == (reinterpret_cast<size_t>(block) & blockMask));
     Region* region = block->region();
     return new (NotNull, block) MarkedBlock(region, allocator, cellSize, destructorType);
 }
@@ -46,7 +48,7 @@ MarkedBlock::MarkedBlock(Region* region, MarkedAllocator* allocator, size_t cell
     , m_destructorType(destructorType)
     , m_allocator(allocator)
     , m_state(New) // All cells start out unmarked.
-    , m_weakSet(allocator->heap()->globalData())
+    , m_weakSet(allocator->heap()->vm())
 {
     ASSERT(allocator);
     HEAP_LOG_BLOCK_STATE_TRANSITION(this);
@@ -57,10 +59,6 @@ inline void MarkedBlock::callDestructor(JSCell* cell)
     // A previous eager sweep may already have run cell's destructor.
     if (cell->isZapped())
         return;
-
-#if ENABLE(SIMPLE_HEAP_PROFILING)
-    m_heap->m_destroyedTypeCounts.countVPtr(vptr);
-#endif
 
     cell->methodTableForDestruction()->destroy(cell);
     cell->zap();
@@ -105,6 +103,7 @@ MarkedBlock::FreeList MarkedBlock::specializedSweep()
 
 MarkedBlock::FreeList MarkedBlock::sweep(SweepMode sweepMode)
 {
+    ASSERT(DelayedReleaseScope::isInEffectFor(heap()->m_objectSpace));
     HEAP_LOG_BLOCK_STATE_TRANSITION(this);
 
     m_weakSet.sweep();
@@ -160,7 +159,7 @@ private:
     MarkedBlock* m_block;
 };
 
-void MarkedBlock::canonicalizeCellLivenessData(const FreeList& freeList)
+void MarkedBlock::stopAllocating(const FreeList& freeList)
 {
     HEAP_LOG_BLOCK_STATE_TRANSITION(this);
     FreeCell* head = freeList.head;
@@ -196,6 +195,67 @@ void MarkedBlock::canonicalizeCellLivenessData(const FreeList& freeList)
     }
     
     m_state = Marked;
+}
+
+void MarkedBlock::clearMarks()
+{
+#if ENABLE(GGC)
+    if (heap()->operationInProgress() == JSC::EdenCollection)
+        this->clearMarksWithCollectionType<EdenCollection>();
+    else
+        this->clearMarksWithCollectionType<FullCollection>();
+#else
+    this->clearMarksWithCollectionType<FullCollection>();
+#endif
+}
+
+void MarkedBlock::clearRememberedSet()
+{
+    m_rememberedSet.clearAll();
+}
+
+template <HeapOperation collectionType>
+void MarkedBlock::clearMarksWithCollectionType()
+{
+    ASSERT(collectionType == FullCollection || collectionType == EdenCollection);
+    HEAP_LOG_BLOCK_STATE_TRANSITION(this);
+
+    ASSERT(m_state != New && m_state != FreeListed);
+    if (collectionType == FullCollection) {
+        m_marks.clearAll();
+#if ENABLE(GGC)
+        m_rememberedSet.clearAll();
+#endif
+    }
+
+    // This will become true at the end of the mark phase. We set it now to
+    // avoid an extra pass to do so later.
+    m_state = Marked;
+}
+
+void MarkedBlock::lastChanceToFinalize()
+{
+    m_weakSet.lastChanceToFinalize();
+
+    clearNewlyAllocated();
+    clearMarksWithCollectionType<FullCollection>();
+    sweep();
+}
+
+MarkedBlock::FreeList MarkedBlock::resumeAllocating()
+{
+    HEAP_LOG_BLOCK_STATE_TRANSITION(this);
+
+    ASSERT(m_state == Marked);
+
+    if (!m_newlyAllocated) {
+        // We didn't have to create a "newly allocated" bitmap. That means we were already Marked
+        // when we last stopped allocation, so return an empty free list and stay in the Marked state.
+        return FreeList();
+    }
+
+    // Re-create our free list from before stopping allocation. 
+    return sweep(SweepToFreeList);
 }
 
 } // namespace JSC

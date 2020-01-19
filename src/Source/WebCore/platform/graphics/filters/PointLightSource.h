@@ -36,9 +36,9 @@ public:
     }
 
     const FloatPoint3D& position() const { return m_position; }
-    bool setX(float);
-    bool setY(float);
-    bool setZ(float);
+    virtual bool setX(float) override;
+    virtual bool setY(float) override;
+    virtual bool setZ(float) override;
 
     virtual void initPaintingData(PaintingData&);
     virtual void updatePaintingData(PaintingData&, int x, int y, float z);

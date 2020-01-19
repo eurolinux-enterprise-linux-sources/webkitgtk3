@@ -52,8 +52,6 @@ struct SourceRange {
 };
 
 struct CSSPropertySourceData {
-    static void init();
-
     CSSPropertySourceData(const String& name, const String& value, bool important, bool parsedOk, const SourceRange& range);
     CSSPropertySourceData(const CSSPropertySourceData& other);
     CSSPropertySourceData();
@@ -68,10 +66,6 @@ struct CSSPropertySourceData {
     SourceRange range;
 };
 
-#ifndef CSSPROPERTYSOURCEDATA_HIDE_GLOBALS
-extern const CSSPropertySourceData emptyCSSPropertySourceData;
-#endif
-
 struct CSSStyleSourceData : public RefCounted<CSSStyleSourceData> {
     static PassRefPtr<CSSStyleSourceData> create()
     {
@@ -82,7 +76,7 @@ struct CSSStyleSourceData : public RefCounted<CSSStyleSourceData> {
 };
 
 struct CSSRuleSourceData;
-typedef Vector<RefPtr<CSSRuleSourceData> > RuleSourceDataList;
+typedef Vector<RefPtr<CSSRuleSourceData>> RuleSourceDataList;
 typedef Vector<SourceRange> SelectorRangeList;
 
 struct CSSRuleSourceData : public RefCounted<CSSRuleSourceData> {
@@ -99,9 +93,6 @@ struct CSSRuleSourceData : public RefCounted<CSSRuleSourceData> {
         HOST_RULE,
         VIEWPORT_RULE,
         SUPPORTS_RULE,
-#if ENABLE(CSS_SHADERS)
-        FILTER_RULE
-#endif
     };
 
     static PassRefPtr<CSSRuleSourceData> create(Type type)

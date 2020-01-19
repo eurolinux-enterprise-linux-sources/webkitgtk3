@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,11 +34,11 @@
 
 namespace JSC {
 
-GetByIdStatus GetByIdStatus::computeFromLLInt(CodeBlock* profiledBlock, unsigned bytecodeIndex, Identifier& ident)
+GetByIdStatus GetByIdStatus::computeFromLLInt(CodeBlock* profiledBlock, unsigned bytecodeIndex, StringImpl* uid)
 {
     UNUSED_PARAM(profiledBlock);
     UNUSED_PARAM(bytecodeIndex);
-    UNUSED_PARAM(ident);
+    UNUSED_PARAM(uid);
 #if ENABLE(LLINT)
     Instruction* instruction = profiledBlock->instructions().begin() + bytecodeIndex;
     
@@ -48,11 +48,14 @@ GetByIdStatus GetByIdStatus::computeFromLLInt(CodeBlock* profiledBlock, unsigned
     Structure* structure = instruction[4].u.structure.get();
     if (!structure)
         return GetByIdStatus(NoInformation, false);
-    
+
+    if (structure->takesSlowPathInDFGForImpureProperty())
+        return GetByIdStatus(NoInformation, false);
+
     unsigned attributesIgnored;
     JSCell* specificValue;
-    PropertyOffset offset = structure->get(
-        *profiledBlock->globalData(), ident, attributesIgnored, specificValue);
+    PropertyOffset offset = structure->getConcurrently(
+        *profiledBlock->vm(), uid, attributesIgnored, specificValue);
     if (structure->isDictionary())
         specificValue = 0;
     if (!isValidOffset(offset))
@@ -64,9 +67,9 @@ GetByIdStatus GetByIdStatus::computeFromLLInt(CodeBlock* profiledBlock, unsigned
 #endif
 }
 
-void GetByIdStatus::computeForChain(GetByIdStatus& result, CodeBlock* profiledBlock, Identifier& ident, Structure* structure)
+void GetByIdStatus::computeForChain(GetByIdStatus& result, CodeBlock* profiledBlock, StringImpl* uid)
 {
-#if ENABLE(JIT) && ENABLE(VALUE_PROFILER)
+#if ENABLE(JIT)
     // Validate the chain. If the chain is invalid, then currently the best thing
     // we can do is to assume that TakesSlow is true. In the future, it might be
     // worth exploring reifying the structure chain from the structure we've got
@@ -77,64 +80,67 @@ void GetByIdStatus::computeForChain(GetByIdStatus& result, CodeBlock* profiledBl
     // have now is that if the structure chain has changed between when it was
     // cached on in the baseline JIT and when the DFG tried to inline the access,
     // then we fall back on a polymorphic access.
-    Structure* currentStructure = structure;
-    JSObject* currentObject = 0;
-    for (unsigned i = 0; i < result.m_chain.size(); ++i) {
-        ASSERT(!currentStructure->isDictionary());
-        currentObject = asObject(currentStructure->prototypeForLookup(profiledBlock));
-        currentStructure = result.m_chain[i];
-        if (currentObject->structure() != currentStructure)
+    if (!result.m_chain->isStillValid())
+        return;
+
+    if (result.m_chain->head()->takesSlowPathInDFGForImpureProperty())
+        return;
+    size_t chainSize = result.m_chain->size();
+    for (size_t i = 0; i < chainSize; i++) {
+        if (result.m_chain->at(i)->takesSlowPathInDFGForImpureProperty())
             return;
     }
+
+    JSObject* currentObject = result.m_chain->terminalPrototype();
+    Structure* currentStructure = result.m_chain->last();
     
-    ASSERT(currentObject);
+    ASSERT_UNUSED(currentObject, currentObject);
         
     unsigned attributesIgnored;
     JSCell* specificValue;
         
-    result.m_offset = currentStructure->get(
-        *profiledBlock->globalData(), ident, attributesIgnored, specificValue);
+    result.m_offset = currentStructure->getConcurrently(
+        *profiledBlock->vm(), uid, attributesIgnored, specificValue);
     if (currentStructure->isDictionary())
         specificValue = 0;
     if (!isValidOffset(result.m_offset))
         return;
         
-    result.m_structureSet.add(structure);
+    result.m_structureSet.add(result.m_chain->head());
     result.m_specificValue = JSValue(specificValue);
 #else
     UNUSED_PARAM(result);
     UNUSED_PARAM(profiledBlock);
-    UNUSED_PARAM(ident);
-    UNUSED_PARAM(structure);
+    UNUSED_PARAM(uid);
     UNREACHABLE_FOR_PLATFORM();
 #endif
 }
 
-GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, unsigned bytecodeIndex, Identifier& ident)
+GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, StubInfoMap& map, unsigned bytecodeIndex, StringImpl* uid)
 {
+    ConcurrentJITLocker locker(profiledBlock->m_lock);
+    
     UNUSED_PARAM(profiledBlock);
     UNUSED_PARAM(bytecodeIndex);
-    UNUSED_PARAM(ident);
-#if ENABLE(JIT) && ENABLE(VALUE_PROFILER)
-    if (!profiledBlock->numberOfStructureStubInfos())
-        return computeFromLLInt(profiledBlock, bytecodeIndex, ident);
+    UNUSED_PARAM(uid);
+#if ENABLE(JIT)
+    StructureStubInfo* stubInfo = map.get(CodeOrigin(bytecodeIndex));
+    if (!stubInfo || !stubInfo->seen)
+        return computeFromLLInt(profiledBlock, bytecodeIndex, uid);
     
-    // First check if it makes either calls, in which case we want to be super careful, or
-    // if it's not set at all, in which case we punt.
-    StructureStubInfo& stubInfo = profiledBlock->getStubInfo(bytecodeIndex);
-    if (!stubInfo.seen)
-        return computeFromLLInt(profiledBlock, bytecodeIndex, ident);
-    
+    if (stubInfo->resetByGC)
+        return GetByIdStatus(TakesSlowPath, true);
+
     PolymorphicAccessStructureList* list;
     int listSize;
-    switch (stubInfo.accessType) {
+    switch (stubInfo->accessType) {
     case access_get_by_id_self_list:
-        list = stubInfo.u.getByIdSelfList.structureList;
-        listSize = stubInfo.u.getByIdSelfList.listSize;
+        list = stubInfo->u.getByIdSelfList.structureList;
+        listSize = stubInfo->u.getByIdSelfList.listSize;
         break;
     case access_get_by_id_proto_list:
-        list = stubInfo.u.getByIdProtoList.structureList;
-        listSize = stubInfo.u.getByIdProtoList.listSize;
+        list = stubInfo->u.getByIdProtoList.structureList;
+        listSize = stubInfo->u.getByIdProtoList.listSize;
         break;
     default:
         list = 0;
@@ -153,16 +159,18 @@ GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, unsigned bytec
     // Finally figure out if we can derive an access strategy.
     GetByIdStatus result;
     result.m_wasSeenInJIT = true; // This is interesting for bytecode dumping only.
-    switch (stubInfo.accessType) {
+    switch (stubInfo->accessType) {
     case access_unset:
-        return computeFromLLInt(profiledBlock, bytecodeIndex, ident);
+        return computeFromLLInt(profiledBlock, bytecodeIndex, uid);
         
     case access_get_by_id_self: {
-        Structure* structure = stubInfo.u.getByIdSelf.baseObjectStructure.get();
+        Structure* structure = stubInfo->u.getByIdSelf.baseObjectStructure.get();
+        if (structure->takesSlowPathInDFGForImpureProperty())
+            return GetByIdStatus(TakesSlowPath, true);
         unsigned attributesIgnored;
         JSCell* specificValue;
-        result.m_offset = structure->get(
-            *profiledBlock->globalData(), ident, attributesIgnored, specificValue);
+        result.m_offset = structure->getConcurrently(
+            *profiledBlock->vm(), uid, attributesIgnored, specificValue);
         if (structure->isDictionary())
             specificValue = 0;
         
@@ -181,13 +189,16 @@ GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, unsigned bytec
             ASSERT(list->list[i].isDirect);
             
             Structure* structure = list->list[i].base.get();
+            if (structure->takesSlowPathInDFGForImpureProperty())
+                return GetByIdStatus(TakesSlowPath, true);
+
             if (result.m_structureSet.contains(structure))
                 continue;
             
             unsigned attributesIgnored;
             JSCell* specificValue;
-            PropertyOffset myOffset = structure->get(
-                *profiledBlock->globalData(), ident, attributesIgnored, specificValue);
+            PropertyOffset myOffset = structure->getConcurrently(
+                *profiledBlock->vm(), uid, attributesIgnored, specificValue);
             if (structure->isDictionary())
                 specificValue = 0;
             
@@ -214,23 +225,25 @@ GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, unsigned bytec
     }
         
     case access_get_by_id_proto: {
-        if (!stubInfo.u.getByIdProto.isDirect)
+        if (!stubInfo->u.getByIdProto.isDirect)
             return GetByIdStatus(MakesCalls, true);
-        result.m_chain.append(stubInfo.u.getByIdProto.prototypeStructure.get());
-        computeForChain(
-            result, profiledBlock, ident,
-            stubInfo.u.getByIdProto.baseObjectStructure.get());
+        result.m_chain = adoptRef(new IntendedStructureChain(
+            profiledBlock,
+            stubInfo->u.getByIdProto.baseObjectStructure.get(),
+            stubInfo->u.getByIdProto.prototypeStructure.get()));
+        computeForChain(result, profiledBlock, uid);
         break;
     }
         
     case access_get_by_id_chain: {
-        if (!stubInfo.u.getByIdChain.isDirect)
+        if (!stubInfo->u.getByIdChain.isDirect)
             return GetByIdStatus(MakesCalls, true);
-        for (unsigned i = 0; i < stubInfo.u.getByIdChain.count; ++i)
-            result.m_chain.append(stubInfo.u.getByIdChain.chain->head()[i].get());
-        computeForChain(
-            result, profiledBlock, ident,
-            stubInfo.u.getByIdChain.baseObjectStructure.get());
+        result.m_chain = adoptRef(new IntendedStructureChain(
+            profiledBlock,
+            stubInfo->u.getByIdChain.baseObjectStructure.get(),
+            stubInfo->u.getByIdChain.chain.get(),
+            stubInfo->u.getByIdChain.count));
+        computeForChain(result, profiledBlock, uid);
         break;
     }
         
@@ -249,29 +262,33 @@ GetByIdStatus GetByIdStatus::computeFor(CodeBlock* profiledBlock, unsigned bytec
     
     return result;
 #else // ENABLE(JIT)
+    UNUSED_PARAM(map);
     return GetByIdStatus(NoInformation, false);
 #endif // ENABLE(JIT)
 }
 
-GetByIdStatus GetByIdStatus::computeFor(JSGlobalData& globalData, Structure* structure, Identifier& ident)
+GetByIdStatus GetByIdStatus::computeFor(VM& vm, Structure* structure, StringImpl* uid)
 {
     // For now we only handle the super simple self access case. We could handle the
     // prototype case in the future.
     
-    if (PropertyName(ident).asIndex() != PropertyName::NotAnIndex)
+    if (!structure)
+        return GetByIdStatus(TakesSlowPath);
+
+    if (toUInt32FromStringImpl(uid) != PropertyName::NotAnIndex)
         return GetByIdStatus(TakesSlowPath);
     
-    if (structure->typeInfo().overridesGetOwnPropertySlot())
+    if (structure->typeInfo().overridesGetOwnPropertySlot() && structure->typeInfo().type() != GlobalObjectType)
         return GetByIdStatus(TakesSlowPath);
     
     if (!structure->propertyAccessesAreCacheable())
         return GetByIdStatus(TakesSlowPath);
-    
+
     GetByIdStatus result;
-    result.m_wasSeenInJIT = false; // To my knowledge nobody that uses computeFor(JSGlobalData&, Structure*, Identifier&) reads this field, but I might as well be honest: no, it wasn't seen in the JIT, since I computed it statically.
+    result.m_wasSeenInJIT = false; // To my knowledge nobody that uses computeFor(VM&, Structure*, StringImpl*) reads this field, but I might as well be honest: no, it wasn't seen in the JIT, since I computed it statically.
     unsigned attributes;
     JSCell* specificValue;
-    result.m_offset = structure->get(globalData, ident, attributes, specificValue);
+    result.m_offset = structure->getConcurrently(vm, uid, attributes, specificValue);
     if (!isValidOffset(result.m_offset))
         return GetByIdStatus(TakesSlowPath); // It's probably a prototype lookup. Give up on life for now, even though we could totally be way smarter about it.
     if (attributes & Accessor)
@@ -280,6 +297,7 @@ GetByIdStatus GetByIdStatus::computeFor(JSGlobalData& globalData, Structure* str
         specificValue = 0;
     result.m_structureSet.add(structure);
     result.m_specificValue = JSValue(specificValue);
+    result.m_state = Simple;
     return result;
 }
 

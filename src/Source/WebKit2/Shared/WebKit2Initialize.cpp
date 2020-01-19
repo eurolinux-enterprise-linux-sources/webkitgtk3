@@ -27,13 +27,16 @@
 #include "WebKit2Initialize.h"
 
 #include "Logging.h"
-#include <WebCore/InitializeLogging.h>
-#include <WebCore/RunLoop.h>
+#include <WebCore/Logging.h>
 #include <runtime/InitializeThreading.h>
 #include <wtf/MainThread.h>
+#include <wtf/RunLoop.h>
 
 #if PLATFORM(MAC)
 #include "WebSystemInterface.h"
+#endif
+#if PLATFORM(IOS)
+#import <WebCore/WebCoreThreadSystemInterface.h>
 #endif
 
 namespace WebKit {
@@ -43,10 +46,13 @@ void InitializeWebKit2()
 #if PLATFORM(MAC)
     InitWebCoreSystemInterface();
 #endif
+#if PLATFORM(IOS)
+    InitWebCoreThreadSystemInterface();
+#endif
 
     JSC::initializeThreading();
     WTF::initializeMainThread();
-    WebCore::RunLoop::initializeMainRunLoop();
+    RunLoop::initializeMainRunLoop();
 
 #if !LOG_DISABLED
     WebCore::initializeLoggingChannelsIfNecessary();

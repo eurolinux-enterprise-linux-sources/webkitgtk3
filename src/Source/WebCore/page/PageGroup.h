@@ -26,34 +26,37 @@
 #ifndef PageGroup_h
 #define PageGroup_h
 
-#include <wtf/HashSet.h>
-#include <wtf/Noncopyable.h>
 #include "LinkHash.h"
+#include "SecurityOriginHash.h"
 #include "Supplementable.h"
 #include "UserScript.h"
 #include "UserStyleSheet.h"
-#include <wtf/text/StringHash.h>
+#include <wtf/HashSet.h>
+#include <wtf/Noncopyable.h>
 
 namespace WebCore {
 
-#if ENABLE(VIDEO_TRACK)
-    class CaptionPreferencesChangedListener;
-    class CaptionUserPreferences;
-#endif
-    class KURL;
+    class URL;
     class GroupSettings;
     class IDBFactoryBackendInterface;
     class Page;
     class SecurityOrigin;
     class StorageNamespace;
+    class VisitedLinkProvider;
+    class UserContentController;
+
+#if ENABLE(VIDEO_TRACK)
+    class CaptionPreferencesChangedListener;
+    class CaptionUserPreferences;
+#endif
 
     class PageGroup : public Supplementable<PageGroup> {
         WTF_MAKE_NONCOPYABLE(PageGroup); WTF_MAKE_FAST_ALLOCATED;
     public:
         explicit PageGroup(const String& name);
+        explicit PageGroup(Page&);
         ~PageGroup();
 
-        static PassOwnPtr<PageGroup> create(Page*);
         static PageGroup* pageGroup(const String& groupName);
 
         static void closeLocalStorage();
@@ -64,18 +67,19 @@ namespace WebCore {
         // DumpRenderTree helper that triggers a StorageArea sync.
         static void syncLocalStorage();
 
-        static unsigned numberOfPageGroups();
-
         const HashSet<Page*>& pages() const { return m_pages; }
 
-        void addPage(Page*);
-        void removePage(Page*);
+        void addPage(Page&);
+        void removePage(Page&);
+
+        VisitedLinkProvider& visitedLinkProvider() { return *m_visitedLinkProvider; }
 
         bool isLinkVisited(LinkHash);
 
-        void addVisitedLink(const KURL&);
+        void addVisitedLink(const URL&);
         void addVisitedLink(const UChar*, size_t);
         void addVisitedLinkHash(LinkHash);
+        void removeVisitedLink(const URL&);
         void removeVisitedLinks();
 
         static void setShouldTrackVisitedLinks(bool);
@@ -87,54 +91,44 @@ namespace WebCore {
         StorageNamespace* localStorage();
         bool hasLocalStorage() { return m_localStorage; }
 
-        void addUserScriptToWorld(DOMWrapperWorld*, const String& source, const KURL&,
-                                  const Vector<String>& whitelist, const Vector<String>& blacklist,
-                                  UserScriptInjectionTime, UserContentInjectedFrames);
-        void addUserStyleSheetToWorld(DOMWrapperWorld*, const String& source, const KURL&,
-                                      const Vector<String>& whitelist, const Vector<String>& blacklist,
-                                      UserContentInjectedFrames,
-                                      UserStyleLevel level = UserStyleUserLevel,
-                                      UserStyleInjectionTime injectionTime = InjectInExistingDocuments);
-        void removeUserScriptFromWorld(DOMWrapperWorld*, const KURL&);
-        void removeUserStyleSheetFromWorld(DOMWrapperWorld*, const KURL&);
+        StorageNamespace* transientLocalStorage(SecurityOrigin* topOrigin);
 
-        void removeUserScriptsFromWorld(DOMWrapperWorld*);
-        void removeUserStyleSheetsFromWorld(DOMWrapperWorld*);
-
+        void addUserScriptToWorld(DOMWrapperWorld&, const String& source, const URL&, const Vector<String>& whitelist, const Vector<String>& blacklist, UserScriptInjectionTime, UserContentInjectedFrames);
+        void addUserStyleSheetToWorld(DOMWrapperWorld&, const String& source, const URL&, const Vector<String>& whitelist, const Vector<String>& blacklist, UserContentInjectedFrames, UserStyleLevel = UserStyleUserLevel, UserStyleInjectionTime = InjectInExistingDocuments);
+        void removeUserStyleSheetFromWorld(DOMWrapperWorld&, const URL&);
+        void removeUserScriptFromWorld(DOMWrapperWorld&, const URL&);
+        void removeUserScriptsFromWorld(DOMWrapperWorld&);
+        void removeUserStyleSheetsFromWorld(DOMWrapperWorld&);
         void removeAllUserContent();
 
-        const UserScriptMap* userScripts() const { return m_userScripts.get(); }
-        const UserStyleSheetMap* userStyleSheets() const { return m_userStyleSheets.get(); }
-
-        GroupSettings* groupSettings() const { return m_groupSettings.get(); }
+        GroupSettings& groupSettings() const { return *m_groupSettings; }
 
 #if ENABLE(VIDEO_TRACK)
+        void captionPreferencesChanged();
         CaptionUserPreferences* captionPreferences();
 #endif
 
     private:
-        PageGroup(Page*);
-
-        void addVisitedLink(LinkHash stringHash);
-        void invalidatedInjectedStyleSheetCacheInAllFrames();
+        void addVisitedLink(LinkHash);
 
         String m_name;
-
         HashSet<Page*> m_pages;
+
+        RefPtr<VisitedLinkProvider> m_visitedLinkProvider;
 
         HashSet<LinkHash, LinkHashHash> m_visitedLinkHashes;
         bool m_visitedLinksPopulated;
 
         unsigned m_identifier;
         RefPtr<StorageNamespace> m_localStorage;
+        HashMap<RefPtr<SecurityOrigin>, RefPtr<StorageNamespace>> m_transientLocalStorageMap;
 
-        OwnPtr<UserScriptMap> m_userScripts;
-        OwnPtr<UserStyleSheetMap> m_userStyleSheets;
+        RefPtr<UserContentController> m_userContentController;
 
-        OwnPtr<GroupSettings> m_groupSettings;
+        const std::unique_ptr<GroupSettings> m_groupSettings;
 
 #if ENABLE(VIDEO_TRACK)
-        OwnPtr<CaptionUserPreferences> m_captionPreferences;
+        std::unique_ptr<CaptionUserPreferences> m_captionPreferences;
 #endif
     };
 

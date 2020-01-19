@@ -26,44 +26,54 @@
 #include "config.h"
 
 #if ENABLE(VIDEO_TRACK)
-#include "JSTextTrackCustom.h"
-
 #include "JSTextTrack.h"
 #include "JSTextTrackCueList.h"
+#include "JSTrackCustom.h"
 
 using namespace JSC;
 
 namespace WebCore {
 
-bool JSTextTrackOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void*, SlotVisitor& visitor)
-{
-    JSTextTrack* jsTextTrack = jsCast<JSTextTrack*>(handle.get().asCell());
-    TextTrack* textTrack = static_cast<TextTrack*>(jsTextTrack->impl());
-
-    // If the cue is firing event listeners, its wrapper is reachable because
-    // the wrapper is responsible for marking those event listeners.
-    if (textTrack->isFiringEventListeners())
-        return true;
-
-    // If the cue has no event listeners and has no custom properties, it is not reachable.
-    if (!textTrack->hasEventListeners() && !jsTextTrack->hasCustomProperties())
-        return false;
-
-    return visitor.containsOpaqueRoot(root(textTrack));
-}
-
 void JSTextTrack::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
     JSTextTrack* jsTextTrack = jsCast<JSTextTrack*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(jsTextTrack, &s_info);
+    ASSERT_GC_OBJECT_INHERITS(jsTextTrack, info());
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
     ASSERT(jsTextTrack->structure()->typeInfo().overridesVisitChildren());
     Base::visitChildren(jsTextTrack, visitor);
 
-    TextTrack* textTrack = static_cast<TextTrack*>(jsTextTrack->impl());
-    visitor.addOpaqueRoot(root(textTrack));
+    TextTrack& textTrack = jsTextTrack->impl();
+    visitor.addOpaqueRoot(root(&textTrack));
 
-    textTrack->visitJSEventListeners(visitor);
+    textTrack.visitJSEventListeners(visitor);
+}
+
+void JSTextTrack::setKind(ExecState* exec, JSValue value)
+{
+    UNUSED_PARAM(exec);
+#if ENABLE(MEDIA_SOURCE)
+    const String& nativeValue(value.isEmpty() ? String() : value.toString(exec)->value(exec));
+    if (exec->hadException())
+        return;
+    impl().setKind(nativeValue);
+#else
+    UNUSED_PARAM(value);
+    return;
+#endif
+}
+
+void JSTextTrack::setLanguage(ExecState* exec, JSValue value)
+{
+    UNUSED_PARAM(exec);
+#if ENABLE(MEDIA_SOURCE)
+    const String& nativeValue(value.isEmpty() ? String() : value.toString(exec)->value(exec));
+    if (exec->hadException())
+        return;
+    impl().setLanguage(nativeValue);
+#else
+    UNUSED_PARAM(value);
+    return;
+#endif
 }
 
 } // namespace WebCore

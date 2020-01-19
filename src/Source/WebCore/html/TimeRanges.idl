@@ -25,12 +25,10 @@
 
 [
     Conditional=VIDEO,
-    ImplementationLacksVTable
+    ImplementationLacksVTable,
 ] interface TimeRanges {
     readonly attribute unsigned long length;
-    float start(in unsigned long index)
-        raises (DOMException);
-    float end(in unsigned long index)
-        raises (DOMException);
+    [RaisesException] double start(unsigned long index);
+    [RaisesException] double end(unsigned long index);
 };
 

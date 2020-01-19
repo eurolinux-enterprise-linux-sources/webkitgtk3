@@ -63,9 +63,9 @@ void PerformanceEntryList::append(PassRefPtr<PerformanceEntry> entry)
     m_entries.append(entry);
 }
 
-void PerformanceEntryList::appendAll(const Vector<RefPtr<PerformanceEntry> >& entries)
+void PerformanceEntryList::appendAll(const Vector<RefPtr<PerformanceEntry>>& entries)
 {
-    m_entries.append(entries);
+    m_entries.appendVector(entries);
 }
 
 void PerformanceEntryList::sort()

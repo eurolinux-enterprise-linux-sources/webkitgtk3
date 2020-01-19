@@ -46,20 +46,17 @@ class RenderFlowThread;
 // FIXME: For now we derive from RenderRegion, but this may change at some point.
 
 class RenderRegionSet : public RenderRegion {
-public:
-    RenderRegionSet(Element*, RenderFlowThread*);
-    
 protected:
-    virtual bool shouldHaveAutoLogicalHeight() const OVERRIDE { return false; }
+    RenderRegionSet(Document&, PassRef<RenderStyle>, RenderFlowThread&);
 
 private:
-    virtual void installFlowThread() OVERRIDE;
+    virtual void installFlowThread() override final;
 
-    virtual void expandToEncompassFlowThreadContentsIfNeeded() OVERRIDE;
+    virtual void expandToEncompassFlowThreadContentsIfNeeded() override final;
 
     virtual const char* renderName() const = 0;
     
-    virtual bool isRenderRegionSet() const OVERRIDE { return true; }
+    virtual bool isRenderRegionSet() const override final { return true; }
 };
 
 } // namespace WebCore

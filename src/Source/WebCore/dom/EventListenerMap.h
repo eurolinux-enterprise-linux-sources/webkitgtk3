@@ -50,6 +50,7 @@ public:
 
     bool isEmpty() const { return m_entries.isEmpty(); }
     bool contains(const AtomicString& eventType) const;
+    bool containsCapturing(const AtomicString& eventType) const;
 
     void clear();
     bool add(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
@@ -67,7 +68,7 @@ private:
 
     void assertNoActiveIterators();
 
-    Vector<std::pair<AtomicString, OwnPtr<EventListenerVector> >, 2> m_entries;
+    Vector<std::pair<AtomicString, OwnPtr<EventListenerVector>>, 2> m_entries;
 
 #ifndef NDEBUG
     int m_activeIteratorCount;
@@ -78,7 +79,7 @@ class EventListenerIterator {
     WTF_MAKE_NONCOPYABLE(EventListenerIterator);
 public:
     EventListenerIterator();
-    EventListenerIterator(EventTarget*);
+    explicit EventListenerIterator(EventTarget*);
 #ifndef NDEBUG
     ~EventListenerIterator();
 #endif

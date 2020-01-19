@@ -32,12 +32,11 @@
 
 #include "Font.h"
 #include "FontCache.h"
-#include "OpenTypeVerticalData.h"
-
 #include <wtf/MathExtras.h>
-#include <wtf/UnusedParam.h>
 
-using namespace std;
+#if ENABLE(OPENTYPE_VERTICAL)
+#include "OpenTypeVerticalData.h"
+#endif
 
 namespace WebCore {
 
@@ -69,9 +68,9 @@ SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCust
 #endif
 }
 
-SimpleFontData::SimpleFontData(PassOwnPtr<AdditionalFontData> fontData, float fontSize, bool syntheticBold, bool syntheticItalic)
+SimpleFontData::SimpleFontData(std::unique_ptr<AdditionalFontData> fontData, float fontSize, bool syntheticBold, bool syntheticItalic)
     : m_platformData(FontPlatformData(fontSize, syntheticBold, syntheticItalic))
-    , m_fontData(fontData)
+    , m_fontData(std::move(fontData))
     , m_treatAsFixedPitch(false)
     , m_isCustomFont(true)
     , m_isLoading(false)
@@ -81,6 +80,9 @@ SimpleFontData::SimpleFontData(PassOwnPtr<AdditionalFontData> fontData, float fo
     , m_verticalData(0)
 #endif
     , m_hasVerticalGlyphs(false)
+#if PLATFORM(IOS)
+    , m_shouldNotBeUsedForArabic(false)
+#endif
 {
     m_fontData->initializeFontData(this, fontSize);
 }
@@ -103,7 +105,7 @@ void SimpleFontData::initCharWidths()
         m_avgCharWidth = m_fontMetrics.xHeight();
 
     if (m_maxCharWidth <= 0.f)
-        m_maxCharWidth = max(m_avgCharWidth, m_fontMetrics.floatAscent());
+        m_maxCharWidth = std::max(m_avgCharWidth, m_fontMetrics.floatAscent());
 }
 
 void SimpleFontData::platformGlyphInit()
@@ -151,9 +153,7 @@ void SimpleFontData::platformGlyphInit()
 
 SimpleFontData::~SimpleFontData()
 {
-#if ENABLE(SVG_FONTS)
     if (!m_fontData)
-#endif
         platformDestroy();
 
     if (isCustomFont())
@@ -230,6 +230,20 @@ PassRefPtr<SimpleFontData> SimpleFontData::brokenIdeographFontData() const
     return m_derivedFontData->brokenIdeograph;
 }
 
+PassRefPtr<SimpleFontData> SimpleFontData::nonSyntheticItalicFontData() const
+{
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->nonSyntheticItalic) {
+        FontPlatformData nonSyntheticItalicFontPlatformData(m_platformData);
+#if PLATFORM(MAC)
+        nonSyntheticItalicFontPlatformData.m_syntheticOblique = false;
+#endif
+        m_derivedFontData->nonSyntheticItalic = create(nonSyntheticItalicFontPlatformData, isCustomFont(), false, true);
+    }
+    return m_derivedFontData->nonSyntheticItalic;
+}
+
 #ifndef NDEBUG
 String SimpleFontData::description() const
 {
@@ -271,12 +285,21 @@ SimpleFontData::DerivedFontData::~DerivedFontData()
             SimpleFontData** fonts = stash.data();
             CFDictionaryGetKeysAndValues(dictionary, 0, (const void **)fonts);
             while (count-- > 0 && *fonts) {
-                OwnPtr<SimpleFontData> afont = adoptPtr(*fonts++);
+                RefPtr<SimpleFontData> afont = adoptRef(*fonts++);
                 GlyphPageTreeNode::pruneTreeCustomFontData(afont.get());
             }
         }
     }
 #endif
+}
+
+PassRefPtr<SimpleFontData> SimpleFontData::createScaledFontData(const FontDescription& fontDescription, float scaleFactor) const
+{
+    // FIXME: Support scaled fonts that used AdditionalFontData.
+    if (m_fontData)
+        return 0;
+
+    return platformCreateScaledFontData(fontDescription, scaleFactor);
 }
 
 } // namespace WebCore

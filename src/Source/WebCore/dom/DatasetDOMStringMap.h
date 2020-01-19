@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,38 +26,37 @@
 #ifndef DatasetDOMStringMap_h
 #define DatasetDOMStringMap_h
 
-#include "DOMStringMap.h"
-#include <wtf/PassOwnPtr.h>
+#include "ScriptWrappable.h"
+#include <wtf/Noncopyable.h>
+#include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class Element;
+typedef int ExceptionCode;
 
-class DatasetDOMStringMap : public DOMStringMap {
+class DatasetDOMStringMap final : public ScriptWrappable {
+    WTF_MAKE_NONCOPYABLE(DatasetDOMStringMap); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<DatasetDOMStringMap> create(Element* element)
-    {
-        return adoptPtr(new DatasetDOMStringMap(element));
-    }
-
-    virtual void ref();
-    virtual void deref();
-
-    virtual void getNames(Vector<String>&);
-    virtual String item(const String& name);
-    virtual bool contains(const String& name);
-    virtual void setItem(const String& name, const String& value, ExceptionCode&);
-    virtual void deleteItem(const String& name, ExceptionCode&);
-
-    virtual Element* element() { return m_element; }
-
-private:
-    explicit DatasetDOMStringMap(Element* element)
+    explicit DatasetDOMStringMap(Element& element)
         : m_element(element)
     {
     }
 
-    Element* m_element;
+    void ref();
+    void deref();
+
+    void getNames(Vector<String>&);
+    String item(const String& name);
+    bool contains(const String& name);
+    void setItem(const String& name, const String& value, ExceptionCode&);
+    void deleteItem(const String& name, ExceptionCode&);
+
+    Element* element() { return &m_element; }
+
+private:
+    Element& m_element;
 };
 
 } // namespace WebCore

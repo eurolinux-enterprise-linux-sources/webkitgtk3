@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009, 2010, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,20 +27,25 @@
 #define MediaPlayer_h
 
 #if ENABLE(VIDEO)
-
+#include "GraphicsTypes3D.h"
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
 #include "MediaPlayerProxy.h"
 #endif
 
+#include "AudioTrackPrivate.h"
 #include "InbandTextTrackPrivate.h"
 #include "IntRect.h"
-#include "KURL.h"
+#include "URL.h"
 #include "LayoutRect.h"
+#include "NativeImagePtr.h"
 #include "Timer.h"
+#include "VideoTrackPrivate.h"
+#include <runtime/Uint8Array.h>
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
-#include <wtf/OwnPtr.h>
+#include <wtf/MediaTime.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/StringHash.h>
 
@@ -48,6 +53,11 @@
 #include "PlatformLayer.h"
 #endif
 
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+#include "PlatformTextTrackMenu.h"
+#endif
+
+OBJC_CLASS AVAsset;
 OBJC_CLASS AVPlayer;
 OBJC_CLASS QTMovie;
 
@@ -58,10 +68,12 @@ class QTMovieVisualContext;
 namespace WebCore {
 
 class AudioSourceProvider;
+class AuthenticationChallenge;
 class Document;
-class GStreamerGWorld;
+#if ENABLE(MEDIA_SOURCE)
+class HTMLMediaSource;
+#endif
 class MediaPlayerPrivateInterface;
-class MediaSource;
 class TextTrackRepresentation;
 
 // Structure that will hold every native
@@ -74,23 +86,42 @@ struct PlatformMedia {
         QTMovieType,
         QTMovieGWorldType,
         QTMovieVisualContextType,
-        GStreamerGWorldType,
         ChromiumMediaPlayerType,
         QtMediaPlayerType,
         AVFoundationMediaPlayerType,
-        AVFoundationCFMediaPlayerType
+        AVFoundationCFMediaPlayerType,
+        AVFoundationAssetType,
     } type;
 
     union {
         QTMovie* qtMovie;
         QTMovieGWorld* qtMovieGWorld;
         QTMovieVisualContext* qtMovieVisualContext;
-        GStreamerGWorld* gstreamerGWorld;
         MediaPlayerPrivateInterface* chromiumMediaPlayer;
         MediaPlayerPrivateInterface* qtMediaPlayer;
         AVPlayer* avfMediaPlayer;
         AVCFPlayer* avcfMediaPlayer;
+        AVAsset* avfAsset;
     } media;
+};
+
+struct MediaEngineSupportParameters {
+    String type;
+    String codecs;
+    URL url;
+#if ENABLE(ENCRYPTED_MEDIA)
+    String keySystem;
+#endif
+#if ENABLE(MEDIA_SOURCE)
+    bool isMediaSource;
+#endif
+
+    MediaEngineSupportParameters()
+#if ENABLE(MEDIA_SOURCE)
+        : isMediaSource(false)
+#endif
+    {
+    }
 };
 
 extern const PlatformMedia NoPlatformMedia;
@@ -99,6 +130,7 @@ class CachedResourceLoader;
 class ContentType;
 class FrameView;
 class GraphicsContext;
+class GraphicsContext3D;
 class IntRect;
 class IntSize;
 class MediaPlayer;
@@ -180,16 +212,11 @@ public:
     virtual GraphicsDeviceAdapter* mediaPlayerGraphicsDeviceAdapter(const MediaPlayer*) const { return 0; }
 #endif
 
-#if ENABLE(MEDIA_SOURCE)
-    virtual void mediaPlayerSourceOpened() { }
-    virtual String mediaPlayerSourceURL() const { return "x-media-source-unsupported:"; }
-#endif
-
 #if ENABLE(ENCRYPTED_MEDIA)
     enum MediaKeyErrorCode { UnknownError = 1, ClientError, ServiceError, OutputError, HardwareChangeError, DomainError };
     virtual void mediaPlayerKeyAdded(MediaPlayer*, const String& /* keySystem */, const String& /* sessionId */) { }
     virtual void mediaPlayerKeyError(MediaPlayer*, const String& /* keySystem */, const String& /* sessionId */, MediaKeyErrorCode, unsigned short /* systemCode */) { }
-    virtual void mediaPlayerKeyMessage(MediaPlayer*, const String& /* keySystem */, const String& /* sessionId */, const unsigned char* /* message */, unsigned /* messageLength */, const KURL& /* defaultURL */) { }
+    virtual void mediaPlayerKeyMessage(MediaPlayer*, const String& /* keySystem */, const String& /* sessionId */, const unsigned char* /* message */, unsigned /* messageLength */, const URL& /* defaultURL */) { }
     virtual bool mediaPlayerKeyNeeded(MediaPlayer*, const String& /* keySystem */, const String& /* sessionId */, const unsigned char* /* initData */, unsigned /* initDataLength */) { return false; }
 #endif
 
@@ -197,6 +224,11 @@ public:
     virtual bool mediaPlayerKeyNeeded(MediaPlayer*, Uint8Array*) { return false; }
 #endif
     
+#if ENABLE(IOS_AIRPLAY)
+    virtual void mediaPlayerCurrentPlaybackTargetIsWirelessChanged(MediaPlayer*) { };
+    virtual void mediaPlayerPlaybackTargetAvailabilityChanged(MediaPlayer*) { };
+#endif
+
     virtual String mediaPlayerReferrer() const { return String(); }
     virtual String mediaPlayerUserAgent() const { return String(); }
     virtual CORSMode mediaPlayerCORSMode() const { return Unspecified; }
@@ -209,6 +241,7 @@ public:
     virtual void mediaPlayerSetSize(const IntSize&) { }
     virtual void mediaPlayerPause() { }
     virtual void mediaPlayerPlay() { }
+    virtual bool mediaPlayerPlatformVolumeConfigurationRequired() const { return false; }
     virtual bool mediaPlayerIsPaused() const { return true; }
     virtual bool mediaPlayerIsLooping() const { return false; }
     virtual HostWindow* mediaPlayerHostWindow() { return 0; }
@@ -216,12 +249,17 @@ public:
     virtual CachedResourceLoader* mediaPlayerCachedResourceLoader() { return 0; }
 
 #if ENABLE(VIDEO_TRACK)
-    virtual void mediaPlayerDidAddTrack(PassRefPtr<InbandTextTrackPrivate>) { }
-    virtual void mediaPlayerDidRemoveTrack(PassRefPtr<InbandTextTrackPrivate>) { }
+    virtual void mediaPlayerDidAddAudioTrack(PassRefPtr<AudioTrackPrivate>) { }
+    virtual void mediaPlayerDidAddTextTrack(PassRefPtr<InbandTextTrackPrivate>) { }
+    virtual void mediaPlayerDidAddVideoTrack(PassRefPtr<VideoTrackPrivate>) { }
+    virtual void mediaPlayerDidRemoveAudioTrack(PassRefPtr<AudioTrackPrivate>) { }
+    virtual void mediaPlayerDidRemoveTextTrack(PassRefPtr<InbandTextTrackPrivate>) { }
+    virtual void mediaPlayerDidRemoveVideoTrack(PassRefPtr<VideoTrackPrivate>) { }
 
     virtual void textTrackRepresentationBoundsChanged(const IntRect&) { }
-    virtual void paintTextTrackRepresentation(GraphicsContext*, const IntRect&) { }
 #endif
+
+    virtual bool mediaPlayerShouldWaitForResponseToAuthenticationChallenge(const AuthenticationChallenge&) { return false; }
 };
 
 class MediaPlayerSupportsTypeClient {
@@ -244,7 +282,7 @@ public:
 
     // Media engine support.
     enum SupportsType { IsNotSupported, IsSupported, MayBeSupported };
-    static MediaPlayer::SupportsType supportsType(const ContentType&, const String& keySystem, const KURL&, const MediaPlayerSupportsTypeClient*);
+    static MediaPlayer::SupportsType supportsType(const MediaEngineSupportParameters&, const MediaPlayerSupportsTypeClient*);
     static void getSupportedTypes(HashSet<String>&);
     static bool isAvailable();
     static void getSitesInMediaCache(Vector<String>&);
@@ -254,6 +292,7 @@ public:
     bool supportsFullscreen() const;
     bool supportsSave() const;
     bool supportsScanning() const;
+    bool requiresImmediateCompositing() const;
     PlatformMedia platformMedia() const;
 #if USE(ACCELERATED_COMPOSITING)
     PlatformLayer* platformLayer() const;
@@ -270,7 +309,10 @@ public:
     IntSize size() const { return m_size; }
     void setSize(const IntSize& size);
 
-    bool load(const KURL&, const ContentType&, const String& keySystem);
+    bool load(const URL&, const ContentType&, const String& keySystem);
+#if ENABLE(MEDIA_SOURCE)
+    bool load(const URL&, const ContentType&, PassRefPtr<HTMLMediaSource>);
+#endif
     void cancelLoad();
 
     bool visible() const;
@@ -278,20 +320,7 @@ public:
 
     void prepareToPlay();
     void play();
-    void pause();    
-
-#if ENABLE(MEDIA_SOURCE)
-    enum AddIdStatus { Ok, NotSupported, ReachedIdLimit };
-    AddIdStatus sourceAddId(const String& id, const String& type, const Vector<String>& codecs);
-    bool sourceRemoveId(const String& id);
-    PassRefPtr<TimeRanges> sourceBuffered(const String& id);
-    bool sourceAppend(const String& id, const unsigned char* data, unsigned length);
-    void sourceSetDuration(double);
-    bool sourceAbort(const String& id);
-    enum EndOfStreamStatus { EosNoError, EosNetworkError, EosDecodeError };
-    void sourceEndOfStream(EndOfStreamStatus);
-    bool sourceSetTimestampOffset(const String& id, double offset);
-#endif
+    void pause();
 
 #if ENABLE(ENCRYPTED_MEDIA)
     // Represents synchronous exceptions that can be thrown from the Encrypted Media methods.
@@ -306,29 +335,32 @@ public:
     bool paused() const;
     bool seeking() const;
 
-    static float invalidTime() { return -1.0f;}
-    float duration() const;
-    float currentTime() const;
-    void seek(float time);
+    static double invalidTime() { return -1.0;}
+    double duration() const;
+    double currentTime() const;
+    void seek(double time);
+    void seekWithTolerance(double time, double negativeTolerance, double positiveTolerance);
 
-    float startTime() const;
+    double startTime() const;
 
     double initialTime() const;
 
-    float rate() const;
-    void setRate(float);
+    double rate() const;
+    void setRate(double);
 
-    bool preservesPitch() const;    
+    bool preservesPitch() const;
     void setPreservesPitch(bool);
 
     PassRefPtr<TimeRanges> buffered();
     PassRefPtr<TimeRanges> seekable();
-    float maxTimeSeekable();
+    double minTimeSeekable();
+    double maxTimeSeekable();
 
     bool didLoadingProgress();
 
-    float volume() const;
-    void setVolume(float);
+    double volume() const;
+    void setVolume(double);
+    bool platformVolumeConfigurationRequired() const { return m_mediaPlayerClient->mediaPlayerPlatformVolumeConfigurationRequired(); }
 
     bool muted() const;
     void setMuted(bool);
@@ -336,11 +368,28 @@ public:
     bool hasClosedCaptions() const;
     void setClosedCaptionsVisible(bool closedCaptionsVisible);
 
-    bool autoplay() const;    
+    bool autoplay() const;
     void setAutoplay(bool);
 
     void paint(GraphicsContext*, const IntRect&);
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
+
+    // copyVideoTextureToPlatformTexture() is used to do the GPU-GPU textures copy without a readback to system memory.
+    // The first five parameters denote the corresponding GraphicsContext, destination texture, requested level, requested type and the required internalFormat for destination texture.
+    // The last two parameters premultiplyAlpha and flipY denote whether addtional premultiplyAlpha and flip operation are required during the copy.
+    // It returns true on success and false on failure.
+
+    // In the GPU-GPU textures copy, the source texture(Video texture) should have valid target, internalFormat and size, etc.
+    // The destination texture may need to be resized to to the dimensions of the source texture or re-defined to the required internalFormat.
+    // The current restrictions require that format shoud be RGB or RGBA, type should be UNSIGNED_BYTE and level should be 0. It may be lifted in the future.
+
+    // Each platform port can have its own implementation on this function. The default implementation for it is a single "return false" in MediaPlayerPrivate.h.
+    // In chromium, the implementation is based on GL_CHROMIUM_copy_texture extension which is documented at
+    // http://src.chromium.org/viewvc/chrome/trunk/src/gpu/GLES2/extensions/CHROMIUM/CHROMIUM_copy_texture.txt and implemented at
+    // http://src.chromium.org/viewvc/chrome/trunk/src/gpu/command_buffer/service/gles2_cmd_copy_texture_chromium.cc via shaders.
+    bool copyVideoTextureToPlatformTexture(GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
+
+    PassNativeImagePtr nativeImageForCurrentTime();
 
     enum NetworkState { Empty, Idle, Loading, Loaded, FormatError, NetworkError, DecodeError };
     NetworkState networkState();
@@ -357,7 +406,7 @@ public:
 
     void networkStateChanged();
     void readyStateChanged();
-    void volumeChanged(float);
+    void volumeChanged(double);
     void muteChanged(bool);
     void timeChanged();
     void sizeChanged();
@@ -370,6 +419,7 @@ public:
     void repaint();
 
     MediaPlayerClient* mediaPlayerClient() const { return m_mediaPlayerClient; }
+    void clearMediaPlayerClient() { m_mediaPlayerClient = 0; }
 
     bool hasAvailableVideoFrame() const;
     void prepareForRendering();
@@ -388,6 +438,21 @@ public:
     void exitFullscreen();
 #endif
 
+#if ENABLE(IOS_AIRPLAY)
+    bool isCurrentPlaybackTargetWireless() const;
+    void showPlaybackTargetPicker();
+
+    bool hasWirelessPlaybackTargets() const;
+
+    bool wirelessVideoPlaybackDisabled() const;
+    void setWirelessVideoPlaybackDisabled(bool);
+
+    void currentPlaybackTargetIsWirelessChanged();
+    void playbackTargetAvailabilityChanged();
+
+    void setHasPlaybackTargetAvailabilityListeners(bool);
+#endif
+
 #if USE(NATIVE_FULLSCREEN_VIDEO)
     bool canEnterFullscreen() const;
 #endif
@@ -399,6 +464,9 @@ public:
     void acceleratedRenderingStateChanged();
 #endif
 
+    bool shouldMaintainAspectRatio() const;
+    void setShouldMaintainAspectRatio(bool);
+
 #if PLATFORM(WIN) && USE(AVFOUNDATION)
     GraphicsDeviceAdapter* graphicsDeviceAdapter() const;
 #endif
@@ -407,7 +475,7 @@ public:
 
     bool didPassCORSAccessCheck() const;
 
-    float mediaTimeForTimeValue(float) const;
+    double mediaTimeForTimeValue(double) const;
 
     double maximumDurationToCacheMediaTime() const;
 
@@ -422,15 +490,10 @@ public:
     AudioSourceProvider* audioSourceProvider();
 #endif
 
-#if ENABLE(MEDIA_SOURCE)
-    void sourceOpened();
-    String sourceURL() const;
-#endif
-
 #if ENABLE(ENCRYPTED_MEDIA)
     void keyAdded(const String& keySystem, const String& sessionId);
     void keyError(const String& keySystem, const String& sessionId, MediaPlayerClient::MediaKeyErrorCode, unsigned short systemCode);
-    void keyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const KURL& defaultURL);
+    void keyMessage(const String& keySystem, const String& sessionId, const unsigned char* message, unsigned messageLength, const URL& defaultURL);
     bool keyNeeded(const String& keySystem, const String& sessionId, const unsigned char* initData, unsigned initDataLength);
 #endif
 
@@ -443,26 +506,56 @@ public:
 
     String engineDescription() const;
 
+#if PLATFORM(IOS)
+    void attributeChanged(const String& name, const String& value);
+    bool readyForPlayback() const;
+#endif
+
     CachedResourceLoader* cachedResourceLoader();
 
 #if ENABLE(VIDEO_TRACK)
+    void addAudioTrack(PassRefPtr<AudioTrackPrivate>);
     void addTextTrack(PassRefPtr<InbandTextTrackPrivate>);
+    void addVideoTrack(PassRefPtr<VideoTrackPrivate>);
+    void removeAudioTrack(PassRefPtr<AudioTrackPrivate>);
     void removeTextTrack(PassRefPtr<InbandTextTrackPrivate>);
+    void removeVideoTrack(PassRefPtr<VideoTrackPrivate>);
 
     bool requiresTextTrackRepresentation() const;
     void setTextTrackRepresentation(TextTrackRepresentation*);
 #endif
 
-    static void requeryMediaEngines();
+    static void resetMediaEngines();
+
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    bool implementsTextTrackControls() const;
+    PassRefPtr<PlatformTextTrackMenuInterface> textTrackMenu();
+#endif
 
 #if USE(GSTREAMER)
-    virtual void simulateAudioInterruption();
+    void simulateAudioInterruption();
 #endif
+
+    String languageOfPrimaryAudioTrack() const;
+
+    size_t extraMemoryCost() const;
+
+    unsigned long long fileSize() const;
+
+#if ENABLE(MEDIA_SOURCE)
+    unsigned long totalVideoFrames();
+    unsigned long droppedVideoFrames();
+    unsigned long corruptedVideoFrames();
+    double totalFrameDelay();
+#endif
+
+    bool shouldWaitForResponseToAuthenticationChallenge(const AuthenticationChallenge&);
 
 private:
     MediaPlayer(MediaPlayerClient*);
+    MediaPlayerFactory* nextBestMediaEngine(MediaPlayerFactory*) const;
     void loadWithNextMediaEngine(MediaPlayerFactory*);
-    void reloadTimerFired(Timer<MediaPlayer>*);
+    void reloadTimerFired(Timer<MediaPlayer>&);
 
     static void initializeMediaEngines();
 
@@ -470,7 +563,7 @@ private:
     Timer<MediaPlayer> m_reloadTimer;
     OwnPtr<MediaPlayerPrivateInterface> m_private;
     MediaPlayerFactory* m_currentMediaEngine;
-    KURL m_url;
+    URL m_url;
     String m_contentMIMEType;
     String m_contentTypeCodecs;
     String m_keySystem;
@@ -478,8 +571,8 @@ private:
     IntSize m_size;
     Preload m_preload;
     bool m_visible;
-    float m_rate;
-    float m_volume;
+    double m_rate;
+    double m_volume;
     bool m_muted;
     bool m_preservesPitch;
     bool m_privateBrowsing;
@@ -488,21 +581,27 @@ private:
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     WebMediaPlayerProxy* m_playerProxy;    // not owned or used, passed to m_private
 #endif
+
+#if ENABLE(MEDIA_SOURCE)
+    RefPtr<HTMLMediaSource> m_mediaSource;
+#endif
 };
 
 typedef PassOwnPtr<MediaPlayerPrivateInterface> (*CreateMediaEnginePlayer)(MediaPlayer*);
 typedef void (*MediaEngineSupportedTypes)(HashSet<String>& types);
-#if ENABLE(ENCRYPTED_MEDIA) || ENABLE(ENCRYPTED_MEDIA_V2)
-typedef MediaPlayer::SupportsType (*MediaEngineSupportsType)(const String& type, const String& codecs, const String& keySystem, const KURL& url);
-#else
-typedef MediaPlayer::SupportsType (*MediaEngineSupportsType)(const String& type, const String& codecs, const KURL& url);
-#endif
+typedef MediaPlayer::SupportsType (*MediaEngineSupportsType)(const MediaEngineSupportParameters& parameters);
 typedef void (*MediaEngineGetSitesInMediaCache)(Vector<String>&);
 typedef void (*MediaEngineClearMediaCache)();
 typedef void (*MediaEngineClearMediaCacheForSite)(const String&);
 
 typedef void (*MediaEngineRegistrar)(CreateMediaEnginePlayer, MediaEngineSupportedTypes, MediaEngineSupportsType,
     MediaEngineGetSitesInMediaCache, MediaEngineClearMediaCache, MediaEngineClearMediaCacheForSite);
+typedef void (*MediaEngineRegister)(MediaEngineRegistrar);
+
+class MediaPlayerFactorySupport {
+public:
+    static void callRegisterMediaEngine(MediaEngineRegister);
+};
 
 }
 

@@ -36,6 +36,13 @@ WebKitWebContext
 @webkitwebcontext: the object which received the signal.
 @arg1: 
 
+<!-- ##### SIGNAL WebKitWebContext::initialize-web-extensions ##### -->
+<para>
+
+</para>
+
+@webkitwebcontext: the object which received the signal.
+
 <!-- ##### ENUM WebKitCacheModel ##### -->
 <para>
 
@@ -44,6 +51,14 @@ WebKitWebContext
 @WEBKIT_CACHE_MODEL_DOCUMENT_VIEWER: 
 @WEBKIT_CACHE_MODEL_WEB_BROWSER: 
 @WEBKIT_CACHE_MODEL_DOCUMENT_BROWSER: 
+
+<!-- ##### ENUM WebKitProcessModel ##### -->
+<para>
+
+</para>
+
+@WEBKIT_PROCESS_MODEL_SHARED_SECONDARY_PROCESS: 
+@WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES: 
 
 <!-- ##### ENUM WebKitTLSErrorsPolicy ##### -->
 <para>
@@ -246,6 +261,15 @@ WebKitWebContext
 @directory: 
 
 
+<!-- ##### FUNCTION webkit_web_context_set_web_extensions_initialization_user_data ##### -->
+<para>
+
+</para>
+
+@context: 
+@user_data: 
+
+
 <!-- ##### FUNCTION webkit_web_context_prefetch_dns ##### -->
 <para>
 
@@ -262,6 +286,34 @@ WebKitWebContext
 
 @context: 
 @directory: 
+
+
+<!-- ##### FUNCTION webkit_web_context_allow_tls_certificate_for_host ##### -->
+<para>
+
+</para>
+
+@context: 
+@info: 
+@host: 
+
+
+<!-- ##### FUNCTION webkit_web_context_get_process_model ##### -->
+<para>
+
+</para>
+
+@context: 
+@Returns: 
+
+
+<!-- ##### FUNCTION webkit_web_context_set_process_model ##### -->
+<para>
+
+</para>
+
+@context: 
+@process_model: 
 
 
 <!-- ##### USER_FUNCTION WebKitURISchemeRequestCallback ##### -->

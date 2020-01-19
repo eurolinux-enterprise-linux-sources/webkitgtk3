@@ -19,27 +19,25 @@
 #ifndef GtkDragAndDropHelper_h
 #define GtkDragAndDropHelper_h
 
+#if ENABLE(DRAG_SUPPORT)
+
 #include "DataObjectGtk.h"
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/text/CString.h>
 
 namespace WebCore {
 
 struct DroppingContext;
 class DragData;
 
-typedef void (*DragExitedCallback)(GtkWidget*, DragData*, bool dropHappened);
+typedef void (*DragExitedCallback)(GtkWidget*, DragData&, bool dropHappened);
 
 class GtkDragAndDropHelper {
     WTF_MAKE_NONCOPYABLE(GtkDragAndDropHelper);
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    GtkDragAndDropHelper()
-        : m_widget(0)
-    {
-    }
+    GtkDragAndDropHelper();
     ~GtkDragAndDropHelper();
 
     void setWidget(GtkWidget* widget) { m_widget = widget; }
@@ -54,10 +52,12 @@ public:
 
 private:
     GtkWidget* m_widget;
-    HashMap<GdkDragContext*, DroppingContext*> m_droppingContexts;
-    HashMap<GdkDragContext*, RefPtr<DataObjectGtk> > m_draggingDataObjects;
+    HashMap<GdkDragContext*, std::unique_ptr<DroppingContext>> m_droppingContexts;
+    HashMap<GdkDragContext*, RefPtr<DataObjectGtk>> m_draggingDataObjects;
 };
 
 }
+
+#endif // ENABLE(DRAG_SUPPORT)
 
 #endif // DataObjectGtk_h

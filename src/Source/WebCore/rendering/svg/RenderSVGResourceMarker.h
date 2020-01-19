@@ -21,10 +21,8 @@
 #define RenderSVGResourceMarker_h
 
 #if ENABLE(SVG)
-#include "FloatRect.h"
 #include "RenderSVGResourceContainer.h"
 #include "SVGMarkerElement.h"
-#include "SVGStyledElement.h"
 
 #include <wtf/HashSet.h>
 
@@ -33,15 +31,15 @@ namespace WebCore {
 class AffineTransform;
 class RenderObject;
 
-class RenderSVGResourceMarker : public RenderSVGResourceContainer {
+class RenderSVGResourceMarker final : public RenderSVGResourceContainer {
 public:
-    RenderSVGResourceMarker(SVGMarkerElement*);
+    RenderSVGResourceMarker(SVGMarkerElement&, PassRef<RenderStyle>);
     virtual ~RenderSVGResourceMarker();
 
-    virtual const char* renderName() const { return "RenderSVGResourceMarker"; }
+    SVGMarkerElement& markerElement() const { return toSVGMarkerElement(RenderSVGResourceContainer::element()); }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true);
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true);
+    virtual void removeClientFromCache(RenderObject&, bool markForInvalidation = true);
 
     void draw(PaintInfo&, const AffineTransform&);
 
@@ -55,17 +53,21 @@ public:
     virtual const AffineTransform& localToParentTransform() const;
     AffineTransform markerTransformation(const FloatPoint& origin, float angle, float strokeWidth) const;
 
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short) { return false; }
-    virtual FloatRect resourceBoundingBox(RenderObject*) { return FloatRect(); }
+    virtual bool applyResource(RenderElement&, const RenderStyle&, GraphicsContext*&, unsigned short) override { return false; }
+    virtual FloatRect resourceBoundingBox(const RenderObject&) override { return FloatRect(); }
 
     FloatPoint referencePoint() const;
     float angle() const;
-    SVGMarkerUnitsType markerUnits() const { return static_cast<SVGMarkerElement*>(node())->markerUnits(); }
+    SVGMarkerUnitsType markerUnits() const { return markerElement().markerUnits(); }
 
     virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
     static RenderSVGResourceType s_resourceType;
 
 private:
+    void element() const = delete;
+
+    virtual const char* renderName() const override { return "RenderSVGResourceMarker"; }
+
     // Generates a transformation matrix usable to render marker content. Handles scaling the marker content
     // acording to SVGs markerUnits="strokeWidth" concept, when a strokeWidth value != -1 is passed in.
     AffineTransform markerContentTransformation(const AffineTransform& contentTransformation, const FloatPoint& origin, float strokeWidth = -1) const;

@@ -31,32 +31,16 @@
     Conditional=INDEXED_DATABASE,
     ActiveDOMObject,
     EventTarget,
-    JSNoStaticTables
-] interface IDBRequest {
-    readonly attribute IDBAny result
-        getter raises (DOMException);
-    readonly attribute DOMError error
-        getter raises (DOMException);
-    [TreatReturnedNullStringAs=Undefined] readonly attribute DOMString webkitErrorMessage
-        getter raises (DOMException);
-
+    JSNoStaticTables,
+    JSGenerateToJSObject,
+    JSGenerateToNativeObject
+] interface IDBRequest : EventTarget {
+    [GetterRaisesException] readonly attribute IDBAny result;
+    [GetterRaisesException] readonly attribute DOMError error;
     readonly attribute IDBAny source;
     readonly attribute IDBTransaction transaction;
-
-    // States
     readonly attribute DOMString readyState;
 
-    // Events
     attribute EventListener onsuccess;
     attribute EventListener onerror;
-
-    // EventTarget interface
-    void addEventListener(in DOMString type,
-                          in EventListener listener,
-                          in [Optional] boolean useCapture);
-    void removeEventListener(in DOMString type,
-                             in EventListener listener,
-                             in [Optional] boolean useCapture);
-    boolean dispatchEvent(in Event evt)
-        raises(EventException);
 };

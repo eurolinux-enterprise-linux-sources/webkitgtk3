@@ -12,11 +12,11 @@
 #include <stdio.h>
 
 #include "compiler/InitializeParseContext.h"
-#include "compiler/ParseHelper.h"
-
-static const int kTraceBufferLen = 1024;
+#include "compiler/ParseContext.h"
 
 #ifdef TRACE_ENABLED
+static const int kTraceBufferLen = 1024;
+
 extern "C" {
 void Trace(const char *format, ...) {
     if (!format) return;

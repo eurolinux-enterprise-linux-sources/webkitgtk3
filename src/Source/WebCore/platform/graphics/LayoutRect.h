@@ -31,22 +31,13 @@
 #ifndef LayoutRect_h
 #define LayoutRect_h
 
+#include "FloatRect.h"
 #include "IntRect.h"
 #include "LayoutBoxExtent.h"
 #include "LayoutPoint.h"
 #include <wtf/Vector.h>
 
-#if PLATFORM(QT)
-#include <qglobal.h>
-QT_BEGIN_NAMESPACE
-class QRect;
-class QRectF;
-QT_END_NAMESPACE
-#endif
-
 namespace WebCore {
-
-class FloatRect;
 
 class LayoutRect {
 public:
@@ -167,6 +158,7 @@ public:
     }
     void inflate(LayoutUnit d) { inflateX(d); inflateY(d); }
     void scale(float s);
+    void scale(float xScale, float yScale);
 
     LayoutRect transposedRect() const { return LayoutRect(m_location.transposedPoint(), m_size.transposedSize()); }
 
@@ -175,12 +167,8 @@ public:
         // Return a rect that is slightly smaller than the true max rect to allow pixelSnapping to round up to the nearest IntRect without overflowing.
         return LayoutRect(LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMin() / 2, LayoutUnit::nearlyMax(), LayoutUnit::nearlyMax());
     }
-
-#if PLATFORM(QT)
-    explicit LayoutRect(const QRect&);
-    explicit LayoutRect(const QRectF&);
-    operator QRectF() const;
-#endif
+    
+    operator FloatRect() const { return FloatRect(m_location, m_size); }
 
 private:
     LayoutPoint m_location;

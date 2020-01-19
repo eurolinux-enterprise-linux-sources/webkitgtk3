@@ -32,10 +32,10 @@
 #include "MacroAssembler.h"
 #include "Opcode.h"
 #include "PropertySlot.h"
-#include "ResolveOperation.h"
 #include "SpecialPointer.h"
 #include "Structure.h"
 #include "StructureChain.h"
+#include "VirtualRegister.h"
 #include <wtf/VectorTraits.h>
 
 namespace JSC {
@@ -43,6 +43,7 @@ namespace JSC {
 class ArrayAllocationProfile;
 class ArrayProfile;
 class ObjectAllocationProfile;
+class VariableWatchpointSet;
 struct LLIntCallLinkInfo;
 struct ValueProfile;
 
@@ -70,35 +71,32 @@ struct Instruction {
         u.operand = operand;
     }
 
-    Instruction(JSGlobalData& globalData, JSCell* owner, Structure* structure)
+    Instruction(VM& vm, JSCell* owner, Structure* structure)
     {
         u.structure.clear();
-        u.structure.set(globalData, owner, structure);
+        u.structure.set(vm, owner, structure);
     }
-    Instruction(JSGlobalData& globalData, JSCell* owner, StructureChain* structureChain)
+    Instruction(VM& vm, JSCell* owner, StructureChain* structureChain)
     {
         u.structureChain.clear();
-        u.structureChain.set(globalData, owner, structureChain);
+        u.structureChain.set(vm, owner, structureChain);
     }
-    Instruction(JSGlobalData& globalData, JSCell* owner, JSCell* jsCell)
+    Instruction(VM& vm, JSCell* owner, JSCell* jsCell)
     {
         u.jsCell.clear();
-        u.jsCell.set(globalData, owner, jsCell);
+        u.jsCell.set(vm, owner, jsCell);
     }
 
     Instruction(PropertySlot::GetValueFunc getterFunc) { u.getterFunc = getterFunc; }
         
     Instruction(LLIntCallLinkInfo* callLinkInfo) { u.callLinkInfo = callLinkInfo; }
-        
     Instruction(ValueProfile* profile) { u.profile = profile; }
     Instruction(ArrayProfile* profile) { u.arrayProfile = profile; }
     Instruction(ArrayAllocationProfile* profile) { u.arrayAllocationProfile = profile; }
     Instruction(ObjectAllocationProfile* profile) { u.objectAllocationProfile = profile; }
-        
     Instruction(WriteBarrier<Unknown>* registerPointer) { u.registerPointer = registerPointer; }
-        
     Instruction(Special::Pointer pointer) { u.specialPointer = pointer; }
-        
+    Instruction(StringImpl* uid) { u.uid = uid; }
     Instruction(bool* predicatePointer) { u.predicatePointer = predicatePointer; }
 
     union {
@@ -111,14 +109,15 @@ struct Instruction {
         Special::Pointer specialPointer;
         PropertySlot::GetValueFunc getterFunc;
         LLIntCallLinkInfo* callLinkInfo;
+        StringImpl* uid;
         ValueProfile* profile;
         ArrayProfile* arrayProfile;
         ArrayAllocationProfile* arrayAllocationProfile;
         ObjectAllocationProfile* objectAllocationProfile;
+        VariableWatchpointSet* watchpointSet;
+        WriteBarrierBase<JSActivation> activation;
         void* pointer;
         bool* predicatePointer;
-        ResolveOperations* resolveOperations;
-        PutToBaseOperation* putToBaseOperation;
     } u;
         
 private:

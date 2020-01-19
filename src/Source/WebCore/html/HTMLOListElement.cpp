@@ -33,7 +33,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLOListElement::HTMLOListElement(const QualifiedName& tagName, Document* document)
+HTMLOListElement::HTMLOListElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_start(0xBADBEEF)
     , m_itemCount(0)
@@ -44,12 +44,12 @@ HTMLOListElement::HTMLOListElement(const QualifiedName& tagName, Document* docum
     ASSERT(hasTagName(olTag));
 }
 
-PassRefPtr<HTMLOListElement> HTMLOListElement::create(Document* document)
+PassRefPtr<HTMLOListElement> HTMLOListElement::create(Document& document)
 {
     return adoptRef(new HTMLOListElement(olTag, document));
 }
 
-PassRefPtr<HTMLOListElement> HTMLOListElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLOListElement> HTMLOListElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLOListElement(tagName, document));
 }
@@ -61,21 +61,21 @@ bool HTMLOListElement::isPresentationAttribute(const QualifiedName& name) const
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLOListElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLOListElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == typeAttr) {
-        if (attribute.value() == "a")
+    if (name == typeAttr) {
+        if (value == "a")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueLowerAlpha);
-        else if (attribute.value() == "A")
+        else if (value == "A")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueUpperAlpha);
-        else if (attribute.value() == "i")
+        else if (value == "i")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueLowerRoman);
-        else if (attribute.value() == "I")
+        else if (value == "I")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueUpperRoman);
-        else if (attribute.value() == "1")
+        else if (value == "1")
             addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, CSSValueDecimal);
     } else
-        HTMLElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 void HTMLOListElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -101,22 +101,17 @@ void HTMLOListElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 void HTMLOListElement::setStart(int start)
 {
-    setAttribute(startAttr, String::number(start));
+    setIntegralAttribute(startAttr, start);
 }
 
 void HTMLOListElement::updateItemValues()
 {
-    for (RenderListItem* listItem = RenderListItem::nextListItem(renderer()); listItem; listItem = RenderListItem::nextListItem(renderer(), listItem))
-        listItem->updateValue();
+    RenderListItem::updateItemValuesForOrderedList(this);
 }
 
 void HTMLOListElement::recalculateItemCount()
 {
-    m_itemCount = 0;
-
-    for (RenderListItem* listItem = RenderListItem::nextListItem(renderer()); listItem; listItem = RenderListItem::nextListItem(renderer(), listItem))
-        m_itemCount++;
-
+    m_itemCount = RenderListItem::itemCountForOrderedList(this);
     m_shouldRecalculateItemCount = false;
 }
 

@@ -35,7 +35,6 @@ WebKitDownload
 
 @webkitdownload: the object which received the signal.
 @arg1: 
-@Returns: 
 
 <!-- ##### SIGNAL WebKitDownload::decide-destination ##### -->
 <para>

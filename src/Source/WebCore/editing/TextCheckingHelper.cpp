@@ -30,21 +30,21 @@
 #include "Document.h"
 #include "DocumentMarkerController.h"
 #include "Frame.h"
-#include "Range.h"
 #include "Settings.h"
 #include "TextBreakIterator.h"
 #include "TextCheckerClient.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
-#include "visible_units.h"
+#include "VisibleUnits.h"
+#include <wtf/text/StringView.h>
 
 namespace WebCore {
 
 #if !USE(UNIFIED_TEXT_CHECKING)
+
+#if USE(GRAMMAR_CHECKING)
 static void findBadGrammars(TextCheckerClient* client, const UChar* text, int start, int length, Vector<TextCheckingResult>& results)
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
-
     int checkLocation = start;
     int checkLength = length;
 
@@ -68,10 +68,11 @@ static void findBadGrammars(TextCheckerClient* client, const UChar* text, int st
         checkLength -= (badGrammarLocation + badGrammarLength);
     }
 }
+#endif
 
-static void findMisspellings(TextCheckerClient* client, const UChar* text, int start, int length, Vector<TextCheckingResult>& results)
+static void findMisspellings(TextCheckerClient* client, const UChar* text, int length, Vector<TextCheckingResult>& results)
 {
-    TextBreakIterator* iterator = wordBreakIterator(text + start, length);
+    TextBreakIterator* iterator = wordBreakIterator(StringView(text, length));
     if (!iterator)
         return;
     int wordStart = textBreakCurrent(iterator);
@@ -82,13 +83,13 @@ static void findMisspellings(TextCheckerClient* client, const UChar* text, int s
         int wordLength = wordEnd - wordStart;
         int misspellingLocation = -1;
         int misspellingLength = 0;
-        client->checkSpellingOfString(text + start + wordStart, wordLength, &misspellingLocation, &misspellingLength);
+        client->checkSpellingOfString(text + wordStart, wordLength, &misspellingLocation, &misspellingLength);
         if (0 < misspellingLength) {
             ASSERT(0 <= misspellingLocation && misspellingLocation <= wordLength);
             ASSERT(0 < misspellingLength && misspellingLocation + misspellingLength <= wordLength);
             TextCheckingResult misspelling;
             misspelling.type = TextCheckingTypeSpelling;
-            misspelling.location = start + wordStart + misspellingLocation;
+            misspelling.location = wordStart + misspellingLocation;
             misspelling.length = misspellingLength;
             misspelling.replacement = client->getAutoCorrectSuggestionForMisspelledWord(String(text + misspelling.location, misspelling.length));
             results.append(misspelling);
@@ -232,6 +233,7 @@ TextCheckingHelper::~TextCheckingHelper()
 {
 }
 
+#if !PLATFORM(IOS)
 String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, bool markAll, RefPtr<Range>& firstMisspellingRange)
 {
     WordAwareIterator it(m_range.get());
@@ -274,7 +276,7 @@ String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, boo
                 }
 
                 // Store marker for misspelled word.
-                misspellingRange->startContainer()->document()->markers()->addMarker(misspellingRange.get(), DocumentMarker::Spelling);
+                misspellingRange->startContainer()->document().markers().addMarker(misspellingRange.get(), DocumentMarker::Spelling);
 
                 // Bail out if we're marking only the first misspelling, and not all instances.
                 if (!markAll)
@@ -343,7 +345,7 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
                 
                 Vector<TextCheckingResult> results;
                 TextCheckingTypeMask checkingTypes = checkGrammar ? (TextCheckingTypeSpelling | TextCheckingTypeGrammar) : TextCheckingTypeSpelling;
-                checkTextOfParagraph(m_client->textChecker(), paragraphString.characters(), paragraphString.length(), checkingTypes, results);
+                checkTextOfParagraph(m_client->textChecker(), paragraphString.deprecatedCharacters(), paragraphString.length(), checkingTypes, results);
                 
                 for (unsigned i = 0; i < results.size(); i++) {
                     const TextCheckingResult* result = &results[i];
@@ -412,10 +414,11 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
     }
     return firstFoundItem;
 }
+#endif // !PLATFORM(IOS)
 
-int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int /*badGrammarPhraseLength*/, int startOffset, int endOffset, bool markAll)
-{
 #if USE(GRAMMAR_CHECKING)
+int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int startOffset, int endOffset, bool markAll) const
+{
     // Found some bad grammar. Find the earliest detail range that starts in our search range (if any).
     // Optionally add a DocumentMarker for each detail in the range.
     int earliestDetailLocationSoFar = -1;
@@ -436,7 +439,7 @@ int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& gram
         
         if (markAll) {
             RefPtr<Range> badGrammarRange = TextIterator::subrange(m_range.get(), badGrammarPhraseLocation - startOffset + detail->location, detail->length);
-            badGrammarRange->startContainer()->document()->markers()->addMarker(badGrammarRange.get(), DocumentMarker::Grammar, detail->userDescription);
+            badGrammarRange->startContainer()->document().markers().addMarker(badGrammarRange.get(), DocumentMarker::Grammar, detail->userDescription);
         }
         
         // Remember this detail only if it's earlier than our current candidate (the details aren't in a guaranteed order)
@@ -447,20 +450,10 @@ int TextCheckingHelper::findFirstGrammarDetail(const Vector<GrammarDetail>& gram
     }
     
     return earliestDetailIndex;
-#else
-    ASSERT_NOT_REACHED();
-    UNUSED_PARAM(grammarDetails);
-    UNUSED_PARAM(badGrammarPhraseLocation);
-    UNUSED_PARAM(startOffset);
-    UNUSED_PARAM(endOffset);
-    UNUSED_PARAM(markAll);
-    return 0;
-#endif
 }
 
-String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, int& outGrammarPhraseOffset, bool markAll)
+String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, int& outGrammarPhraseOffset, bool markAll) const
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
     // Initialize out parameters; these will be updated if we find something to return.
     outGrammarDetail.location = -1;
     outGrammarDetail.length = 0;
@@ -481,7 +474,7 @@ String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, 
         Vector<GrammarDetail> grammarDetails;
         int badGrammarPhraseLocation = -1;
         int badGrammarPhraseLength = 0;
-        m_client->textChecker()->checkGrammarOfString(paragraph.textCharacters() + startOffset, paragraph.textLength() - startOffset, grammarDetails, &badGrammarPhraseLocation, &badGrammarPhraseLength);
+        m_client->textChecker()->checkGrammarOfString(paragraph.textDeprecatedCharacters() + startOffset, paragraph.textLength() - startOffset, grammarDetails, &badGrammarPhraseLocation, &badGrammarPhraseLength);
         
         if (!badGrammarPhraseLength) {
             ASSERT(badGrammarPhraseLocation == -1);
@@ -493,7 +486,7 @@ String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, 
 
         
         // Found some bad grammar. Find the earliest detail range that starts in our search range (if any).
-        int badGrammarIndex = findFirstGrammarDetail(grammarDetails, badGrammarPhraseLocation, badGrammarPhraseLength, paragraph.checkingStart(), paragraph.checkingEnd(), markAll);
+        int badGrammarIndex = findFirstGrammarDetail(grammarDetails, badGrammarPhraseLocation, paragraph.checkingStart(), paragraph.checkingEnd(), markAll);
         if (badGrammarIndex >= 0) {
             ASSERT(static_cast<unsigned>(badGrammarIndex) < grammarDetails.size());
             outGrammarDetail = grammarDetails[badGrammarIndex];
@@ -519,9 +512,8 @@ String TextCheckingHelper::findFirstBadGrammar(GrammarDetail& outGrammarDetail, 
 }
 
 
-bool TextCheckingHelper::isUngrammatical(Vector<String>& guessesVector) const
+bool TextCheckingHelper::isUngrammatical() const
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
     if (!m_client)
         return false;
 
@@ -531,11 +523,10 @@ bool TextCheckingHelper::isUngrammatical(Vector<String>& guessesVector) const
     // Returns true only if the passed range exactly corresponds to a bad grammar detail range. This is analogous
     // to isSelectionMisspelled. It's not good enough for there to be some bad grammar somewhere in the range,
     // or overlapping the range; the ranges must exactly match.
-    guessesVector.clear();
     int grammarPhraseOffset;
     
     GrammarDetail grammarDetail;
-    String badGrammarPhrase = const_cast<TextCheckingHelper*>(this)->findFirstBadGrammar(grammarDetail, grammarPhraseOffset, false);    
+    String badGrammarPhrase = findFirstBadGrammar(grammarDetail, grammarPhraseOffset, false);
     
     // No bad grammar in these parts at all.
     if (badGrammarPhrase.isEmpty())
@@ -563,6 +554,7 @@ bool TextCheckingHelper::isUngrammatical(Vector<String>& guessesVector) const
     
     return true;
 }
+#endif
 
 Vector<String> TextCheckingHelper::guessesForMisspelledOrUngrammaticalRange(bool checkGrammar, bool& misspelled, bool& ungrammatical) const
 {
@@ -583,7 +575,7 @@ Vector<String> TextCheckingHelper::guessesForMisspelledOrUngrammaticalRange(bool
 
     Vector<TextCheckingResult> results;
     TextCheckingTypeMask checkingTypes = checkGrammar ? (TextCheckingTypeSpelling | TextCheckingTypeGrammar) : TextCheckingTypeSpelling;
-    checkTextOfParagraph(m_client->textChecker(), paragraph.textCharacters(), paragraph.textLength(), checkingTypes, results);
+    checkTextOfParagraph(m_client->textChecker(), paragraph.textDeprecatedCharacters(), paragraph.textLength(), checkingTypes, results);
     
     for (unsigned i = 0; i < results.size(); i++) {
         const TextCheckingResult* result = &results[i];
@@ -622,6 +614,7 @@ Vector<String> TextCheckingHelper::guessesForMisspelledOrUngrammaticalRange(bool
 }
 
 
+#if !PLATFORM(IOS)
 void TextCheckingHelper::markAllMisspellings(RefPtr<Range>& firstMisspellingRange)
 {
     // Use the "markAll" feature of findFirstMisspelling. Ignore the return value and the "out parameter";
@@ -630,38 +623,34 @@ void TextCheckingHelper::markAllMisspellings(RefPtr<Range>& firstMisspellingRang
     findFirstMisspelling(ignoredOffset, true, firstMisspellingRange);
 }
 
+#if USE(GRAMMAR_CHECKING)
 void TextCheckingHelper::markAllBadGrammar()
 {
-    ASSERT(WTF_USE_GRAMMAR_CHECKING);
     // Use the "markAll" feature of ofindFirstBadGrammar. Ignore the return value and "out parameters"; all we need to
     // do is mark every instance.
     GrammarDetail ignoredGrammarDetail;
     int ignoredOffset;
     findFirstBadGrammar(ignoredGrammarDetail, ignoredOffset, true);
 }
+#endif
+#endif // !PLATFORM(IOS)
 
 bool TextCheckingHelper::unifiedTextCheckerEnabled() const
 {
-    if (!m_range)
-        return false;
-
-    Document* doc = m_range->ownerDocument();
-    if (!doc)
-        return false;
-
-    return WebCore::unifiedTextCheckerEnabled(doc->frame());
+    return m_range && WebCore::unifiedTextCheckerEnabled(m_range->ownerDocument().frame());
 }
 
 void checkTextOfParagraph(TextCheckerClient* client, const UChar* text, int length,
                           TextCheckingTypeMask checkingTypes, Vector<TextCheckingResult>& results)
 {
 #if USE(UNIFIED_TEXT_CHECKING)
-    client->checkTextOfParagraph(text, length, checkingTypes, results);
+    results = client->checkTextOfParagraph(StringView(text, length), checkingTypes);
 #else
     Vector<TextCheckingResult> spellingResult;
     if (checkingTypes & TextCheckingTypeSpelling)
-        findMisspellings(client, text, 0, length, spellingResult);
+        findMisspellings(client, text, length, spellingResult);
 
+#if USE(GRAMMAR_CHECKING)
     Vector<TextCheckingResult> grammarResult;
     if (checkingTypes & TextCheckingTypeGrammar) {
         // Only checks grammartical error before the first misspellings
@@ -676,12 +665,13 @@ void checkTextOfParagraph(TextCheckerClient* client, const UChar* text, int leng
 
     if (grammarResult.size())
         results.swap(grammarResult);
+#endif
 
     if (spellingResult.size()) {
         if (results.isEmpty())
             results.swap(spellingResult);
         else
-            results.append(spellingResult);
+            results.appendVector(spellingResult);
     }
 #endif
 }
@@ -690,12 +680,7 @@ bool unifiedTextCheckerEnabled(const Frame* frame)
 {
     if (!frame)
         return false;
-
-    const Settings* settings = frame->settings();
-    if (!settings)
-        return false;
-
-    return settings->unifiedTextCheckerEnabled();
+    return frame->settings().unifiedTextCheckerEnabled();
 }
 
 }

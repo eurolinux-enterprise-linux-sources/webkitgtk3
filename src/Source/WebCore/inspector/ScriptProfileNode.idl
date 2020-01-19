@@ -25,8 +25,8 @@
  */
 
 [
-    Conditional=JAVASCRIPT_DEBUGGER,
-    OmitConstructor
+    NoInterfaceObject,
+    ImplementationLacksVTable
 ] interface ScriptProfileNode {
     readonly attribute DOMString functionName;
     readonly attribute DOMString url;
@@ -35,7 +35,6 @@
     readonly attribute double selfTime;
     readonly attribute unsigned long numberOfCalls;
     sequence<ScriptProfileNode> children();
-    readonly attribute boolean visible;
     readonly attribute unsigned long callUID;
 };
 

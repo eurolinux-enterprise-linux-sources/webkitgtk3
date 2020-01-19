@@ -31,7 +31,7 @@
 #ifndef ApplicationCacheHost_h
 #define ApplicationCacheHost_h
 
-#include "KURL.h"
+#include "URL.h"
 #include <wtf/Deque.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassRefPtr.h>
@@ -47,14 +47,10 @@ namespace WebCore {
     class ResourceRequest;
     class ResourceResponse;
     class SubstituteData;
-#if PLATFORM(CHROMIUM)
-    class ApplicationCacheHostInternal;
-#else
     class ApplicationCache;
     class ApplicationCacheGroup;
     class ApplicationCacheResource;
     class ApplicationCacheStorage;
-#endif
 
     class ApplicationCacheHost {
         WTF_MAKE_NONCOPYABLE(ApplicationCacheHost); WTF_MAKE_FAST_ALLOCATED;
@@ -82,19 +78,19 @@ namespace WebCore {
 
 #if ENABLE(INSPECTOR)
         struct CacheInfo {
-            CacheInfo(const KURL& manifest, double creationTime, double updateTime, long long size)
+            CacheInfo(const URL& manifest, double creationTime, double updateTime, long long size)
                 : m_manifest(manifest)
                 , m_creationTime(creationTime)
                 , m_updateTime(updateTime)
                 , m_size(size) { }
-            KURL m_manifest;
+            URL m_manifest;
             double m_creationTime;
             double m_updateTime;
             long long m_size;
         };
 
         struct ResourceInfo {
-            ResourceInfo(const KURL& resource, bool isMaster, bool isManifest, bool isFallback, bool isForeign, bool isExplicit, long long size)
+            ResourceInfo(const URL& resource, bool isMaster, bool isManifest, bool isFallback, bool isForeign, bool isExplicit, long long size)
                 : m_resource(resource)
                 , m_isMaster(isMaster)
                 , m_isManifest(isManifest)
@@ -102,7 +98,7 @@ namespace WebCore {
                 , m_isForeign(isForeign)
                 , m_isExplicit(isExplicit)
                 , m_size(size) { }
-            KURL m_resource;
+            URL m_resource;
             bool m_isMaster;
             bool m_isManifest;
             bool m_isFallback;
@@ -118,17 +114,16 @@ namespace WebCore {
         ~ApplicationCacheHost();
 
         void selectCacheWithoutManifest();
-        void selectCacheWithManifest(const KURL& manifestURL);
+        void selectCacheWithManifest(const URL& manifestURL);
 
         void maybeLoadMainResource(ResourceRequest&, SubstituteData&);
         void maybeLoadMainResourceForRedirect(ResourceRequest&, SubstituteData&);
         bool maybeLoadFallbackForMainResponse(const ResourceRequest&, const ResourceResponse&);
-        bool maybeLoadFallbackForMainError(const ResourceRequest&, const ResourceError&);
         void mainResourceDataReceived(const char* data, int length, long long encodedDataLength, bool allAtOnce);
         void finishedLoadingMainResource();
         void failedLoadingMainResource();
 
-        bool maybeLoadResource(ResourceLoader*, ResourceRequest&, const KURL& originalURL);
+        bool maybeLoadResource(ResourceLoader*, ResourceRequest&, const URL& originalURL);
         bool maybeLoadFallbackForRedirect(ResourceLoader*, ResourceRequest&, const ResourceResponse&);
         bool maybeLoadFallbackForResponse(ResourceLoader*, const ResourceResponse&);
         bool maybeLoadFallbackForError(ResourceLoader*, const ResourceError&);
@@ -155,10 +150,8 @@ namespace WebCore {
         CacheInfo applicationCacheInfo();
 #endif
 
-#if !PLATFORM(CHROMIUM)
         bool shouldLoadResourceFromApplicationCache(const ResourceRequest&, ApplicationCacheResource*&);
         bool getApplicationCacheFallbackResource(const ResourceRequest&, ApplicationCacheResource*&, ApplicationCache* = 0);
-#endif
 
     private:
         bool isApplicationCacheEnabled();
@@ -178,10 +171,6 @@ namespace WebCore {
 
         void dispatchDOMEvent(EventID, int progressTotal, int progressDone);
 
-#if PLATFORM(CHROMIUM)
-        friend class ApplicationCacheHostInternal;
-        OwnPtr<ApplicationCacheHostInternal> m_internal;
-#else
         friend class ApplicationCacheGroup;
         friend class ApplicationCacheStorage;
 
@@ -191,6 +180,7 @@ namespace WebCore {
         void setApplicationCache(PassRefPtr<ApplicationCache> applicationCache);
         ApplicationCache* applicationCache() const { return m_applicationCache.get(); }
         ApplicationCache* mainResourceApplicationCache() const { return m_mainResourceApplicationCache.get(); }
+        bool maybeLoadFallbackForMainError(const ResourceRequest&, const ResourceError&);
 
 
         // The application cache that the document loader is associated with (if any).
@@ -202,7 +192,6 @@ namespace WebCore {
 
         // This is the application cache the main resource was loaded from (if any).
         RefPtr<ApplicationCache> m_mainResourceApplicationCache;
-#endif
     };
 
 }  // namespace WebCore

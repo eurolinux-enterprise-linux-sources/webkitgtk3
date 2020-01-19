@@ -40,35 +40,34 @@ public:
     static RuntimeMethod* create(ExecState* exec, JSGlobalObject* globalObject, Structure* structure, const String& name, Bindings::Method* method)
     {
         RuntimeMethod* runtimeMethod = new (NotNull, allocateCell<RuntimeMethod>(*exec->heap())) RuntimeMethod(globalObject, structure, method);
-        runtimeMethod->finishCreation(exec->globalData(), name);
+        runtimeMethod->finishCreation(exec->vm(), name);
         return runtimeMethod;
     }
 
     Bindings::Method* method() const { return m_method; }
 
-    static const ClassInfo s_info;
+    DECLARE_INFO;
 
-    static FunctionPrototype* createPrototype(ExecState*, JSGlobalObject* globalObject)
+    static FunctionPrototype* createPrototype(VM&, JSGlobalObject* globalObject)
     {
         return globalObject->functionPrototype();
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
+    static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
+        return Structure::create(vm, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), info());
     }
 
 protected:
     RuntimeMethod(JSGlobalObject*, Structure*, Bindings::Method*);
-    void finishCreation(JSGlobalData&, const String&);
+    void finishCreation(VM&, const String&);
     static const unsigned StructureFlags = OverridesGetOwnPropertySlot | InternalFunction::StructureFlags;
     static CallType getCallData(JSCell*, CallData&);
 
-    static bool getOwnPropertySlot(JSCell*, ExecState*, PropertyName, PropertySlot&);
-    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, PropertyName, PropertyDescriptor&);
+    static bool getOwnPropertySlot(JSObject*, ExecState*, PropertyName, PropertySlot&);
 
 private:
-    static JSValue lengthGetter(ExecState*, JSValue, PropertyName);
+    static EncodedJSValue lengthGetter(ExecState*, EncodedJSValue, EncodedJSValue, PropertyName);
 
     Bindings::Method* m_method;
 };

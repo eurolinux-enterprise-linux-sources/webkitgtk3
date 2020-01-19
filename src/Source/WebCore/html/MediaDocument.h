@@ -32,9 +32,9 @@
 
 namespace WebCore {
 
-class MediaDocument : public HTMLDocument {
+class MediaDocument final : public HTMLDocument {
 public:
-    static PassRefPtr<MediaDocument> create(Frame* frame, const KURL& url)
+    static PassRefPtr<MediaDocument> create(Frame* frame, const URL& url)
     {
         return adoptRef(new MediaDocument(frame, url));
     }
@@ -43,18 +43,22 @@ public:
     void mediaElementSawUnsupportedTracks();
 
 private:
-    MediaDocument(Frame*, const KURL&);
+    MediaDocument(Frame*, const URL&);
 
-    virtual bool isMediaDocument() const { return true; }        
-    virtual PassRefPtr<DocumentParser> createParser();
+    virtual PassRefPtr<DocumentParser> createParser() override;
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) override;
 
-    void replaceMediaElementTimerFired(Timer<MediaDocument>*);
+    void replaceMediaElementTimerFired(Timer<MediaDocument>&);
 
     Timer<MediaDocument> m_replaceMediaElementTimer;
 };
-    
+
+inline bool isMediaDocument(const Document& document) { return document.isMediaDocument(); }
+void isMediaDocument(const MediaDocument&); // Catch unnecessary runtime check of type known at compile time.
+
+DOCUMENT_TYPE_CASTS(MediaDocument)
+
 }
 
 #endif

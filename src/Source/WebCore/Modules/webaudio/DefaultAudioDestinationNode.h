@@ -27,7 +27,7 @@
 
 #include "AudioDestination.h"
 #include "AudioDestinationNode.h"
-#include <wtf/OwnPtr.h>
+#include <memory>
 
 namespace WebCore {
 
@@ -43,18 +43,21 @@ public:
     virtual ~DefaultAudioDestinationNode();
     
     // AudioNode   
-    virtual void initialize() OVERRIDE;
-    virtual void uninitialize() OVERRIDE;
+    virtual void initialize() override;
+    virtual void uninitialize() override;
+    virtual void setChannelCount(unsigned long, ExceptionCode&) override;
 
     // AudioDestinationNode
-    virtual void enableInput() OVERRIDE;
-    virtual void startRendering() OVERRIDE;
+    virtual void enableInput(const String& inputDeviceId) override;
+    virtual void startRendering() override;
+    virtual unsigned long maxChannelCount() const override;
     
 private:
     explicit DefaultAudioDestinationNode(AudioContext*);
     void createDestination();
 
-    OwnPtr<AudioDestination> m_destination;
+    std::unique_ptr<AudioDestination> m_destination;
+    String m_inputDeviceId;
     unsigned m_numberOfInputChannels;
 };
 

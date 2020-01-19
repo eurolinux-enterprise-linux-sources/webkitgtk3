@@ -24,6 +24,7 @@
 #include "CachedResourceClient.h"
 #include "CachedResourceHandle.h"
 #include <wtf/text/TextPosition.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -67,7 +68,8 @@ protected:
     bool forceAsync() const { return m_forceAsync; }
 
     // Helper functions used by our parent classes.
-    void insertedInto(ContainerNode*);
+    bool shouldNotifySubtreeInsertions(ContainerNode&);
+    void didNotifySubtreeInsertions(ContainerNode*);
     void childrenChanged();
     void handleSourceAttribute(const String& sourceUrl);
     void handleAsyncAttribute();
@@ -79,7 +81,7 @@ private:
     bool requestScript(const String& sourceUrl);
     void stopLoadRequest();
 
-    virtual void notifyFinished(CachedResource*);
+    virtual void notifyFinished(CachedResource*) override;
 
     virtual String sourceAttributeValue() const = 0;
     virtual String charsetAttributeValue() const = 0;
@@ -108,7 +110,7 @@ private:
     String m_fallbackCharacterEncoding;
 };
 
-ScriptElement* toScriptElement(Element*);
+ScriptElement* toScriptElementIfPossible(Element*);
 
 }
 

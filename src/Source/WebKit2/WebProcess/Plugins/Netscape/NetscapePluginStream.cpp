@@ -34,7 +34,6 @@
 #include <wtf/Vector.h>
 
 using namespace WebCore;
-using namespace std;
 
 namespace WebKit {
 
@@ -64,10 +63,10 @@ NetscapePluginStream::~NetscapePluginStream()
     ASSERT(m_fileHandle == invalidPlatformFileHandle);
 }
 
-void NetscapePluginStream::didReceiveResponse(const KURL& responseURL, uint32_t streamLength, uint32_t lastModifiedTime, const String& mimeType, const String& headers)
+void NetscapePluginStream::didReceiveResponse(const URL& responseURL, uint32_t streamLength, uint32_t lastModifiedTime, const String& mimeType, const String& headers)
 {
     // Starting the stream could cause the plug-in stream to go away so we keep a reference to it here.
-    RefPtr<NetscapePluginStream> protect(this);
+    Ref<NetscapePluginStream> protect(*this);
 
     start(responseURL, streamLength, lastModifiedTime, mimeType, headers);
 }
@@ -75,7 +74,7 @@ void NetscapePluginStream::didReceiveResponse(const KURL& responseURL, uint32_t 
 void NetscapePluginStream::didReceiveData(const char* bytes, int length)
 {
     // Delivering the data could cause the plug-in stream to go away so we keep a reference to it here.
-    RefPtr<NetscapePluginStream> protect(this);
+    Ref<NetscapePluginStream> protect(*this);
 
     deliverData(bytes, length);
 }
@@ -83,7 +82,7 @@ void NetscapePluginStream::didReceiveData(const char* bytes, int length)
 void NetscapePluginStream::didFinishLoading()
 {
     // Stopping the stream could cause the plug-in stream to go away so we keep a reference to it here.
-    RefPtr<NetscapePluginStream> protect(this);
+    Ref<NetscapePluginStream> protect(*this);
 
     stop(NPRES_DONE);
 }
@@ -91,7 +90,7 @@ void NetscapePluginStream::didFinishLoading()
 void NetscapePluginStream::didFail(bool wasCancelled)
 {
     // Stopping the stream could cause the plug-in stream to go away so we keep a reference to it here.
-    RefPtr<NetscapePluginStream> protect(this);
+    Ref<NetscapePluginStream> protect(*this);
 
     stop(wasCancelled ? NPRES_USER_BREAK : NPRES_NETWORK_ERR);
 }
@@ -100,7 +99,7 @@ void NetscapePluginStream::sendJavaScriptStream(const String& result)
 {
     // starting the stream or delivering the data to it might cause the plug-in stream to go away, so we keep
     // a reference to it here.
-    RefPtr<NetscapePluginStream> protect(this);
+    Ref<NetscapePluginStream> protect(*this);
 
     CString resultCString = result.utf8();
     if (resultCString.isNull()) {
@@ -221,7 +220,7 @@ void NetscapePluginStream::deliverDataToPlugin()
         }
 
         // Figure out how much data to send to the plug-in.
-        int32_t dataLength = min(numBytesPluginCanHandle, numBytesToDeliver - numBytesDelivered);
+        int32_t dataLength = std::min(numBytesPluginCanHandle, numBytesToDeliver - numBytesDelivered);
         uint8_t* data = m_deliveryData->data() + numBytesDelivered;
 
         int32_t numBytesWritten = m_plugin->NPP_Write(&m_npStream, m_offset, dataLength, data);
@@ -235,7 +234,7 @@ void NetscapePluginStream::deliverDataToPlugin()
         if (!m_isStarted)
             return;
 
-        numBytesWritten = min(numBytesWritten, dataLength);
+        numBytesWritten = std::min(numBytesWritten, dataLength);
         m_offset += numBytesWritten;
         numBytesDelivered += numBytesWritten;
     }

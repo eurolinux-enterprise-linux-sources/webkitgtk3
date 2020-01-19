@@ -24,7 +24,9 @@
 #include "DOMWindow.h"
 #include "Frame.h"
 #include "FrameLoader.h"
-#include "RenderPart.h"
+#include "RenderWidget.h"
+#include "ShadowRoot.h"
+#include <wtf/Ref.h>
 
 #if ENABLE(SVG)
 #include "ExceptionCode.h"
@@ -33,20 +35,20 @@
 
 namespace WebCore {
 
-HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document* document)
+HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_contentFrame(0)
     , m_sandboxFlags(SandboxNone)
 {
 }
 
-RenderPart* HTMLFrameOwnerElement::renderPart() const
+RenderWidget* HTMLFrameOwnerElement::renderWidget() const
 {
     // HTMLObjectElement and HTMLEmbedElement may return arbitrary renderers
     // when using fallback content.
-    if (!renderer() || !renderer()->isRenderPart())
+    if (!renderer() || !renderer()->isWidget())
         return 0;
-    return toRenderPart(renderer());
+    return toRenderWidget(renderer());
 }
 
 void HTMLFrameOwnerElement::setContentFrame(Frame* frame)
@@ -80,8 +82,8 @@ void HTMLFrameOwnerElement::disconnectContentFrame()
     // reach up into this document and then attempt to look back down. We should
     // see if this behavior is really needed as Gecko does not allow this.
     if (Frame* frame = contentFrame()) {
-        RefPtr<Frame> protect(frame);
-        frame->loader()->frameDetached();
+        Ref<Frame> protect(*frame);
+        frame->loader().frameDetached();
         frame->disconnectOwnerElement();
     }
 }
@@ -117,11 +119,33 @@ SVGDocument* HTMLFrameOwnerElement::getSVGDocument(ExceptionCode& ec) const
 {
     Document* doc = contentDocument();
     if (doc && doc->isSVGDocument())
-        return static_cast<SVGDocument*>(doc);
+        return toSVGDocument(doc);
     // Spec: http://www.w3.org/TR/SVG/struct.html#InterfaceGetSVGDocument
     ec = NOT_SUPPORTED_ERR;
     return 0;
 }
 #endif
+
+static void needsStyleRecalcCallback(Node& node, unsigned data)
+{
+    node.setNeedsStyleRecalc(static_cast<StyleChangeType>(data));
+}
+
+void HTMLFrameOwnerElement::scheduleSetNeedsStyleRecalc(StyleChangeType changeType)
+{
+    if (postAttachCallbacksAreSuspended())
+        queuePostAttachCallback(needsStyleRecalcCallback, *this, static_cast<unsigned>(changeType));
+    else
+        setNeedsStyleRecalc(changeType);
+}
+
+bool SubframeLoadingDisabler::canLoadFrame(HTMLFrameOwnerElement& owner)
+{
+    for (ContainerNode* node = &owner; node; node = node->parentOrShadowHostNode()) {
+        if (disabledSubtreeRoots().contains(node))
+            return false;
+    }
+    return true;
+}
 
 } // namespace WebCore

@@ -38,25 +38,6 @@
 
 namespace WebCore {
 
-#if ENABLE(SHADOW_DOM)
-void ShadowDistributedRules::addRule(StyleRule* rule, size_t selectorIndex, ContainerNode* scope, AddRuleFlags addRuleFlags)
-{
-    if (m_shadowDistributedRuleSetMap.contains(scope))
-        m_shadowDistributedRuleSetMap.get(scope)->addRule(rule, selectorIndex, addRuleFlags);
-    else {
-        OwnPtr<RuleSet> ruleSetForScope = adoptPtr(new RuleSet());
-        ruleSetForScope->addRule(rule, selectorIndex, addRuleFlags);
-        m_shadowDistributedRuleSetMap.add(scope, ruleSetForScope.release());
-    }
-}
-
-void ShadowDistributedRules::collectMatchRequests(bool includeEmptyRules, Vector<MatchRequest>& matchRequests)
-{
-    for (ShadowDistributedRuleSetMap::iterator it = m_shadowDistributedRuleSetMap.begin(); it != m_shadowDistributedRuleSetMap.end(); ++it)
-        matchRequests.append(MatchRequest(it->value.get(), includeEmptyRules, it->key, SelectorChecker::CrossesBoundary));
-}
-#endif
-
 DocumentRuleSets::DocumentRuleSets()
 {
 }
@@ -65,22 +46,22 @@ DocumentRuleSets::~DocumentRuleSets()
 {
 }
 
-void DocumentRuleSets::initUserStyle(DocumentStyleSheetCollection* styleSheetCollection, const MediaQueryEvaluator& medium, StyleResolver& resolver)
+void DocumentRuleSets::initUserStyle(DocumentStyleSheetCollection& styleSheetCollection, const MediaQueryEvaluator& medium, StyleResolver& resolver)
 {
     OwnPtr<RuleSet> tempUserStyle = RuleSet::create();
-    if (CSSStyleSheet* pageUserSheet = styleSheetCollection->pageUserSheet())
-        tempUserStyle->addRulesFromSheet(pageUserSheet->contents(), medium, &resolver);
-    collectRulesFromUserStyleSheets(styleSheetCollection->injectedUserStyleSheets(), *tempUserStyle, medium, resolver);
-    collectRulesFromUserStyleSheets(styleSheetCollection->documentUserStyleSheets(), *tempUserStyle, medium, resolver);
-    if (tempUserStyle->m_ruleCount > 0 || tempUserStyle->m_pageRules.size() > 0)
+    if (CSSStyleSheet* pageUserSheet = styleSheetCollection.pageUserSheet())
+        tempUserStyle->addRulesFromSheet(&pageUserSheet->contents(), medium, &resolver);
+    collectRulesFromUserStyleSheets(styleSheetCollection.injectedUserStyleSheets(), *tempUserStyle, medium, resolver);
+    collectRulesFromUserStyleSheets(styleSheetCollection.documentUserStyleSheets(), *tempUserStyle, medium, resolver);
+    if (tempUserStyle->ruleCount() > 0 || tempUserStyle->pageRules().size() > 0)
         m_userStyle = tempUserStyle.release();
 }
 
-void DocumentRuleSets::collectRulesFromUserStyleSheets(const Vector<RefPtr<CSSStyleSheet> >& userSheets, RuleSet& userStyle, const MediaQueryEvaluator& medium, StyleResolver& resolver)
+void DocumentRuleSets::collectRulesFromUserStyleSheets(const Vector<RefPtr<CSSStyleSheet>>& userSheets, RuleSet& userStyle, const MediaQueryEvaluator& medium, StyleResolver& resolver)
 {
     for (unsigned i = 0; i < userSheets.size(); ++i) {
-        ASSERT(userSheets[i]->contents()->isUserStyleSheet());
-        userStyle.addRulesFromSheet(userSheets[i]->contents(), medium, &resolver);
+        ASSERT(userSheets[i]->contents().isUserStyleSheet());
+        userStyle.addRulesFromSheet(&userSheets[i]->contents(), medium, &resolver);
     }
 }
 
@@ -100,12 +81,9 @@ void DocumentRuleSets::resetAuthorStyle()
 {
     m_authorStyle = RuleSet::create();
     m_authorStyle->disableAutoShrinkToFit();
-#if ENABLE(SHADOW_DOM)
-    m_shadowDistributedRules.clear();
-#endif
 }
 
-void DocumentRuleSets::appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet> >& styleSheets, MediaQueryEvaluator* medium, InspectorCSSOMWrappers& inspectorCSSOMWrappers, bool isViewSource, StyleResolver* resolver)
+void DocumentRuleSets::appendAuthorStyleSheets(unsigned firstNew, const Vector<RefPtr<CSSStyleSheet>>& styleSheets, MediaQueryEvaluator* medium, InspectorCSSOMWrappers& inspectorCSSOMWrappers, bool isViewSource, StyleResolver* resolver)
 {
     // This handles sheets added to the end of the stylesheet list only. In other cases the style resolver
     // needs to be reconstructed. To handle insertions too the rule order numbers would need to be updated.
@@ -115,17 +93,17 @@ void DocumentRuleSets::appendAuthorStyleSheets(unsigned firstNew, const Vector<R
         ASSERT(!cssSheet->disabled());
         if (cssSheet->mediaQueries() && !medium->eval(cssSheet->mediaQueries(), resolver))
             continue;
-        StyleSheetContents* sheet = cssSheet->contents();
-#if ENABLE(STYLE_SCOPED) || ENABLE(SHADOW_DOM)
+        StyleSheetContents& sheet = cssSheet->contents();
+#if ENABLE(SHADOW_DOM)
         if (const ContainerNode* scope = StyleScopeResolver::scopeFor(cssSheet)) {
             // FIXME: Remove a dependency to calling a StyleResolver's member function.
             // If we can avoid calling resolver->ensureScopeResolver() here, we don't have to include "StyleResolver.h".
             // https://bugs.webkit.org/show_bug.cgi?id=108890
-            resolver->ensureScopeResolver()->ensureRuleSetFor(scope)->addRulesFromSheet(sheet, *medium, resolver, scope);
+            resolver->ensureScopeResolver()->ensureRuleSetFor(scope)->addRulesFromSheet(&sheet, *medium, resolver, scope);
             continue;
         }
 #endif
-        m_authorStyle->addRulesFromSheet(sheet, *medium, resolver);
+        m_authorStyle->addRulesFromSheet(&sheet, *medium, resolver);
         inspectorCSSOMWrappers.collectFromStyleSheetIfNeeded(cssSheet);
     }
     m_authorStyle->shrinkToFit();
@@ -152,16 +130,6 @@ void DocumentRuleSets::collectFeatures(bool isViewSource, StyleScopeResolver* sc
 
     m_siblingRuleSet = makeRuleSet(m_features.siblingRules);
     m_uncommonAttributeRuleSet = makeRuleSet(m_features.uncommonAttributeRules);
-}
-
-void DocumentRuleSets::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_authorStyle, "authorStyle");
-    info.addMember(m_userStyle, "userStyle");
-    info.addMember(m_features, "features");
-    info.addMember(m_siblingRuleSet, "siblingRuleSet");
-    info.addMember(m_uncommonAttributeRuleSet, "uncommonAttributeRuleSet");
 }
 
 } // namespace WebCore

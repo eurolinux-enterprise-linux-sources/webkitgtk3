@@ -26,15 +26,13 @@
 #ifndef PluginProcessConnection_h
 #define PluginProcessConnection_h
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "Connection.h"
 #include "Plugin.h"
 #include "PluginProcess.h"
+#include "PluginProcessAttributes.h"
 #include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
-
-// A CoreIPC connection to a plug-in process.
 
 namespace WebKit {
 
@@ -42,17 +40,17 @@ class NPRemoteObjectMap;
 class PluginProcessConnectionManager;
 class PluginProxy;
     
-class PluginProcessConnection : public RefCounted<PluginProcessConnection>, CoreIPC::Connection::Client {
+class PluginProcessConnection : public RefCounted<PluginProcessConnection>, IPC::Connection::Client {
 public:
-    static PassRefPtr<PluginProcessConnection> create(PluginProcessConnectionManager* pluginProcessConnectionManager, const String& pluginPath, PluginProcess::Type processType, CoreIPC::Connection::Identifier connectionIdentifier, bool supportsAsynchronousPluginInitialization)
+    static PassRefPtr<PluginProcessConnection> create(PluginProcessConnectionManager* pluginProcessConnectionManager, uint64_t pluginProcessToken, IPC::Connection::Identifier connectionIdentifier, bool supportsAsynchronousPluginInitialization)
     {
-        return adoptRef(new PluginProcessConnection(pluginProcessConnectionManager, pluginPath, processType, connectionIdentifier, supportsAsynchronousPluginInitialization));
+        return adoptRef(new PluginProcessConnection(pluginProcessConnectionManager, pluginProcessToken, connectionIdentifier, supportsAsynchronousPluginInitialization));
     }
     ~PluginProcessConnection();
 
-    const String& pluginPath() const { return m_pluginPath; }
+    uint64_t pluginProcessToken() const { return m_pluginProcessToken; }
 
-    CoreIPC::Connection* connection() const { return m_connection.get(); }
+    IPC::Connection* connection() const { return m_connection.get(); }
 
     void addPluginProxy(PluginProxy*);
     void removePluginProxy(PluginProxy*);
@@ -61,26 +59,24 @@ public:
 
     bool supportsAsynchronousPluginInitialization() const { return m_supportsAsynchronousPluginInitialization; }
 
-    PluginProcess::Type processType() const { return m_processType; }
-
 private:
-    PluginProcessConnection(PluginProcessConnectionManager*, const String& pluginPath, PluginProcess::Type, CoreIPC::Connection::Identifier connectionIdentifier, bool supportsAsynchronousInitialization);
+    PluginProcessConnection(PluginProcessConnectionManager*, uint64_t pluginProcessToken, IPC::Connection::Identifier connectionIdentifier, bool supportsAsynchronousInitialization);
 
-    // CoreIPC::Connection::Client
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
-    virtual void didReceiveSyncMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&) OVERRIDE;
-    virtual void didClose(CoreIPC::Connection*);
-    virtual void didReceiveInvalidMessage(CoreIPC::Connection*, CoreIPC::StringReference messageReceiverName, CoreIPC::StringReference messageName) OVERRIDE;
+    // IPC::Connection::Client
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
+    virtual void didReceiveSyncMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&) override;
+    virtual void didClose(IPC::Connection*);
+    virtual void didReceiveInvalidMessage(IPC::Connection*, IPC::StringReference messageReceiverName, IPC::StringReference messageName) override;
 
     // Message handlers.
-    void didReceiveSyncPluginProcessConnectionMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&, OwnPtr<CoreIPC::MessageEncoder>&);
+    void didReceiveSyncPluginProcessConnectionMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&);
     void setException(const String&);
 
     PluginProcessConnectionManager* m_pluginProcessConnectionManager;
-    String m_pluginPath;
+    uint64_t m_pluginProcessToken;
 
     // The connection from the web process to the plug-in process.
-    RefPtr<CoreIPC::Connection> m_connection;
+    RefPtr<IPC::Connection> m_connection;
 
     // The plug-ins. We use a weak reference to the plug-in proxies because the plug-in view holds the strong reference.
     HashMap<uint64_t, PluginProxy*> m_plugins;
@@ -88,12 +84,10 @@ private:
     RefPtr<NPRemoteObjectMap> m_npRemoteObjectMap;
     
     bool m_supportsAsynchronousPluginInitialization;
-
-    PluginProcess::Type m_processType;
 };
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginProcessConnection_h

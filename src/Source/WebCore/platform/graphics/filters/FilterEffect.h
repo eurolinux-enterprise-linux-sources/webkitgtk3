@@ -27,10 +27,11 @@
 #include "FloatRect.h"
 #include "IntRect.h"
 
-#include <wtf/PassOwnPtr.h>
+#include <runtime/Uint8ClampedArray.h>
+
+#include <wtf/HashSet.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
-#include <wtf/Uint8ClampedArray.h>
 #include <wtf/Vector.h>
 
 #if ENABLE(OPENCL)
@@ -39,10 +40,6 @@
 
 static const float kMaxFilterSize = 5000.0f;
 
-#if USE(SKIA)
-class SkImageFilter;
-#endif
-
 namespace WebCore {
 
 class Filter;
@@ -50,11 +47,7 @@ class FilterEffect;
 class ImageBuffer;
 class TextStream;
 
-#if USE(SKIA)
-class SkiaImageFilterBuilder;
-#endif
-
-typedef Vector<RefPtr<FilterEffect> > FilterEffectVector;
+typedef Vector<RefPtr<FilterEffect>> FilterEffectVector;
 
 enum FilterEffectType {
     FilterEffectTypeUnknown,
@@ -85,6 +78,7 @@ public:
     FilterEffectVector& inputEffects() { return m_inputEffects; }
     FilterEffect* inputEffect(unsigned) const;
     unsigned numberOfEffectInputs() const { return m_inputEffects.size(); }
+    unsigned totalNumberOfEffectInputs() const;
     
     inline bool hasResult() const
     {
@@ -126,10 +120,6 @@ public:
 #if ENABLE(OPENCL)
     virtual bool platformApplyOpenCL();
 #endif
-#if USE(SKIA)
-    virtual bool platformApplySkia() { return false; }
-    virtual SkImageFilter* createImageFilter(SkiaImageFilterBuilder*) { return 0; }
-#endif
     virtual void dump() = 0;
 
     virtual void determineAbsolutePaintRect();
@@ -164,14 +154,16 @@ public:
     bool clipsToBounds() const { return m_clipsToBounds; }
     void setClipsToBounds(bool value) { m_clipsToBounds = value; }
 
-    ColorSpace colorSpace() const { return m_colorSpace; }
-    void setColorSpace(ColorSpace colorSpace) { m_colorSpace = colorSpace; }
+    ColorSpace operatingColorSpace() const { return m_operatingColorSpace; }
+    virtual void setOperatingColorSpace(ColorSpace colorSpace) { m_operatingColorSpace = colorSpace; }
+    ColorSpace resultColorSpace() const { return m_resultColorSpace; }
+    virtual void setResultColorSpace(ColorSpace colorSpace) { m_resultColorSpace = colorSpace; }
+
+    virtual void transformResultColorSpace(FilterEffect* in, const int) { in->transformResultColorSpace(m_operatingColorSpace); }
     void transformResultColorSpace(ColorSpace);
 
 protected:
     FilterEffect(Filter*);
-
-    void setResultColorSpace(ColorSpace colorSpace) { m_resultColorSpace = colorSpace; }
 
     ImageBuffer* createImageBufferResult();
     Uint8ClampedArray* createUnmultipliedImageResult();
@@ -187,8 +179,10 @@ protected:
     // If a pre-multiplied image, check every pixel for validity and correct if necessary.
     void forceValidPreMultipliedPixels();
 
+    void clipAbsolutePaintRect();
+
 private:
-    OwnPtr<ImageBuffer> m_imageBufferResult;
+    std::unique_ptr<ImageBuffer> m_imageBufferResult;
     RefPtr<Uint8ClampedArray> m_unmultipliedImageResult;
     RefPtr<Uint8ClampedArray> m_premultipliedImageResult;
     FilterEffectVector m_inputEffects;
@@ -226,7 +220,7 @@ private:
     // Should the effect clip to its primitive region, or expand to use the combined region of its inputs.
     bool m_clipsToBounds;
 
-    ColorSpace m_colorSpace;
+    ColorSpace m_operatingColorSpace;
     ColorSpace m_resultColorSpace;
 };
 

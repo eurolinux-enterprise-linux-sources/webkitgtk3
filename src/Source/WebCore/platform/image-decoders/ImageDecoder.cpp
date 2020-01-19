@@ -25,14 +25,8 @@
 #include "BMPImageDecoder.h"
 #include "GIFImageDecoder.h"
 #include "ICOImageDecoder.h"
-#if PLATFORM(QT)
-#include "ImageDecoderQt.h"
-#endif
-#if !PLATFORM(QT) || USE(LIBJPEG)
 #include "JPEGImageDecoder.h"
-#endif
 #include "PNGImageDecoder.h"
-#include "PlatformMemoryInstrumentation.h"
 #include "SharedBuffer.h"
 #if USE(WEBP)
 #include "WEBPImageDecoder.h"
@@ -40,7 +34,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <wtf/MemoryInstrumentationVector.h>
 
 using namespace std;
 
@@ -113,18 +106,14 @@ ImageDecoder* ImageDecoder::create(const SharedBuffer& data, ImageSource::AlphaO
     if (matchesGIFSignature(contents))
         return new GIFImageDecoder(alphaOption, gammaAndColorProfileOption);
 
-#if !PLATFORM(QT) || (PLATFORM(QT) && USE(LIBPNG))
     if (matchesPNGSignature(contents))
         return new PNGImageDecoder(alphaOption, gammaAndColorProfileOption);
 
     if (matchesICOSignature(contents) || matchesCURSignature(contents))
         return new ICOImageDecoder(alphaOption, gammaAndColorProfileOption);
-#endif
 
-#if !PLATFORM(QT) || (PLATFORM(QT) && USE(LIBJPEG))
     if (matchesJPEGSignature(contents))
         return new JPEGImageDecoder(alphaOption, gammaAndColorProfileOption);
-#endif
 
 #if USE(WEBP)
     if (matchesWebPSignature(contents))
@@ -134,13 +123,8 @@ ImageDecoder* ImageDecoder::create(const SharedBuffer& data, ImageSource::AlphaO
     if (matchesBMPSignature(contents))
         return new BMPImageDecoder(alphaOption, gammaAndColorProfileOption);
 
-#if PLATFORM(QT)
-    return new ImageDecoderQt(alphaOption, gammaAndColorProfileOption);
-#endif
     return 0;
 }
-
-#if !USE(SKIA)
 
 ImageFrame::ImageFrame()
     : m_hasAlpha(false)
@@ -180,6 +164,23 @@ void ImageFrame::zeroFillPixelData()
 {
     memset(m_bytes, 0, m_size.width() * m_size.height() * sizeof(PixelData));
     m_hasAlpha = true;
+}
+
+void ImageFrame::zeroFillFrameRect(const IntRect& rect)
+{
+    ASSERT(IntRect(IntPoint(), m_size).contains(rect));
+
+    if (rect.isEmpty())
+        return;
+
+    size_t rectWidthInBytes = rect.width() * sizeof(PixelData);
+    PixelData* start = m_bytes + (rect.y() * width()) + rect.x();
+    for (int i = 0; i < rect.height(); ++i) {
+        memset(start, 0, rectWidthInBytes);
+        start += width();
+    }
+
+    setHasAlpha(true);
 }
 
 bool ImageFrame::copyBitmapData(const ImageFrame& other)
@@ -227,14 +228,6 @@ void ImageFrame::setStatus(FrameStatus status)
 {
     m_status = status;
 }
-
-void ImageFrame::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    info.addMember(m_backingStore, "backingStore");
-}
-
-#endif
 
 namespace {
 
@@ -335,16 +328,6 @@ int ImageDecoder::lowerBoundScaledY(int origY, int searchStart)
 int ImageDecoder::scaledY(int origY, int searchStart)
 {
     return getScaledValue<Exact>(m_scaledRows, origY, searchStart);
-}
-
-void ImageDecoder::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, PlatformMemoryTypes::Image);
-    info.addMember(m_data, "data");
-    info.addMember(m_frameBufferCache, "frameBufferCache");
-    info.addMember(m_colorProfile, "colorProfile");
-    info.addMember(m_scaledColumns, "scaledColumns");
-    info.addMember(m_scaledRows, "scaledRows");
 }
 
 }

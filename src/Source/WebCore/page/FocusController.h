@@ -35,6 +35,7 @@
 namespace WebCore {
 
 struct FocusCandidate;
+class ContainerNode;
 class Document;
 class Element;
 class Frame;
@@ -47,7 +48,7 @@ class TreeScope;
 
 class FocusNavigationScope {
 public:
-    Node* rootNode() const;
+    ContainerNode* rootNode() const;
     Element* owner() const;
     static FocusNavigationScope focusNavigationScopeOf(Node*);
     static FocusNavigationScope focusNavigationScopeOwnedByShadowHost(Node*);
@@ -61,16 +62,16 @@ private:
 class FocusController {
     WTF_MAKE_NONCOPYABLE(FocusController); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<FocusController> create(Page*);
+    explicit FocusController(Page&);
 
     void setFocusedFrame(PassRefPtr<Frame>);
     Frame* focusedFrame() const { return m_focusedFrame.get(); }
-    Frame* focusedOrMainFrame() const;
+    Frame& focusedOrMainFrame() const;
 
     bool setInitialFocus(FocusDirection, KeyboardEvent*);
     bool advanceFocus(FocusDirection, KeyboardEvent*, bool initialFocus = false);
-        
-    bool setFocusedNode(Node*, PassRefPtr<Frame>, FocusDirection = FocusDirectionNone);
+
+    bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusDirection = FocusDirectionNone);
 
     void setActive(bool);
     bool isActive() const { return m_isActive; }
@@ -78,18 +79,19 @@ public:
     void setFocused(bool);
     bool isFocused() const { return m_isFocused; }
 
-    void setContainingWindowIsVisible(bool);
-    bool containingWindowIsVisible() const { return m_containingWindowIsVisible; }
+    void setContentIsVisible(bool);
+
+    // These methods are used in WebCore/bindings/objc/DOM.mm.
+    Element* nextFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
+    Element* previousFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
 
 private:
-    explicit FocusController(Page*);
-
     bool advanceFocusDirectionally(FocusDirection, KeyboardEvent*);
     bool advanceFocusInDocumentOrder(FocusDirection, KeyboardEvent*, bool initialFocus);
 
-    Node* findFocusableNodeAcrossFocusScope(FocusDirection, FocusNavigationScope startScope, Node* start, KeyboardEvent*);
-    Node* findFocusableNodeRecursively(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
-    Node* findFocusableNodeDecendingDownIntoFrameDocument(FocusDirection, Node*, KeyboardEvent*);
+    Element* findFocusableElementAcrossFocusScope(FocusDirection, FocusNavigationScope startScope, Node* start, KeyboardEvent*);
+    Element* findFocusableElementRecursively(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
+    Element* findFocusableElementDescendingDownIntoFrameDocument(FocusDirection, Element*, KeyboardEvent*);
 
     // Searches through the given tree scope, starting from start node, for the next/previous selectable element that comes after/before start node.
     // The order followed is as specified in section 17.11.1 of the HTML4 spec, which is elements with tab indexes
@@ -100,22 +102,19 @@ private:
     // @return The focus node that comes after/before start node.
     //
     // See http://www.w3.org/TR/html4/interact/forms.html#h-17.11.1
-    inline Node* findFocusableNode(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
+    Element* findFocusableElement(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
 
-    Node* nextFocusableNode(FocusNavigationScope, Node* start, KeyboardEvent*);
-    Node* previousFocusableNode(FocusNavigationScope, Node* start, KeyboardEvent*);
-
-    Node* findNodeWithExactTabIndex(Node* start, int tabIndex, KeyboardEvent*, FocusDirection);
+    Element* findElementWithExactTabIndex(Node* start, int tabIndex, KeyboardEvent*, FocusDirection);
 
     bool advanceFocusDirectionallyInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*);
     void findFocusCandidateInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*, FocusCandidate& closest);
 
-    Page* m_page;
+    Page& m_page;
     RefPtr<Frame> m_focusedFrame;
     bool m_isActive;
     bool m_isFocused;
     bool m_isChangingFocusedFrame;
-    bool m_containingWindowIsVisible;
+    bool m_contentIsVisible;
 
 };
 

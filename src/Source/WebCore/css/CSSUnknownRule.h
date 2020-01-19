@@ -23,7 +23,6 @@
 #define CSSUnknownRule_h
 
 #include "CSSRule.h"
-#include "WebCoreMemoryInstrumentation.h"
 
 namespace WebCore {
 
@@ -32,14 +31,9 @@ public:
     CSSUnknownRule() : CSSRule(0) { }
     virtual ~CSSUnknownRule() { }
 
-    virtual CSSRule::Type type() const OVERRIDE { return UNKNOWN_RULE; }
-    virtual String cssText() const OVERRIDE { return String(); }
-    virtual void reattach(StyleRuleBase*) OVERRIDE { }
-    virtual void reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const OVERRIDE
-    {
-        MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-        CSSRule::reportMemoryUsage(memoryObjectInfo);
-    }
+    virtual CSSRule::Type type() const override { return UNKNOWN_RULE; }
+    virtual String cssText() const override { return String(); }
+    virtual void reattach(StyleRuleBase*) override { }
 };
 
 } // namespace WebCore

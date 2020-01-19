@@ -39,11 +39,6 @@
 #include "WebKitCSSFilterValue.h"
 #endif
 
-#if ENABLE(CSS_SHADERS)
-#include "JSWebKitCSSMixFunctionValue.h"
-#include "WebKitCSSMixFunctionValue.h"
-#endif
-
 #if ENABLE(SVG)
 #include "JSSVGColor.h"
 #include "JSSVGPaint.h"
@@ -61,7 +56,7 @@ bool JSCSSValueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handl
     if (!jsCSSValue->hasCustomProperties())
         return false;
     DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
-    void* root = world->m_cssValueRoots.get(jsCSSValue->impl());
+    void* root = world->m_cssValueRoots.get(&jsCSSValue->impl());
     if (!root)
         return false;
     return visitor.containsOpaqueRoot(root);
@@ -70,9 +65,9 @@ bool JSCSSValueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handl
 void JSCSSValueOwner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
 {
     JSCSSValue* jsCSSValue = jsCast<JSCSSValue*>(handle.get().asCell());
-    DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
-    world->m_cssValueRoots.remove(jsCSSValue->impl());
-    uncacheWrapper(world, jsCSSValue->impl(), jsCSSValue);
+    DOMWrapperWorld& world = *static_cast<DOMWrapperWorld*>(context);
+    world.m_cssValueRoots.remove(&jsCSSValue->impl());
+    uncacheWrapper(world, &jsCSSValue->impl(), jsCSSValue);
     jsCSSValue->releaseImpl();
 }
 
@@ -88,7 +83,7 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSValue* value)
     if (!value->isCSSOMSafe())
         return jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), value);
+    JSObject* wrapper = getCachedWrapper(currentWorld(exec), value);
 
     if (wrapper)
         return wrapper;
@@ -98,10 +93,6 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSValue* value)
 #if ENABLE(CSS_FILTERS)
     else if (value->isWebKitCSSFilterValue())
         wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSFilterValue, value);
-#endif
-#if ENABLE(CSS_SHADERS)
-    else if (value->isWebKitCSSMixFunctionValue())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSMixFunctionValue, value);
 #endif
     else if (value->isValueList())
         wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSValueList, value);

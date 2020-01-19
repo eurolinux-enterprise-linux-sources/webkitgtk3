@@ -27,32 +27,37 @@
 #include "WebKitCSSKeyframeRule.h"
 
 #include "PropertySetCSSStyleDeclaration.h"
+#include "StyleProperties.h"
 #include "WebKitCSSKeyframesRule.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
-StylePropertySet* StyleKeyframe::mutableProperties()
+StyleKeyframe::StyleKeyframe(PassRef<StyleProperties> properties)
+    : m_properties(std::move(properties))
+{
+}
+
+StyleKeyframe::~StyleKeyframe()
+{
+}
+
+MutableStyleProperties& StyleKeyframe::mutableProperties()
 {
     if (!m_properties->isMutable())
-        m_properties = m_properties->copy();
-    return m_properties.get();
-}
-    
-void StyleKeyframe::setProperties(PassRefPtr<StylePropertySet> properties)
-{
-    m_properties = properties;
+        m_properties = m_properties->mutableCopy();
+    return static_cast<MutableStyleProperties&>(m_properties.get());
 }
 
 /* static */
-void StyleKeyframe::parseKeyString(const String& s, Vector<float>& keys)
+void StyleKeyframe::parseKeyString(const String& s, Vector<double>& keys)
 {
     keys.clear();
     Vector<String> strings;
     s.split(',', strings);
 
     for (size_t i = 0; i < strings.size(); ++i) {
-        float key = -1;
+        double key = -1;
         String cur = strings[i].stripWhiteSpace();
         
         // For now the syntax MUST be 'xxx%' or 'from' or 'to', where xxx is a legal floating point number
@@ -61,7 +66,7 @@ void StyleKeyframe::parseKeyString(const String& s, Vector<float>& keys)
         else if (cur == "to")
             key = 1;
         else if (cur.endsWith('%')) {
-            float k = cur.substring(0, cur.length() - 1).toFloat();
+            double k = cur.substring(0, cur.length() - 1).toDouble();
             if (k >= 0 && k <= 100)
                 key = k/100;
         }
@@ -87,13 +92,6 @@ String StyleKeyframe::cssText() const
     return result.toString();
 }
 
-void StyleKeyframe::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_properties, "properties");
-    info.addMember(m_key, "key");
-}
-
 WebKitCSSKeyframeRule::WebKitCSSKeyframeRule(StyleKeyframe* keyframe, WebKitCSSKeyframesRule* parent)
     : CSSRule(0)
     , m_keyframe(keyframe)
@@ -107,19 +105,11 @@ WebKitCSSKeyframeRule::~WebKitCSSKeyframeRule()
         m_propertiesCSSOMWrapper->clearParentRule();
 }
 
-CSSStyleDeclaration* WebKitCSSKeyframeRule::style() const
+CSSStyleDeclaration* WebKitCSSKeyframeRule::style()
 {
     if (!m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_keyframe->mutableProperties(), const_cast<WebKitCSSKeyframeRule*>(this));
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_keyframe->mutableProperties(), *this);
     return m_propertiesCSSOMWrapper.get();
-}
-
-void WebKitCSSKeyframeRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_keyframe, "keyframe");
-    info.addMember(m_propertiesCSSOMWrapper, "propertiesCSSOMWrapper");
 }
 
 void WebKitCSSKeyframeRule::reattach(StyleRuleBase*)

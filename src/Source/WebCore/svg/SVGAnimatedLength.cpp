@@ -40,12 +40,12 @@ static inline SVGLength& sharedSVGLength(SVGLengthMode mode, const String& value
     return sharedLength;
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedLengthAnimator::constructFromString(const String& string)
+std::unique_ptr<SVGAnimatedType> SVGAnimatedLengthAnimator::constructFromString(const String& string)
 {
-    return SVGAnimatedType::createLength(new SVGLength(m_lengthMode, string));
+    return SVGAnimatedType::createLength(std::make_unique<SVGLength>(m_lengthMode, string));
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedLengthAnimator::startAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
+std::unique_ptr<SVGAnimatedType> SVGAnimatedLengthAnimator::startAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
 {
     return SVGAnimatedType::createLength(constructFromBaseValue<SVGAnimatedLength>(animatedTypes));
 }
@@ -113,8 +113,7 @@ float SVGAnimatedLengthAnimator::calculateDistance(const String& fromString, con
 {
     ASSERT(m_animationElement);
     ASSERT(m_contextElement);
-    SVGAnimateElement* animationElement = static_cast<SVGAnimateElement*>(m_animationElement);    
-    SVGLengthMode lengthMode = SVGLength::lengthModeForAnimatedLengthAttribute(animationElement->attributeName());
+    SVGLengthMode lengthMode = SVGLength::lengthModeForAnimatedLengthAttribute(m_animationElement->attributeName());
     SVGLength from = SVGLength(lengthMode, fromString);
     SVGLength to = SVGLength(lengthMode, toString);
     SVGLengthContext lengthContext(m_contextElement);

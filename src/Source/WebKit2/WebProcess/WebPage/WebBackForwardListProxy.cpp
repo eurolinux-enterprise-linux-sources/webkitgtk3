@@ -36,29 +36,27 @@
 #include <WebCore/HistoryItem.h>
 #include <WebCore/PageCache.h>
 #include <wtf/HashMap.h>
+#include <wtf/NeverDestroyed.h>
 
 using namespace WebCore;
 
 namespace WebKit {
 
-static const unsigned DefaultCapacity = 100;
-static const unsigned NoCurrentItemIndex = UINT_MAX;
-
 // FIXME <rdar://problem/8819268>: This leaks all HistoryItems that go into these maps.
 // We need to clear up the life time of these objects.
 
-typedef HashMap<uint64_t, RefPtr<HistoryItem> > IDToHistoryItemMap;
+typedef HashMap<uint64_t, RefPtr<HistoryItem>> IDToHistoryItemMap;
 typedef HashMap<RefPtr<HistoryItem>, uint64_t> HistoryItemToIDMap;
 
 static IDToHistoryItemMap& idToHistoryItemMap()
 {
-    DEFINE_STATIC_LOCAL(IDToHistoryItemMap, map, ());
+    static NeverDestroyed<IDToHistoryItemMap> map;;
     return map;
 } 
 
 static HistoryItemToIDMap& historyItemToIDMap()
 {
-    DEFINE_STATIC_LOCAL(HistoryItemToIDMap, map, ());
+    static NeverDestroyed<HistoryItemToIDMap> map;
     return map;
 } 
 
@@ -89,7 +87,7 @@ static void updateBackForwardItem(uint64_t itemID, HistoryItem* item)
     EncoderAdapter encoder;
     item->encodeBackForwardTree(encoder);
 
-    WebProcess::shared().connection()->send(Messages::WebProcessProxy::AddBackForwardItem(itemID, item->originalURLString(), item->urlString(), item->title(), encoder.dataReference()), 0);
+    WebProcess::shared().parentProcessConnection()->send(Messages::WebProcessProxy::AddBackForwardItem(itemID, item->originalURLString(), item->urlString(), item->title(), encoder.dataReference()), 0);
 }
 
 void WebBackForwardListProxy::addItemFromUIProcess(uint64_t itemID, PassRefPtr<WebCore::HistoryItem> prpItem)
@@ -115,7 +113,7 @@ static void WK2NotifyHistoryItemChanged(HistoryItem* item)
 
 HistoryItem* WebBackForwardListProxy::itemForID(uint64_t itemID)
 {
-    return idToHistoryItemMap().get(itemID).get();
+    return idToHistoryItemMap().get(itemID);
 }
 
 uint64_t WebBackForwardListProxy::idForItem(HistoryItem* item)
@@ -126,14 +124,12 @@ uint64_t WebBackForwardListProxy::idForItem(HistoryItem* item)
 
 void WebBackForwardListProxy::removeItem(uint64_t itemID)
 {
-    IDToHistoryItemMap::iterator it = idToHistoryItemMap().find(itemID);
-    if (it == idToHistoryItemMap().end())
+    RefPtr<HistoryItem> item = idToHistoryItemMap().take(itemID);
+    if (!item)
         return;
         
-    WebCore::pageCache()->remove(it->value.get());
-
-    historyItemToIDMap().remove(it->value);
-    idToHistoryItemMap().remove(it);
+    pageCache()->remove(item.get());
+    historyItemToIDMap().remove(item);
 }
 
 WebBackForwardListProxy::WebBackForwardListProxy(WebPage* page)
@@ -180,13 +176,13 @@ HistoryItem* WebBackForwardListProxy::itemAtIndex(int itemIndex)
         return 0;
 
     uint64_t itemID = 0;
-    if (!WebProcess::shared().connection()->sendSync(Messages::WebPageProxy::BackForwardItemAtIndex(itemIndex), Messages::WebPageProxy::BackForwardItemAtIndex::Reply(itemID), m_page->pageID()))
+    if (!WebProcess::shared().parentProcessConnection()->sendSync(Messages::WebPageProxy::BackForwardItemAtIndex(itemIndex), Messages::WebPageProxy::BackForwardItemAtIndex::Reply(itemID), m_page->pageID()))
         return 0;
 
     if (!itemID)
         return 0;
 
-    return idToHistoryItemMap().get(itemID).get();
+    return idToHistoryItemMap().get(itemID);
 }
 
 int WebBackForwardListProxy::backListCount()
@@ -195,7 +191,7 @@ int WebBackForwardListProxy::backListCount()
         return 0;
 
     int backListCount = 0;
-    if (!WebProcess::shared().connection()->sendSync(Messages::WebPageProxy::BackForwardBackListCount(), Messages::WebPageProxy::BackForwardBackListCount::Reply(backListCount), m_page->pageID()))
+    if (!WebProcess::shared().parentProcessConnection()->sendSync(Messages::WebPageProxy::BackForwardBackListCount(), Messages::WebPageProxy::BackForwardBackListCount::Reply(backListCount), m_page->pageID()))
         return 0;
 
     return backListCount;
@@ -207,7 +203,7 @@ int WebBackForwardListProxy::forwardListCount()
         return 0;
 
     int forwardListCount = 0;
-    if (!WebProcess::shared().connection()->sendSync(Messages::WebPageProxy::BackForwardForwardListCount(), Messages::WebPageProxy::BackForwardForwardListCount::Reply(forwardListCount), m_page->pageID()))
+    if (!WebProcess::shared().parentProcessConnection()->sendSync(Messages::WebPageProxy::BackForwardForwardListCount(), Messages::WebPageProxy::BackForwardForwardListCount::Reply(forwardListCount), m_page->pageID()))
         return 0;
 
     return forwardListCount;

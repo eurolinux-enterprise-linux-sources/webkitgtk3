@@ -43,25 +43,25 @@ public:
 
     static JSNPMethod* create(JSC::ExecState* exec, JSC::JSGlobalObject* globalObject, const String& name, NPIdentifier npIdent)
     {
-        JSC::Structure* structure = createStructure(exec->globalData(), globalObject, globalObject->functionPrototype());
+        JSC::Structure* structure = createStructure(exec->vm(), globalObject, globalObject->functionPrototype());
         JSNPMethod* method = new (JSC::allocateCell<JSNPMethod>(*exec->heap())) JSNPMethod(globalObject, structure, npIdent);
-        method->finishCreation(exec->globalData(), name);
+        method->finishCreation(exec->vm(), name);
         return method;
     }
 
-    static const JSC::ClassInfo s_info;
+    DECLARE_INFO;
 
     NPIdentifier npIdentifier() const { return m_npIdentifier; }
 
 protected:
-    void finishCreation(JSC::JSGlobalData&, const String& name);
+    void finishCreation(JSC::VM&, const String& name);
 
 private:    
     JSNPMethod(JSC::JSGlobalObject*, JSC::Structure*, NPIdentifier);
 
-    static JSC::Structure* createStructure(JSC::JSGlobalData& globalData, JSC::JSGlobalObject* globalObject, JSC::JSValue prototype)
+    static JSC::Structure* createStructure(JSC::VM& vm, JSC::JSGlobalObject* globalObject, JSC::JSValue prototype)
     {
-        return JSC::Structure::create(globalData, globalObject, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), &s_info);
+        return JSC::Structure::create(vm, globalObject, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), info());
     }
 
     static JSC::CallType getCallData(JSC::JSCell*, JSC::CallData&);

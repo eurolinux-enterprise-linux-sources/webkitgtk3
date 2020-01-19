@@ -27,12 +27,13 @@
 #ifndef DrawingAreaProxy_h
 #define DrawingAreaProxy_h
 
-#include "BackingStore.h"
 #include "DrawingAreaInfo.h"
 #include "MessageReceiver.h"
-#include <WebCore/FloatPoint.h>
+#include <WebCore/FloatRect.h>
 #include <WebCore/IntRect.h>
 #include <WebCore/IntSize.h>
+#include <WebCore/Timer.h>
+#include <chrono>
 #include <stdint.h>
 #include <wtf/Noncopyable.h>
 
@@ -43,7 +44,7 @@ class CoordinatedLayerTreeHostProxy;
 class UpdateInfo;
 class WebPageProxy;
 
-class DrawingAreaProxy : public CoreIPC::MessageReceiver {
+class DrawingAreaProxy : public IPC::MessageReceiver {
     WTF_MAKE_NONCOPYABLE(DrawingAreaProxy);
 
 public:
@@ -54,31 +55,32 @@ public:
     virtual void deviceScaleFactorDidChange() = 0;
 
     // FIXME: These should be pure virtual.
-    virtual void visibilityDidChange() { }
-    virtual void layerHostingModeDidChange() { }
-
     virtual void setBackingStoreIsDiscardable(bool) { }
 
     virtual void waitForBackingStoreUpdateOnNextPaint() { }
 
     const WebCore::IntSize& size() const { return m_size; }
-    void setSize(const WebCore::IntSize&, const WebCore::IntSize& scrollOffset);
+    void setSize(const WebCore::IntSize&, const WebCore::IntSize&, const WebCore::IntSize& scrollOffset);
 
-    virtual void pageCustomRepresentationChanged() { }
-    virtual void waitForPossibleGeometryUpdate() { }
+    // The timeout we use when waiting for a DidUpdateGeometry message.
+    static constexpr std::chrono::milliseconds didUpdateBackingStoreStateTimeout() { return std::chrono::milliseconds(500); }
+
+    virtual void waitForPossibleGeometryUpdate(std::chrono::milliseconds = didUpdateBackingStoreStateTimeout()) { }
 
     virtual void colorSpaceDidChange() { }
-    virtual void minimumLayoutWidthDidChange() { }
+    virtual void minimumLayoutSizeDidChange() { }
 
-#if USE(COORDINATED_GRAPHICS)
-    virtual void updateViewport();
-    virtual WebCore::IntRect viewportVisibleRect() const { return contentsRect(); }
-    virtual WebCore::IntRect contentsRect() const;
-    CoordinatedLayerTreeHostProxy* coordinatedLayerTreeHostProxy() const { return m_coordinatedLayerTreeHostProxy.get(); }
-    virtual void setVisibleContentsRect(const WebCore::FloatRect& /* visibleContentsRect */, const WebCore::FloatPoint& /* trajectoryVector */) { }
+    virtual void adjustTransientZoom(double, WebCore::FloatPoint) { }
+    virtual void commitTransientZoom(double, WebCore::FloatPoint) { }
 
-    WebPageProxy* page() { return m_webPageProxy; }
+#if PLATFORM(MAC)
+    void setExposedRect(const WebCore::FloatRect&);
+    WebCore::FloatRect exposedRect() const { return m_exposedRect; }
+    void exposedRectChangedTimerFired(WebCore::Timer<DrawingAreaProxy>*);
+    
+    void setCustomFixedPositionRect(const WebCore::FloatRect&);
 #endif
+
 protected:
     explicit DrawingAreaProxy(DrawingAreaType, WebPageProxy*);
 
@@ -86,19 +88,16 @@ protected:
     WebPageProxy* m_webPageProxy;
 
     WebCore::IntSize m_size;
+    WebCore::IntSize m_layerPosition;
     WebCore::IntSize m_scrollOffset;
 
-#if USE(COORDINATED_GRAPHICS)
-    OwnPtr<CoordinatedLayerTreeHostProxy> m_coordinatedLayerTreeHostProxy;
-#endif
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
 private:
     virtual void sizeDidChange() = 0;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
-
-    // CoreIPC message handlers.
+    // Message handlers.
     // FIXME: These should be pure virtual.
     virtual void update(uint64_t /* backingStoreStateID */, const UpdateInfo&) { }
     virtual void didUpdateBackingStoreState(uint64_t /* backingStoreStateID */, const UpdateInfo&, const LayerTreeContext&) { }
@@ -108,8 +107,12 @@ private:
     virtual void updateAcceleratedCompositingMode(uint64_t /* backingStoreStateID */, const LayerTreeContext&) { }
 #endif
 #if PLATFORM(MAC)
-    virtual void didUpdateGeometry(const WebCore::IntSize& newIntrinsicContentSize) { }
+    virtual void didUpdateGeometry() { }
     virtual void intrinsicContentSizeDidChange(const WebCore::IntSize& newIntrinsicContentSize) { }
+
+    WebCore::Timer<DrawingAreaProxy> m_exposedRectChangedTimer;
+    WebCore::FloatRect m_exposedRect;
+    WebCore::FloatRect m_lastSentExposedRect;
 #endif
 };
 

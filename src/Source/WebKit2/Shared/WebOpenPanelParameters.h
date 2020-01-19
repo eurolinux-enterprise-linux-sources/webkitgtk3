@@ -32,28 +32,26 @@
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
+namespace API {
+class Array;
+}
+
 namespace WebKit {
 
-class ImmutableArray;
-
-class WebOpenPanelParameters : public APIObject {
+class WebOpenPanelParameters : public API::ObjectImpl<API::Object::Type::OpenPanelParameters> {
 public:
-    static const Type APIType = TypeOpenPanelParameters;
-
     static PassRefPtr<WebOpenPanelParameters> create(const WebCore::FileChooserSettings&);
     ~WebOpenPanelParameters();
 
     bool allowMultipleFiles() const { return m_settings.allowsMultipleFiles; } 
-    PassRefPtr<ImmutableArray> acceptMIMETypes() const;
-    Vector<String> selectedFileNames() const { return m_settings.selectedFiles; }
+    PassRefPtr<API::Array> acceptMIMETypes() const;
+    PassRefPtr<API::Array> selectedFileNames() const;
 #if ENABLE(MEDIA_CAPTURE)
     String capture() const;
 #endif
 
 private:
     explicit WebOpenPanelParameters(const WebCore::FileChooserSettings&);
-
-    virtual Type type() const { return APIType; }
 
     WebCore::FileChooserSettings m_settings;
 };

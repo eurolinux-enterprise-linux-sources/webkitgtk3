@@ -62,7 +62,7 @@ namespace double_conversion {
     // Output: returns true if the buffer is guaranteed to contain the closest
     //    representable number to the input.
     //  Modifies the generated digits in the buffer to approach (round towards) w.
-    static bool RoundWeed(Vector<char> buffer,
+    static bool RoundWeed(BufferReference<char> buffer,
                           int length,
                           uint64_t distance_too_high_w,
                           uint64_t unsafe_interval,
@@ -182,7 +182,7 @@ namespace double_conversion {
     // unambiguously determined.
     //
     // Precondition: rest < ten_kappa.
-    static bool RoundWeedCounted(Vector<char> buffer,
+    static bool RoundWeedCounted(BufferReference<char> buffer,
                                  int length,
                                  uint64_t rest,
                                  uint64_t ten_kappa,
@@ -253,7 +253,8 @@ namespace double_conversion {
                     *power = kTen9;
                     *exponent = 9;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 29:
             case 28:
             case 27:
@@ -261,7 +262,8 @@ namespace double_conversion {
                     *power = kTen8;
                     *exponent = 8;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 26:
             case 25:
             case 24:
@@ -269,7 +271,8 @@ namespace double_conversion {
                     *power = kTen7;
                     *exponent = 7;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 23:
             case 22:
             case 21:
@@ -278,7 +281,8 @@ namespace double_conversion {
                     *power = kTen6;
                     *exponent = 6;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 19:
             case 18:
             case 17:
@@ -286,7 +290,8 @@ namespace double_conversion {
                     *power = kTen5;
                     *exponent = 5;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 16:
             case 15:
             case 14:
@@ -294,7 +299,8 @@ namespace double_conversion {
                     *power = kTen4;
                     *exponent = 4;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 13:
             case 12:
             case 11:
@@ -303,7 +309,8 @@ namespace double_conversion {
                     *power = 1000;
                     *exponent = 3;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 9:
             case 8:
             case 7:
@@ -311,7 +318,8 @@ namespace double_conversion {
                     *power = 100;
                     *exponent = 2;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 6:
             case 5:
             case 4:
@@ -319,7 +327,8 @@ namespace double_conversion {
                     *power = 10;
                     *exponent = 1;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 3:
             case 2:
             case 1:
@@ -327,7 +336,8 @@ namespace double_conversion {
                     *power = 1;
                     *exponent = 0;
                     break;
-                }  // else fallthrough
+                }
+                FALLTHROUGH;
             case 0:
                 *power = 0;
                 *exponent = -1;
@@ -386,7 +396,7 @@ namespace double_conversion {
     static bool DigitGen(DiyFp low,
                          DiyFp w,
                          DiyFp high,
-                         Vector<char> buffer,
+                         BufferReference<char> buffer,
                          int* length,
                          int* kappa) {
         ASSERT(low.e() == w.e() && w.e() == high.e());
@@ -511,7 +521,7 @@ namespace double_conversion {
     //   increases with higher requested_digits.
     static bool DigitGenCounted(DiyFp w,
                                 int requested_digits,
-                                Vector<char> buffer,
+                                BufferReference<char> buffer,
                                 int* length,
                                 int* kappa) {
         ASSERT(kMinimalTargetExponent <= w.e() && w.e() <= kMaximalTargetExponent);
@@ -599,7 +609,7 @@ namespace double_conversion {
     // digits might correctly yield 'v' when read again, the closest will be
     // computed.
     static bool Grisu3(double v,
-                       Vector<char> buffer,
+                       BufferReference<char> buffer,
                        int* length,
                        int* decimal_exponent) {
         DiyFp w = Double(v).AsNormalizedDiyFp();
@@ -665,7 +675,7 @@ namespace double_conversion {
     // therefore the rounding strategy for halfway cases is irrelevant.
     static bool Grisu3Counted(double v,
                               int requested_digits,
-                              Vector<char> buffer,
+                              BufferReference<char> buffer,
                               int* length,
                               int* decimal_exponent) {
         DiyFp w = Double(v).AsNormalizedDiyFp();
@@ -710,7 +720,7 @@ namespace double_conversion {
     bool FastDtoa(double v,
                   FastDtoaMode mode,
                   int requested_digits,
-                  Vector<char> buffer,
+                  BufferReference<char> buffer,
                   int* length,
                   int* decimal_point) {
         ASSERT(v > 0);

@@ -31,9 +31,7 @@
 #include "DOMWrapperWorld.h"
 #include "Document.h"
 #include "ScriptState.h"
-#if ENABLE(WORKERS)
-#include "WorkerContext.h"
-#endif
+#include "WorkerGlobalScope.h"
 
 #include <JavaScriptCore/APIShims.h>
 
@@ -48,13 +46,11 @@ public:
         , m_exec(0)
     {
         if (m_scriptExecutionContext->isDocument()) {
-            Document* document = static_cast<Document*>(m_scriptExecutionContext);
-            m_exec = scriptStateFromPage(mainThreadNormalWorld(), document->page());
+            Document* document = toDocument(m_scriptExecutionContext);
+            m_exec = execStateFromPage(mainThreadNormalWorld(), document->page());
         } else {
-#if ENABLE(WORKERS)
-            WorkerContext* workerContext = static_cast<WorkerContext*>(m_scriptExecutionContext);
-            m_exec = scriptStateFromWorkerContext(workerContext);
-#endif
+            WorkerGlobalScope* workerGlobalScope = static_cast<WorkerGlobalScope*>(m_scriptExecutionContext);
+            m_exec = execStateFromWorkerGlobalScope(workerGlobalScope);
         }
     }
 

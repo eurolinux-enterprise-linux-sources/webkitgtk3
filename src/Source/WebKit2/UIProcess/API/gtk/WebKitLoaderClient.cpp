@@ -25,7 +25,7 @@
 #include "WebKitURIResponsePrivate.h"
 #include "WebKitWebViewBasePrivate.h"
 #include "WebKitWebViewPrivate.h"
-#include <wtf/gobject/GOwnPtr.h>
+#include <wtf/gobject/GUniquePtr.h>
 #include <wtf/text/CString.h>
 
 using namespace WebKit;
@@ -53,9 +53,8 @@ static void didFailProvisionalLoadWithErrorForFrame(WKPageRef page, WKFrameRef f
         return;
 
     const ResourceError& resourceError = toImpl(error)->platformError();
-    GOwnPtr<GError> webError(g_error_new_literal(g_quark_from_string(resourceError.domain().utf8().data()),
-                                                 resourceError.errorCode(),
-                                                 resourceError.localizedDescription().utf8().data()));
+    GUniquePtr<GError> webError(g_error_new_literal(g_quark_from_string(resourceError.domain().utf8().data()),
+        resourceError.errorCode(), resourceError.localizedDescription().utf8().data()));
     if (resourceError.tlsErrors()) {
         webkitWebViewLoadFailedWithTLSErrors(WEBKIT_WEB_VIEW(clientInfo), resourceError.failingURL().utf8().data(), webError.get(),
             static_cast<GTlsCertificateFlags>(resourceError.tlsErrors()), resourceError.certificate());
@@ -85,9 +84,8 @@ static void didFailLoadWithErrorForFrame(WKPageRef page, WKFrameRef frame, WKErr
         return;
 
     const ResourceError& resourceError = toImpl(error)->platformError();
-    GOwnPtr<GError> webError(g_error_new_literal(g_quark_from_string(resourceError.domain().utf8().data()),
-                                                 resourceError.errorCode(),
-                                                 resourceError.localizedDescription().utf8().data()));
+    GUniquePtr<GError> webError(g_error_new_literal(g_quark_from_string(resourceError.domain().utf8().data()),
+        resourceError.errorCode(), resourceError.localizedDescription().utf8().data()));
     webkitWebViewLoadFailed(WEBKIT_WEB_VIEW(clientInfo), WEBKIT_LOAD_COMMITTED,
                             resourceError.failingURL().utf8().data(), webError.get());
 }
@@ -140,9 +138,11 @@ static void processDidCrash(WKPageRef page, const void* clientInfo)
 
 void attachLoaderClientToView(WebKitWebView* webView)
 {
-    WKPageLoaderClient wkLoaderClient = {
-        kWKPageLoaderClientCurrentVersion,
-        webView, // clientInfo
+    WKPageLoaderClientV3 wkLoaderClient = {
+        {
+            3, // version
+            webView, // clientInfo
+        },
         didStartProvisionalLoadForFrame,
         didReceiveServerRedirectForProvisionalLoadForFrame,
         didFailProvisionalLoadWithErrorForFrame,
@@ -172,12 +172,15 @@ void attachLoaderClientToView(WebKitWebView* webView)
         0, // didFirstVisuallyNonEmptyLayoutForFrame
         0, // willGoToBackForwardListItem
         0, // interactionOccurredWhileProcessUnresponsive
-        0, // pluginDidFail
+        0, // pluginDidFail_deprecatedForUseWithV1
         0, // didReceiveIntentForFrame
         0, // registerIntentServiceForFrame
         0, // didLayout
+        0, // pluginLoadPolicy_deprecatedForUseWithV2
+        0, // pluginDidFail
+        0, // pluginLoadPolicy
     };
     WKPageRef wkPage = toAPI(webkitWebViewBaseGetPage(WEBKIT_WEB_VIEW_BASE(webView)));
-    WKPageSetPageLoaderClient(wkPage, &wkLoaderClient);
+    WKPageSetPageLoaderClient(wkPage, &wkLoaderClient.base);
 }
 

@@ -26,21 +26,20 @@
 #ifndef Clock_h
 #define Clock_h
 
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include <memory>
 
 namespace WebCore {
 
-class Clock : public RefCounted<Clock> {
+class Clock {
 public:
-    static PassRefPtr<Clock> create();
+    static std::unique_ptr<Clock> create();
     virtual ~Clock() { }
 
-    virtual void setCurrentTime(float) = 0;
-    virtual float currentTime() const = 0;
+    virtual void setCurrentTime(double) = 0;
+    virtual double currentTime() const = 0;
 
-    virtual void setPlayRate(float) = 0;
-    virtual float playRate() const = 0;
+    virtual void setPlayRate(double) = 0;
+    virtual double playRate() const = 0;
 
     virtual void start() = 0;
     virtual void stop() = 0;

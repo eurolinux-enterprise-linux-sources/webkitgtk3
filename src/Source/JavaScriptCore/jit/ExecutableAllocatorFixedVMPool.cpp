@@ -72,15 +72,17 @@ public:
             startOfFixedExecutableMemoryPool = reinterpret_cast<uintptr_t>(m_reservation.base());
         }
     }
+
+    virtual ~FixedVMPoolExecutableAllocator();
     
 protected:
-    virtual void* allocateNewSpace(size_t&)
+    virtual void* allocateNewSpace(size_t&) override
     {
         // We're operating in a fixed pool, so new allocation is always prohibited.
         return 0;
     }
     
-    virtual void notifyNeedPage(void* page)
+    virtual void notifyNeedPage(void* page) override
     {
 #if USE(MADV_FREE_FOR_JIT_MEMORY)
         UNUSED_PARAM(page);
@@ -89,7 +91,7 @@ protected:
 #endif
     }
     
-    virtual void notifyPageIsFree(void* page)
+    virtual void notifyPageIsFree(void* page) override
     {
 #if USE(MADV_FREE_FOR_JIT_MEMORY)
         for (;;) {
@@ -120,13 +122,18 @@ void ExecutableAllocator::initializeAllocator()
     CodeProfiling::notifyAllocator(allocator);
 }
 
-ExecutableAllocator::ExecutableAllocator(JSGlobalData&)
+ExecutableAllocator::ExecutableAllocator(VM&)
 {
     ASSERT(allocator);
 }
 
 ExecutableAllocator::~ExecutableAllocator()
 {
+}
+
+FixedVMPoolExecutableAllocator::~FixedVMPoolExecutableAllocator()
+{
+    m_reservation.deallocate();
 }
 
 bool ExecutableAllocator::isValid() const
@@ -156,13 +163,13 @@ double ExecutableAllocator::memoryPressureMultiplier(size_t addedMemoryUsage)
     return result;
 }
 
-PassRefPtr<ExecutableMemoryHandle> ExecutableAllocator::allocate(JSGlobalData& globalData, size_t sizeInBytes, void* ownerUID, JITCompilationEffort effort)
+PassRefPtr<ExecutableMemoryHandle> ExecutableAllocator::allocate(VM& vm, size_t sizeInBytes, void* ownerUID, JITCompilationEffort effort)
 {
     RefPtr<ExecutableMemoryHandle> result = allocator->allocate(sizeInBytes, ownerUID);
     if (!result) {
         if (effort == JITCompilationCanFail)
             return result;
-        releaseExecutableMemory(globalData);
+        releaseExecutableMemory(vm);
         result = allocator->allocate(sizeInBytes, ownerUID);
         RELEASE_ASSERT(result);
     }

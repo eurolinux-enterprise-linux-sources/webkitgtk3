@@ -28,34 +28,41 @@
 
 #if ENABLE(VIDEO_TRACK)
 
-#include "InbandTextTrackPrivate.h"
 #include "InbandTextTrackPrivateClient.h"
 #include "TextTrack.h"
+#include "TextTrackCueGeneric.h"
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
-
-class Document;
-class InbandTextTrackPrivate;
-class MediaPlayer;
-class TextTrackCue;
 
 class InbandTextTrack : public TextTrack, public InbandTextTrackPrivateClient {
 public:
     static PassRefPtr<InbandTextTrack> create(ScriptExecutionContext*, TextTrackClient*, PassRefPtr<InbandTextTrackPrivate>);
     virtual ~InbandTextTrack();
 
-    virtual bool isClosedCaptions() const OVERRIDE;
-    virtual void setMode(const AtomicString&) OVERRIDE;
+    virtual bool isClosedCaptions() const override;
+    virtual bool isSDH() const override;
+    virtual bool containsOnlyForcedSubtitles() const override;
+    virtual bool isMainProgramContent() const override;
+    virtual bool isEasyToRead() const override;
+    virtual void setMode(const AtomicString&) override;
     size_t inbandTrackIndex();
 
-private:
+protected:
     InbandTextTrack(ScriptExecutionContext*, TextTrackClient*, PassRefPtr<InbandTextTrackPrivate>);
 
-    virtual void addGenericCue(InbandTextTrackPrivate*, GenericCueData*) OVERRIDE;
-    virtual void addWebVTTCue(InbandTextTrackPrivate*, double, double, const String&, const String&, const String&) OVERRIDE;
-
     RefPtr<InbandTextTrackPrivate> m_private;
+
+private:
+
+    virtual void idChanged(TrackPrivateBase*, const String&) override;
+    virtual void labelChanged(TrackPrivateBase*, const String&) override;
+    virtual void languageChanged(TrackPrivateBase*, const String&) override;
+    virtual void willRemove(TrackPrivateBase*) override;
+
+#if USE(PLATFORM_TEXT_TRACK_MENU)
+    virtual InbandTextTrackPrivate* privateTrack() override { return m_private.get(); }
+#endif
 };
 
 } // namespace WebCore

@@ -27,7 +27,6 @@
 #include "NotificationPermissionRequestManager.h"
 
 #include "WebCoreArgumentCoders.h"
-#include "WebNotificationManagerProxyMessages.h"
 #include "WebPage.h"
 #include "WebPageProxyMessages.h"
 #include "WebProcess.h"
@@ -71,7 +70,8 @@ void NotificationPermissionRequestManager::startRequest(SecurityOrigin* origin, 
 {
     NotificationClient::Permission permission = permissionLevel(origin);
     if (permission != NotificationClient::PermissionNotAllowed) {
-        callback->handleEvent(Notification::permissionString(permission));
+        if (callback)
+            callback->handleEvent(Notification::permissionString(permission));
         return;
     }
 
@@ -123,7 +123,7 @@ void NotificationPermissionRequestManager::cancelRequest(SecurityOrigin* origin)
 NotificationClient::Permission NotificationPermissionRequestManager::permissionLevel(SecurityOrigin* securityOrigin)
 {
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
-    if (!m_page->corePage()->settings()->notificationsEnabled())
+    if (!m_page->corePage()->settings().notificationsEnabled())
         return NotificationClient::PermissionDenied;
     
     return WebProcess::shared().supplement<WebNotificationManager>()->policyForOrigin(securityOrigin);

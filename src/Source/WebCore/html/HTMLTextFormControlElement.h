@@ -31,6 +31,7 @@ namespace WebCore {
 
 class Position;
 class RenderTextControl;
+class TextControlInnerTextElement;
 class VisiblePosition;
 
 enum TextFieldSelectionDirection { SelectionHasNoDirection, SelectionHasForwardDirection, SelectionHasBackwardDirection };
@@ -45,8 +46,7 @@ public:
 
     void forwardEvent(Event*);
 
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode&) override;
 
     // The derived class should return true if placeholder processing is needed.
     virtual bool supportsPlaceholder() const = 0;
@@ -54,9 +54,9 @@ public:
     bool placeholderShouldBeVisible() const;
     virtual HTMLElement* placeholderElement() const = 0;
     void updatePlaceholderVisibility(bool);
-    static void fixPlaceholderRenderer(HTMLElement* placeholder, HTMLElement* siblingElement);
 
     int indexForVisiblePosition(const VisiblePosition&) const;
+    VisiblePosition visiblePositionForIndex(int index) const;
     int selectionStart() const;
     int selectionEnd() const;
     const AtomicString& selectionDirection() const;
@@ -71,12 +71,12 @@ public:
     PassRefPtr<Range> selection() const;
     String selectedText() const;
 
-    virtual void dispatchFormControlChangeEvent();
+    virtual void dispatchFormControlChangeEvent() override final;
 
     virtual int maxLength() const = 0;
     virtual String value() const = 0;
 
-    virtual HTMLElement* innerTextElement() const = 0;
+    virtual TextControlInnerTextElement* innerTextElement() const = 0;
 
     void selectionChanged(bool userTriggered);
     bool lastChangeWasUserEdit() const;
@@ -86,15 +86,17 @@ public:
     String directionForFormData() const;
 
     void setTextAsOfLastFormControlChangeEvent(const String& text) { m_textAsOfLastFormControlChangeEvent = text; }
-
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+#if PLATFORM(IOS)
+    void hidePlaceholder();
+    void showPlaceholderIfNecessary();
+#endif
 
 protected:
-    HTMLTextFormControlElement(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLTextFormControlElement(const QualifiedName&, Document&, HTMLFormElement*);
     bool isPlaceholderEmpty() const;
     virtual void updatePlaceholderText() = 0;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {
@@ -106,7 +108,7 @@ protected:
     void restoreCachedSelection();
     bool hasCachedSelection() const { return m_cachedSelectionStart >= 0; }
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) override;
     virtual void subtreeHasChanged() = 0;
 
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
@@ -118,9 +120,9 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(PassRefPtr<Node> oldFocusedNode, FocusDirection) OVERRIDE;
-    virtual void dispatchBlurEvent(PassRefPtr<Node> newFocusedNode);
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
+    virtual void dispatchFocusEvent(PassRefPtr<Element> oldFocusedElement, FocusDirection) override final;
+    virtual void dispatchBlurEvent(PassRefPtr<Element> newFocusedElement) override final;
+    virtual bool childShouldCreateRenderer(const Node&) const override;
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;
@@ -131,8 +133,6 @@ private:
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
 
-    RenderTextControl* textRendererAfterUpdateLayout();
-
     String m_textAsOfLastFormControlChangeEvent;
     bool m_lastChangeWasUserEdit;
     
@@ -141,16 +141,10 @@ private:
     TextFieldSelectionDirection m_cachedSelectionDirection;
 };
 
-inline bool isHTMLTextFormControlElement(const Node* node)
-{
-    return node->isElementNode() && toElement(node)->isTextFormControl();
-}
-
-inline HTMLTextFormControlElement* toHTMLTextFormControlElement(Node* node)
-{
-    ASSERT(!node || isHTMLTextFormControlElement(node));
-    return static_cast<HTMLTextFormControlElement*>(node);
-}
+void isHTMLTextFormControlElement(const HTMLTextFormControlElement&); // Catch unnecessary runtime check of type known at compile time.
+inline bool isHTMLTextFormControlElement(const Element& element) { return element.isTextFormControl(); }
+inline bool isHTMLTextFormControlElement(const Node& node) { return node.isElementNode() && toElement(node).isTextFormControl(); }
+NODE_TYPE_CASTS(HTMLTextFormControlElement)
 
 HTMLTextFormControlElement* enclosingTextFormControl(const Position&);
 

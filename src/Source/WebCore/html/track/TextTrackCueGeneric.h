@@ -30,26 +30,25 @@
 
 #include "Color.h"
 #include "TextTrackCue.h"
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
 class GenericCueData;
 
 // A "generic" cue is a non-WebVTT cue, so it is not positioned/sized with the WebVTT logic.
-class TextTrackCueGeneric : public TextTrackCue {
+class TextTrackCueGeneric final : public TextTrackCue {
 public:
-    static PassRefPtr<TextTrackCueGeneric> create(ScriptExecutionContext* context, double start, double end, const String& content)
+    static PassRefPtr<TextTrackCueGeneric> create(ScriptExecutionContext& context, double start, double end, const String& content)
     {
         return adoptRef(new TextTrackCueGeneric(context, start, end, content));
     }
     
     virtual ~TextTrackCueGeneric() { }
 
-    virtual PassRefPtr<TextTrackCueBox> createDisplayTree() OVERRIDE;
+    virtual PassRefPtr<TextTrackCueBox> createDisplayTree() override;
 
-    virtual void setLine(int, ExceptionCode&) OVERRIDE;
-    virtual void setPosition(int, ExceptionCode&) OVERRIDE;
+    virtual void setLine(int, ExceptionCode&) override;
+    virtual void setPosition(int, ExceptionCode&) override;
 
     bool useDefaultPosition() const { return m_defaultPosition; }
     
@@ -67,20 +66,24 @@ public:
     
     Color backgroundColor() const { return m_backgroundColor; }
     void setBackgroundColor(RGBA32 color) { m_backgroundColor.setRGB(color); }
+    
+    Color highlightColor() const { return m_highlightColor; }
+    void setHighlightColor(RGBA32 color) { m_highlightColor.setRGB(color); }
+    
+    virtual void setFontSize(int, const IntSize&, bool important) override;
 
-    virtual bool operator==(const TextTrackCue&) const OVERRIDE;
-    virtual bool operator!=(const TextTrackCue& cue) const OVERRIDE
-    {
-        return !(*this == cue);
-    }
+    virtual bool isEqual(const TextTrackCue&, CueMatchRules) const override;
 
-    virtual TextTrackCue::CueType cueType() const OVERRIDE { return TextTrackCue::Generic; }
+    virtual TextTrackCue::CueType cueType() const override { return TextTrackCue::Generic; }
 
 private:
-    TextTrackCueGeneric(ScriptExecutionContext*, double start, double end, const String&);
+    virtual bool isOrderedBefore(const TextTrackCue*) const override;
+
+    TextTrackCueGeneric(ScriptExecutionContext&, double start, double end, const String&);
     
     Color m_foregroundColor;
     Color m_backgroundColor;
+    Color m_highlightColor;
     double m_baseFontSizeRelativeToVideoHeight;
     double m_fontSizeMultiplier;
     String m_fontName;

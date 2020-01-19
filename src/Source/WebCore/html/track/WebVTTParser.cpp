@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
+ * Copyright (C) 2013 Cable Television Labs, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -34,12 +35,9 @@
 
 #include "WebVTTParser.h"
 
-#include "HTMLElement.h"
 #include "ProcessingInstruction.h"
-#include "SegmentedString.h"
 #include "Text.h"
 #include "WebVTTElement.h"
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -47,7 +45,8 @@ const double secondsPerHour = 3600;
 const double secondsPerMinute = 60;
 const double secondsPerMillisecond = 0.001;
 const double malformedTime = -1;
-const unsigned bomLength = 3;
+const UChar bom = 0xFEFF;
+const char* fileIdentifier = "WEBVTT";
 const unsigned fileIdentifierLength = 6;
 
 String WebVTTParser::collectDigits(const String& input, unsigned* position)
@@ -66,6 +65,56 @@ String WebVTTParser::collectWord(const String& input, unsigned* position)
     return string.toString();
 }
 
+#if ENABLE(WEBVTT_REGIONS)
+float WebVTTParser::parseFloatPercentageValue(const String& value, bool& isValidSetting)
+{
+    // '%' must be present and at the end of the setting value.
+    if (value.find('%', 1) != value.length() - 1) {
+        isValidSetting = false;
+        return 0;
+    }
+
+    unsigned position = 0;
+
+    StringBuilder floatNumberAsString;
+    floatNumberAsString.append(WebVTTParser::collectDigits(value, &position));
+
+    if (value[position] == '.') {
+        floatNumberAsString.append(".");
+        position++;
+
+        floatNumberAsString.append(WebVTTParser::collectDigits(value, &position));
+    }
+    float number = floatNumberAsString.toString().toFloat(&isValidSetting);
+
+    if (isValidSetting && (number <= 0 || number >= 100))
+        isValidSetting = false;
+
+    return number;
+}
+
+FloatPoint WebVTTParser::parseFloatPercentageValuePair(const String& value, char delimiter, bool& isValidSetting)
+{
+    // The delimiter can't be the first or second value because a pair of
+    // percentages (x%,y%) implies that at least the first two characters
+    // are the first percentage value.
+    size_t delimiterOffset = value.find(delimiter, 2);
+    if (delimiterOffset == notFound || delimiterOffset == value.length() - 1) {
+        isValidSetting = false;
+        return FloatPoint(0, 0);
+    }
+
+    bool isFirstValueValid;
+    float firstCoord = parseFloatPercentageValue(value.substring(0, delimiterOffset), isFirstValueValid);
+
+    bool isSecondValueValid;
+    float secondCoord = parseFloatPercentageValue(value.substring(delimiterOffset + 1, value.length() - 1), isSecondValueValid);
+
+    isValidSetting = isFirstValueValid && isSecondValueValid;
+    return FloatPoint(firstCoord, secondCoord);
+}
+#endif
+
 WebVTTParser::WebVTTParser(WebVTTParserClient* client, ScriptExecutionContext* context)
     : m_scriptExecutionContext(context)
     , m_state(Initial)
@@ -76,11 +125,19 @@ WebVTTParser::WebVTTParser(WebVTTParserClient* client, ScriptExecutionContext* c
 {
 }
 
-void WebVTTParser::getNewCues(Vector<RefPtr<TextTrackCue> >& outputCues)
+void WebVTTParser::getNewCues(Vector<RefPtr<WebVTTCueData>>& outputCues)
 {
     outputCues = m_cuelist;
     m_cuelist.clear();
 }
+
+#if ENABLE(WEBVTT_REGIONS)
+void WebVTTParser::getNewRegions(Vector<RefPtr<TextTrackRegion>>& outputRegions)
+{
+    outputRegions = m_regionList;
+    m_regionList.clear();
+}
+#endif
 
 void WebVTTParser::parseBytes(const char* data, unsigned length)
 {
@@ -90,78 +147,132 @@ void WebVTTParser::parseBytes(const char* data, unsigned length)
 
     while (position < length) {
         String line = collectNextLine(data, length, &position);
-        
+        if (line.isNull()) {
+            m_buffer.append(data + position, length - position);
+            return;
+        }
+
         switch (m_state) {
         case Initial:
-            // Buffer up at least 9 bytes before proceeding with checking for the file identifier.
-            m_identifierData.append(data, length);
-            if (m_identifierData.size() < bomLength + fileIdentifierLength)
-                return;
 
             // 4-12 - Collect the first line and check for "WEBVTT".
-            if (!hasRequiredFileIdentifier()) {
+            if (!hasRequiredFileIdentifier(line)) {
                 if (m_client)
                     m_client->fileFailedToParse();
                 return;
             }
 
             m_state = Header;
-            m_identifierData.clear();
             break;
-        
+
         case Header:
             // 13-18 - Allow a header (comment area) under the WEBVTT line.
+#if ENABLE(WEBVTT_REGIONS)
+            if (line.isEmpty()) {
+                if (m_client && m_regionList.size())
+                    m_client->newRegionsParsed();
+
+                m_state = Id;
+                break;
+            }
+            collectHeader(line);
+
+            break;
+
+        case Metadata:
+#endif
             if (line.isEmpty())
                 m_state = Id;
             break;
-        
+
         case Id:
             // 19-29 - Allow any number of line terminators, then initialize new cue values.
             if (line.isEmpty())
                 break;
             resetCueValues();
-            
+
             // 30-39 - Check if this line contains an optional identifier or timing data.
             m_state = collectCueId(line);
             break;
-        
+
         case TimingsAndSettings:
             // 40 - Collect cue timings and settings.
             m_state = collectTimingsAndSettings(line);
             break;
-        
+
         case CueText:
             // 41-53 - Collect the cue text, create a cue, and add it to the output.
-            m_state = collectCueText(line, length, position);
+            m_state = collectCueText(line);
             break;
 
         case BadCue:
             // 54-62 - Collect and discard the remaining cue.
             m_state = ignoreBadCue(line);
             break;
+
+        case Finished:
+            ASSERT_NOT_REACHED();
+            break;
         }
     }
 }
 
-bool WebVTTParser::hasRequiredFileIdentifier()
+void WebVTTParser::fileFinished()
+{
+    ASSERT(m_state != Finished);
+    parseBytes("\n\n", 2);
+    m_state = Finished;
+}
+
+bool WebVTTParser::hasRequiredFileIdentifier(const String& line)
 {
     // A WebVTT file identifier consists of an optional BOM character,
     // the string "WEBVTT" followed by an optional space or tab character,
     // and any number of characters that are not line terminators ...
-    unsigned position = 0;
-    if (m_identifierData.size() >= bomLength && m_identifierData[0] == '\xEF' && m_identifierData[1] == '\xBB' && m_identifierData[2] == '\xBF')
-        position += bomLength;
-    String line = collectNextLine(m_identifierData.data(), m_identifierData.size(), &position);
+    unsigned linePos = 0;
 
-    if (line.length() < fileIdentifierLength)
-        return false;
-    if (line.substring(0, fileIdentifierLength) != "WEBVTT")
-        return false;
-    if (line.length() > fileIdentifierLength && line[fileIdentifierLength] != ' ' && line[fileIdentifierLength] != '\t')
+    if (line.isEmpty())
         return false;
 
+    if (line[0] == bom)
+        ++linePos;
+
+    if (line.length() < fileIdentifierLength + linePos)
+        return false;
+
+    for (unsigned i = 0; i < fileIdentifierLength; ++i, ++linePos) {
+        if (line[linePos] != fileIdentifier[i])
+            return false;
+    }
+
+    if (linePos < line.length() && line[linePos] != ' ' && line[linePos] != '\t')
+        return false;
     return true;
 }
+
+#if ENABLE(WEBVTT_REGIONS)
+void WebVTTParser::collectHeader(const String& line)
+{
+    // 4.1 Extension of WebVTT header parsing (11 - 15)
+    DEFINE_STATIC_LOCAL(const AtomicString, regionHeaderName, ("Region", AtomicString::ConstructFromLiteral));
+
+    // 15.4 If line contains the character ":" (A U+003A COLON), then set metadata's
+    // name to the substring of line before the first ":" character and
+    // metadata's value to the substring after this character.
+    if (!line.contains(":"))
+        return;
+
+    unsigned colonPosition = line.find(":");
+    m_currentHeaderName = line.substring(0, colonPosition);
+
+    // 15.5 If metadata's name equals "Region":
+    if (m_currentHeaderName == regionHeaderName) {
+        m_currentHeaderValue = line.substring(colonPosition + 1, line.length() - 1);
+        // 15.5.1 - 15.5.8 Region creation: Let region be a new text track region [...]
+        createNewRegion();
+    }
+}
+#endif
 
 WebVTTParser::ParseState WebVTTParser::collectCueId(const String& line)
 {
@@ -211,7 +322,7 @@ WebVTTParser::ParseState WebVTTParser::collectTimingsAndSettings(const String& l
     return CueText;
 }
 
-WebVTTParser::ParseState WebVTTParser::collectCueText(const String& line, unsigned length, unsigned position)
+WebVTTParser::ParseState WebVTTParser::collectCueText(const String& line)
 {
     if (line.isEmpty()) {
         createNewCue();
@@ -220,9 +331,6 @@ WebVTTParser::ParseState WebVTTParser::collectCueText(const String& line, unsign
     if (!m_currentContent.isEmpty())
         m_currentContent.append("\n");
     m_currentContent.append(line);
-
-    if (position >= length)
-        createNewCue();
                 
     return CueText;
 }
@@ -234,19 +342,22 @@ WebVTTParser::ParseState WebVTTParser::ignoreBadCue(const String& line)
     return Id;
 }
 
-PassRefPtr<DocumentFragment>  WebVTTParser::createDocumentFragmentFromCueText(const String& text)
+PassRefPtr<DocumentFragment> WebVTTParser::createDocumentFragmentFromCueText(const String& text)
 {
     // Cue text processing based on
     // 4.8.10.13.4 WebVTT cue text parsing rules and
     // 4.8.10.13.5 WebVTT cue text DOM construction rules.
 
-    if (!text.length())
-        return 0;
-
     ASSERT(m_scriptExecutionContext->isDocument());
-    Document* document = static_cast<Document*>(m_scriptExecutionContext);
+    Document* document = toDocument(m_scriptExecutionContext);
     
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(document);
+    RefPtr<DocumentFragment> fragment = DocumentFragment::create(*document);
+
+    if (text.isEmpty()) {
+        fragment->parserAppendChild(Text::create(*document, emptyString()));
+        return fragment.release();
+    }
+
     m_currentNode = fragment;
     m_tokenizer->reset();
     m_token.clear();
@@ -264,9 +375,12 @@ void WebVTTParser::createNewCue()
     if (!m_currentContent.length())
         return;
 
-    RefPtr<TextTrackCue> cue = TextTrackCue::create(m_scriptExecutionContext, m_currentStartTime, m_currentEndTime, m_currentContent.toString());
+    RefPtr<WebVTTCueData> cue = WebVTTCueData::create();
+    cue->setStartTime(m_currentStartTime);
+    cue->setEndTime(m_currentEndTime);
+    cue->setContent(m_currentContent.toString());
     cue->setId(m_currentId);
-    cue->setCueSettings(m_currentSettings);
+    cue->setSettings(m_currentSettings);
 
     m_cuelist.append(cue);
     if (m_client)
@@ -281,6 +395,27 @@ void WebVTTParser::resetCueValues()
     m_currentEndTime = 0;
     m_currentContent.clear();
 }
+
+#if ENABLE(WEBVTT_REGIONS)
+void WebVTTParser::createNewRegion()
+{
+    if (!m_currentHeaderValue.length())
+        return;
+
+    RefPtr<TextTrackRegion> region = TextTrackRegion::create();
+    region->setRegionSettings(m_currentHeaderValue);
+
+    // 15.5.10 If the text track list of regions regions contains a region
+    // with the same region identifier value as region, remove that region.
+    for (size_t i = 0; i < m_regionList.size(); ++i)
+        if (m_regionList[i]->id() == region->id()) {
+            m_regionList.remove(i);
+            break;
+        }
+
+    m_regionList.append(region);
+}
+#endif
 
 double WebVTTParser::collectTimeStamp(const String& line, unsigned* position)
 {
@@ -380,7 +515,7 @@ void WebVTTParser::constructTreeFromToken(Document* document)
     switch (m_token.type()) {
     case WebVTTTokenTypes::Character: {
         String content(m_token.characters()); // FIXME: This should be 8bit if possible.
-        RefPtr<Text> child = Text::create(document, content);
+        RefPtr<Text> child = Text::create(*document, content);
         m_currentNode->parserAppendChild(child);
         break;
     }
@@ -388,7 +523,7 @@ void WebVTTParser::constructTreeFromToken(Document* document)
         RefPtr<WebVTTElement> child;
         WebVTTNodeType nodeType = tokenToNodeType(m_token);
         if (nodeType != WebVTTNodeTypeNone)
-            child = WebVTTElement::create(nodeType, document);
+            child = WebVTTElement::create(nodeType, *document);
         if (child) {
             if (m_token.classes().size() > 0)
                 child->setAttribute(classAttr, AtomicString(m_token.classes()));
@@ -421,7 +556,7 @@ void WebVTTParser::constructTreeFromToken(Document* document)
         String charactersString(StringImpl::create8BitIfPossible(m_token.characters()));
         double time = collectTimeStamp(charactersString, &position);
         if (time != malformedTime)
-            m_currentNode->parserAppendChild(ProcessingInstruction::create(document, "timestamp", charactersString));
+            m_currentNode->parserAppendChild(ProcessingInstruction::create(*document, "timestamp", charactersString));
         break;
     }
     default:
@@ -436,26 +571,26 @@ void WebVTTParser::skipWhiteSpace(const String& line, unsigned* position)
         (*position)++;
 }
 
-void WebVTTParser::skipLineTerminator(const char* data, unsigned length, unsigned* position)
-{
-    if (*position >= length)
-        return;
-    if (data[*position] == '\r')
-        (*position)++;
-    if (*position >= length)
-        return;
-    if (data[*position] == '\n')
-        (*position)++;
-}
-
 String WebVTTParser::collectNextLine(const char* data, unsigned length, unsigned* position)
 {
-    unsigned oldPosition = *position;
-    while (*position < length && data[*position] != '\r' && data[*position] != '\n')
-        (*position)++;
-    String line = String::fromUTF8(data + oldPosition, *position - oldPosition);
-    skipLineTerminator(data, length, position);
-    return line;
+    unsigned currentPosition = *position;
+    while (currentPosition < length && data[currentPosition] != '\r' && data[currentPosition] != '\n')
+        currentPosition++;
+    if (currentPosition >= length)
+        return String();
+    String line = String::fromUTF8(data + *position , currentPosition - *position);
+    if (data[currentPosition] == '\r')
+        currentPosition++;
+    if (currentPosition < length && data[currentPosition] == '\n')
+        currentPosition++;
+    *position = currentPosition;
+    if (m_buffer.isEmpty())
+        return line;
+
+    String lineWithBuffer = String::fromUTF8(m_buffer.data(), m_buffer.size());
+    lineWithBuffer.append(line);
+    m_buffer.clear();
+    return lineWithBuffer;
 }
 
 }

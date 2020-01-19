@@ -41,23 +41,22 @@ typedef unsigned LineBoxContain;
 // Used for text-CSSLineBoxContain and box-CSSLineBoxContain
 class CSSLineBoxContainValue : public CSSValue {
 public:
-    static PassRefPtr<CSSLineBoxContainValue> create(LineBoxContain value)
+    static PassRef<CSSLineBoxContainValue> create(LineBoxContain value)
     {
-        return adoptRef(new CSSLineBoxContainValue(value));
+        return adoptRef(*new CSSLineBoxContainValue(value));
     }
 
-    String customCssText() const;
+    String customCSSText() const;
     bool equals(const CSSLineBoxContainValue& other) const { return m_value == other.m_value; }
     LineBoxContain value() const { return m_value; }
 
-    void reportDescendantMemoryUsage(MemoryObjectInfo*) const;
-
 private:
+    explicit CSSLineBoxContainValue(LineBoxContain);
+
     LineBoxContain m_value;
-
-private:
-    CSSLineBoxContainValue(LineBoxContain);
 };
+
+CSS_VALUE_TYPE_CASTS(CSSLineBoxContainValue, isLineBoxContainValue())
 
 } // namespace
 

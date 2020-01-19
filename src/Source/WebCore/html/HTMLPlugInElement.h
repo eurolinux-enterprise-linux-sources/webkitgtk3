@@ -26,14 +26,19 @@
 #include "HTMLFrameOwnerElement.h"
 #include "Image.h"
 
-#include "ScriptInstance.h"
-
 #if ENABLE(NETSCAPE_PLUGIN_API)
 struct NPObject;
 #endif
 
+namespace JSC {
+namespace Bindings {
+class Instance;
+}
+}
+
 namespace WebCore {
 
+class PluginReplacement;
 class RenderEmbeddedObject;
 class RenderWidget;
 class Widget;
@@ -44,22 +49,26 @@ public:
 
     void resetInstance();
 
-    PassScriptInstance getInstance();
+    PassRefPtr<JSC::Bindings::Instance> getInstance();
 
     Widget* pluginWidget() const;
 
     enum DisplayState {
         WaitingForSnapshot,
         DisplayingSnapshot,
-        PlayingWithPendingMouseClick,
-        Playing
+        Restarting,
+        RestartingWithPendingMouseClick,
+        Playing,
+        PreparingPluginReplacement,
+        DisplayingPluginReplacement,
     };
     DisplayState displayState() const { return m_displayState; }
-    void setDisplayState(DisplayState state) { m_displayState = state; }
+    virtual void setDisplayState(DisplayState);
     virtual void updateSnapshot(PassRefPtr<Image>) { }
     virtual void dispatchPendingMouseClick() { }
+    virtual bool isRestartedPlugin() const { return false; }
 
-    unsigned plugInOriginHash() const { return m_plugInOriginHash; }
+    JSC::JSObject* scriptObjectForPluginReplacement();
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* getNPObject();
@@ -68,39 +77,55 @@ public:
     bool isCapturingMouseEvents() const { return m_isCapturingMouseEvents; }
     void setIsCapturingMouseEvents(bool capturing) { m_isCapturingMouseEvents = capturing; }
 
-    bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const override { return false; }
 
     bool canProcessDrag() const;
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+#if PLATFORM(IOS)
+    virtual bool willRespondToMouseMoveEvents() override { return false; }
+#endif
+    virtual bool willRespondToMouseClickEvents() override;
+
+    virtual bool isPlugInImageElement() const { return false; }
 
 protected:
-    HTMLPlugInElement(const QualifiedName& tagName, Document*);
+    HTMLPlugInElement(const QualifiedName& tagName, Document&);
 
-    virtual void detach();
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const Attribute&, StylePropertySet*) OVERRIDE;
+    virtual void willDetachRenderers() override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStyleProperties&) override;
+
+    virtual bool useFallbackContent() const { return false; }
+
+    virtual void defaultEventHandler(Event*) override;
+
+    virtual bool requestObject(const String& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues);
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot*) override;
 
     // Subclasses should use guardedDispatchBeforeLoadEvent instead of calling dispatchBeforeLoadEvent directly.
     bool guardedDispatchBeforeLoadEvent(const String& sourceURL);
 
     bool m_inBeforeLoadEventHandler;
 
-    unsigned m_plugInOriginHash;
-
 private:
+    void swapRendererTimerFired(Timer<HTMLPlugInElement>&);
+    bool shouldOverridePlugin(const String& url, const String& mimeType);
+
     bool dispatchBeforeLoadEvent(const String& sourceURL); // Not implemented, generates a compile error if subclasses call this by mistake.
 
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-    virtual void defaultEventHandler(Event*);
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
 
     virtual RenderWidget* renderWidgetForJSBindings() const = 0;
 
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isPluginElement() const;
+    virtual bool supportsFocus() const override;
 
-    mutable ScriptInstance m_instance;
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const override;
+    virtual bool isPluginElement() const override final;
+
+    RefPtr<JSC::Bindings::Instance> m_instance;
+    Timer<HTMLPlugInElement> m_swapRendererTimer;
+    RefPtr<PluginReplacement> m_pluginReplacement;
 #if ENABLE(NETSCAPE_PLUGIN_API)
     NPObject* m_NPObject;
 #endif
@@ -108,6 +133,10 @@ private:
 
     DisplayState m_displayState;
 };
+
+void isHTMLPlugInElement(const HTMLPlugInElement&); // Catch unnecessary runtime check of type known at compile time.
+inline bool isHTMLPlugInElement(const Node& node) { return node.isPluginElement(); }
+NODE_TYPE_CASTS(HTMLPlugInElement)
 
 } // namespace WebCore
 

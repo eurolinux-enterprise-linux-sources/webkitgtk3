@@ -38,63 +38,60 @@ using namespace JSC;
 
 namespace WebCore {
 
-static JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CanvasStyle* style)
+static JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, const CanvasStyle& style)
 {
-    if (style->canvasGradient())
-        return toJS(exec, globalObject, style->canvasGradient());
-    if (style->canvasPattern())
-        return toJS(exec, globalObject, style->canvasPattern());
-    return jsStringWithCache(exec, style->color());
+    if (style.canvasGradient())
+        return toJS(exec, globalObject, style.canvasGradient());
+    if (style.canvasPattern())
+        return toJS(exec, globalObject, style.canvasPattern());
+    return jsStringWithCache(exec, style.color());
 }
 
-static PassRefPtr<CanvasStyle> toHTMLCanvasStyle(ExecState*, JSValue value)
+static CanvasStyle toHTMLCanvasStyle(ExecState*, JSValue value)
 {
     if (!value.isObject())
-        return 0;
+        return CanvasStyle();
     JSObject* object = asObject(value);
-    if (object->inherits(&JSCanvasGradient::s_info))
-        return CanvasStyle::createFromGradient(jsCast<JSCanvasGradient*>(object)->impl());
-    if (object->inherits(&JSCanvasPattern::s_info))
-        return CanvasStyle::createFromPattern(jsCast<JSCanvasPattern*>(object)->impl());
-    return 0;
+    if (object->inherits(JSCanvasGradient::info()))
+        return CanvasStyle(&jsCast<JSCanvasGradient*>(object)->impl());
+    if (object->inherits(JSCanvasPattern::info()))
+        return CanvasStyle(&jsCast<JSCanvasPattern*>(object)->impl());
+    return CanvasStyle();
 }
 
 JSValue JSCanvasRenderingContext2D::strokeStyle(ExecState* exec) const
 {
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
-    return toJS(exec, globalObject(), context->strokeStyle());        
+    return toJS(exec, globalObject(), impl().strokeStyle());
 }
 
 void JSCanvasRenderingContext2D::setStrokeStyle(ExecState* exec, JSValue value)
 {
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
+    CanvasRenderingContext2D& context = impl();
     if (value.isString()) {
-        context->setStrokeColor(asString(value)->value(exec));
+        context.setStrokeColor(asString(value)->value(exec));
         return;
     }
-    context->setStrokeStyle(toHTMLCanvasStyle(exec, value));
+    context.setStrokeStyle(toHTMLCanvasStyle(exec, value));
 }
 
 JSValue JSCanvasRenderingContext2D::fillStyle(ExecState* exec) const
 {
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
-    return toJS(exec, globalObject(), context->fillStyle());
+    return toJS(exec, globalObject(), impl().fillStyle());
 }
 
 void JSCanvasRenderingContext2D::setFillStyle(ExecState* exec, JSValue value)
 {
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
+    CanvasRenderingContext2D& context = impl();
     if (value.isString()) {
-        context->setFillColor(asString(value)->value(exec));
+        context.setFillColor(asString(value)->value(exec));
         return;
     }
-    context->setFillStyle(toHTMLCanvasStyle(exec, value));
+    context.setFillStyle(toHTMLCanvasStyle(exec, value));
 }
 
 JSValue JSCanvasRenderingContext2D::webkitLineDash(ExecState* exec) const
 {
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
-    const Vector<float>& dash = context->getLineDash();
+    const Vector<float>& dash = impl().getLineDash();
 
     MarkedArgumentBuffer list;
     Vector<float>::const_iterator end = dash.end();
@@ -118,8 +115,7 @@ void JSCanvasRenderingContext2D::setWebkitLineDash(ExecState* exec, JSValue valu
         dash.append(elem);
     }
 
-    CanvasRenderingContext2D* context = static_cast<CanvasRenderingContext2D*>(impl());
-    context->setWebkitLineDash(dash);
+    impl().setWebkitLineDash(dash);
 }
 
 } // namespace WebCore

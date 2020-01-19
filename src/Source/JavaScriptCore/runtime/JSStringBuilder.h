@@ -105,7 +105,7 @@ public:
             }
             upConvert();
         }
-        m_okay &= buffer16.tryAppend(str.characters(), length);
+        m_okay &= buffer16.tryAppend(str.deprecatedCharacters(), length);
     }
 
     void upConvert()
@@ -137,8 +137,8 @@ public:
     }
 
 protected:
-    Vector<LChar, 64> buffer8;
-    Vector<UChar, 64> buffer16;
+    Vector<LChar, 64, UnsafeVectorOverflow> buffer8;
+    Vector<UChar, 64, UnsafeVectorOverflow> buffer16;
     bool m_okay;
     bool m_is8Bit;
 };

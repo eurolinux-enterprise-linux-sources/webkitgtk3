@@ -33,6 +33,7 @@
 
 namespace WebCore {
 
+class Element;
 class FrameView;
 class ImageBuffer;
 class Page;
@@ -40,7 +41,7 @@ class RenderBox;
 class SVGImageChromeClient;
 class SVGImageForContainer;
 
-class SVGImage : public Image {
+class SVGImage final : public Image {
 public:
     static PassRefPtr<SVGImage> create(ImageObserver* observer)
     {
@@ -50,17 +51,21 @@ public:
     RenderBox* embeddedContentBox() const;
     FrameView* frameView() const;
 
-    virtual bool isSVGImage() const { return true; }
-    virtual IntSize size() const;
+    virtual bool isSVGImage() const override { return true; }
+    virtual IntSize size() const override { return m_intrinsicSize; }
 
-    virtual bool hasRelativeWidth() const;
-    virtual bool hasRelativeHeight() const;
+    virtual bool hasSingleSecurityOrigin() const override;
 
-    virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) OVERRIDE;
-    virtual void stopAnimation() OVERRIDE;
-    virtual void resetAnimation() OVERRIDE;
+    virtual bool hasRelativeWidth() const override;
+    virtual bool hasRelativeHeight() const override;
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) override;
+    virtual void stopAnimation() override;
+    virtual void resetAnimation() override;
+
+#if USE(CAIRO)
+    virtual PassNativeImagePtr nativeImageForCurrentFrame() override;
+#endif
 
 private:
     friend class SVGImageChromeClient;
@@ -68,34 +73,38 @@ private:
 
     virtual ~SVGImage();
 
-    virtual String filenameExtension() const;
+    virtual String filenameExtension() const override;
 
-    virtual void setContainerSize(const IntSize&);
-    virtual bool usesContainerSize() const { return true; }
-    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
+    virtual void setContainerSize(const IntSize&) override;
+    IntSize containerSize() const;
+    virtual bool usesContainerSize() const override { return true; }
+    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio) override;
 
-    virtual bool dataChanged(bool allDataReceived);
+    virtual bool dataChanged(bool allDataReceived) override;
 
-    // FIXME: SVGImages are underreporting decoded sizes and will be unable
-    // to prune because these functions are not implemented yet.
-    virtual void destroyDecodedData(bool) { }
-    virtual unsigned decodedSize() const { return 0; }
-
-    virtual NativeImagePtr frameAtIndex(size_t) { return 0; }
+    // FIXME: SVGImages will be unable to prune because this function is not implemented yet.
+    virtual void destroyDecodedData(bool) override { }
 
     // FIXME: Implement this to be less conservative.
-    virtual bool currentFrameKnownToBeOpaque() OVERRIDE { return false; }
+    virtual bool currentFrameKnownToBeOpaque() override { return false; }
 
     SVGImage(ImageObserver*);
-    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode);
+    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode, ImageOrientationDescription) override;
     void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, ColorSpace, CompositeOperator, BlendMode);
     void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const AffineTransform&, const FloatPoint&, ColorSpace,
-        CompositeOperator, const FloatRect&);
+        CompositeOperator, const FloatRect&, BlendMode);
 
-    OwnPtr<SVGImageChromeClient> m_chromeClient;
-    OwnPtr<Page> m_page;
+    std::unique_ptr<SVGImageChromeClient> m_chromeClient;
+    std::unique_ptr<Page> m_page;
+    IntSize m_intrinsicSize;
 };
+
+bool isInSVGImage(const Element*);
+
+IMAGE_TYPE_CASTS(SVGImage)
+
 }
+
 
 #endif // ENABLE(SVG)
 #endif // SVGImage_h

@@ -37,6 +37,7 @@
 #include "AccessibilityObject.h"
 #include "HTMLSelectElement.h"
 #include "RenderObject.h"
+#include "WebKitAccessibleUtil.h"
 #include "WebKitAccessibleWrapperAtk.h"
 
 using namespace WebCore;
@@ -64,7 +65,7 @@ static AccessibilityObject* listObjectForSelection(AtkSelection* selection)
     // For menu lists we need to return the first accessible child,
     // with role MenuListPopupRole, since that's the one holding the list
     // of items with role MenuListOptionRole.
-    AccessibilityObject::AccessibilityChildrenVector children = coreSelection->children();
+    const AccessibilityObject::AccessibilityChildrenVector& children = coreSelection->children();
     if (!children.size())
         return 0;
 
@@ -86,7 +87,7 @@ static AccessibilityObject* optionFromList(AtkSelection* selection, gint index)
     if (!listObject)
         return 0;
 
-    AccessibilityObject::AccessibilityChildrenVector options = listObject->children();
+    const AccessibilityObject::AccessibilityChildrenVector& options = listObject->children();
     if (index < static_cast<gint>(options.size()))
         return options.at(index).get();
 
@@ -127,6 +128,9 @@ static AccessibilityObject* optionFromSelection(AtkSelection* selection, gint in
 
 static gboolean webkitAccessibleSelectionAddSelection(AtkSelection* selection, gint index)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), FALSE);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), FALSE);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection)
         return FALSE;
@@ -142,6 +146,9 @@ static gboolean webkitAccessibleSelectionAddSelection(AtkSelection* selection, g
 
 static gboolean webkitAccessibleSelectionClearSelection(AtkSelection* selection)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), FALSE);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), FALSE);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection)
         return FALSE;
@@ -149,7 +156,7 @@ static gboolean webkitAccessibleSelectionClearSelection(AtkSelection* selection)
     AccessibilityObject::AccessibilityChildrenVector selectedItems;
     if (coreSelection->isListBox() || coreSelection->isMenuList()) {
         // Set the list of selected items to an empty list; then verify that it worked.
-        AccessibilityListBox* listBox = static_cast<AccessibilityListBox*>(coreSelection);
+        AccessibilityListBox* listBox = toAccessibilityListBox(coreSelection);
         listBox->setSelectedChildren(selectedItems);
         listBox->selectedChildren(selectedItems);
         return !selectedItems.size();
@@ -159,6 +166,9 @@ static gboolean webkitAccessibleSelectionClearSelection(AtkSelection* selection)
 
 static AtkObject* webkitAccessibleSelectionRefSelection(AtkSelection* selection, gint index)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), 0);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), 0);
+
     AccessibilityObject* option = optionFromSelection(selection, index);
     if (option) {
         AtkObject* child = option->wrapper();
@@ -171,6 +181,9 @@ static AtkObject* webkitAccessibleSelectionRefSelection(AtkSelection* selection,
 
 static gint webkitAccessibleSelectionGetSelectionCount(AtkSelection* selection)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), 0);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), 0);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection || !coreSelection->isAccessibilityRenderObject())
         return 0;
@@ -195,9 +208,12 @@ static gint webkitAccessibleSelectionGetSelectionCount(AtkSelection* selection)
 
 static gboolean webkitAccessibleSelectionIsChildSelected(AtkSelection* selection, gint index)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), FALSE);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), FALSE);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection)
-        return 0;
+        return FALSE;
 
     AccessibilityObject* option = optionFromList(selection, index);
     if (option && (coreSelection->isListBox() || coreSelection->isMenuList()))
@@ -208,9 +224,12 @@ static gboolean webkitAccessibleSelectionIsChildSelected(AtkSelection* selection
 
 static gboolean webkitAccessibleSelectionRemoveSelection(AtkSelection* selection, gint index)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), FALSE);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), FALSE);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection)
-        return 0;
+        return FALSE;
 
     // TODO: This is only getting called if i == 0. What is preventing the rest?
     AccessibilityObject* option = optionFromSelection(selection, index);
@@ -224,13 +243,16 @@ static gboolean webkitAccessibleSelectionRemoveSelection(AtkSelection* selection
 
 static gboolean webkitAccessibleSelectionSelectAllSelection(AtkSelection* selection)
 {
+    g_return_val_if_fail(ATK_SELECTION(selection), FALSE);
+    returnValIfWebKitAccessibleIsInvalid(WEBKIT_ACCESSIBLE(selection), FALSE);
+
     AccessibilityObject* coreSelection = core(selection);
     if (!coreSelection || !coreSelection->isMultiSelectable())
         return FALSE;
 
-    AccessibilityObject::AccessibilityChildrenVector children = coreSelection->children();
     if (coreSelection->isListBox()) {
-        AccessibilityListBox* listBox = static_cast<AccessibilityListBox*>(coreSelection);
+        const AccessibilityObject::AccessibilityChildrenVector& children = coreSelection->children();
+        AccessibilityListBox* listBox = toAccessibilityListBox(coreSelection);
         listBox->setSelectedChildren(children);
         AccessibilityObject::AccessibilityChildrenVector selectedItems;
         listBox->selectedChildren(selectedItems);

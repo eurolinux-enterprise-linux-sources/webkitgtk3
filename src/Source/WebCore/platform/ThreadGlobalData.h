@@ -33,18 +33,15 @@
 #include <wtf/OwnPtr.h>
 #include <wtf/text/StringHash.h>
 
-#if ENABLE(WORKERS)
 #include <wtf/ThreadSpecific.h>
 #include <wtf/Threading.h>
 using WTF::ThreadSpecific;
-#endif
 
 namespace WebCore {
 
     class EventNames;
     class ThreadLocalInspectorCounters;
     class ThreadTimers;
-    class XMLMIMETypeRegExp;
 
     struct CachedResourceRequestInitiators;
     struct ICUConverterWrapper;
@@ -60,14 +57,15 @@ namespace WebCore {
         const CachedResourceRequestInitiators& cachedResourceRequestInitiators() { return *m_cachedResourceRequestInitiators; }
         EventNames& eventNames() { return *m_eventNames; }
         ThreadTimers& threadTimers() { return *m_threadTimers; }
-        XMLMIMETypeRegExp& xmlTypeRegExp() { return *m_xmlTypeRegExp; }
 
-#if USE(ICU_UNICODE)
         ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
+
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+        TECConverterWrapper& cachedConverterTEC() { return *m_cachedConverterTEC; }
 #endif
 
-#if PLATFORM(MAC)
-        TECConverterWrapper& cachedConverterTEC() { return *m_cachedConverterTEC; }
+#if ENABLE(WORKERS) && USE(WEB_THREAD)
+        void setWebCoreThreadData();
 #endif
 
 #if ENABLE(INSPECTOR)
@@ -78,17 +76,14 @@ namespace WebCore {
         OwnPtr<CachedResourceRequestInitiators> m_cachedResourceRequestInitiators;
         OwnPtr<EventNames> m_eventNames;
         OwnPtr<ThreadTimers> m_threadTimers;
-        OwnPtr<XMLMIMETypeRegExp> m_xmlTypeRegExp;
 
 #ifndef NDEBUG
         bool m_isMainThread;
 #endif
 
-#if USE(ICU_UNICODE)
         OwnPtr<ICUConverterWrapper> m_cachedConverterICU;
-#endif
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) && !PLATFORM(IOS)
         OwnPtr<TECConverterWrapper> m_cachedConverterTEC;
 #endif
 
@@ -96,33 +91,18 @@ namespace WebCore {
         OwnPtr<ThreadLocalInspectorCounters> m_inspectorCounters;
 #endif
 
-#if ENABLE(WORKERS)
         static ThreadSpecific<ThreadGlobalData>* staticData;
-#else
-        static ThreadGlobalData* staticData;
+#if USE(WEB_THREAD)
+        static ThreadGlobalData* sharedMainThreadStaticData;
 #endif
         friend ThreadGlobalData& threadGlobalData();
     };
 
-inline ThreadGlobalData& threadGlobalData() 
-{
-    // FIXME: Workers are not necessarily the only feature that make per-thread global data necessary.
-    // We need to check for e.g. database objects manipulating strings on secondary threads.
-
-#if ENABLE(WORKERS)
-    // ThreadGlobalData is used on main thread before it could possibly be used on secondary ones, so there is no need for synchronization here.
-    if (!ThreadGlobalData::staticData)
-        ThreadGlobalData::staticData = new ThreadSpecific<ThreadGlobalData>;
-    return **ThreadGlobalData::staticData;
+#if USE(WEB_THREAD)
+ThreadGlobalData& threadGlobalData();
 #else
-    if (!ThreadGlobalData::staticData) {
-        ThreadGlobalData::staticData = static_cast<ThreadGlobalData*>(fastMalloc(sizeof(ThreadGlobalData)));
-        // ThreadGlobalData constructor indirectly uses staticData, so we need to set up the memory before invoking it.
-        new (ThreadGlobalData::staticData) ThreadGlobalData;
-    }
-    return *ThreadGlobalData::staticData;
+ThreadGlobalData& threadGlobalData() PURE_FUNCTION;
 #endif
-}
     
 } // namespace WebCore
 

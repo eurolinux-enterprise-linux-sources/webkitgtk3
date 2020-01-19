@@ -26,13 +26,16 @@
 #include "config.h"
 #include "WebProcess.h"
 
+#include "APIFrameHandle.h"
 #include "AuthenticationManager.h"
 #include "EventDispatcher.h"
 #include "InjectedBundle.h"
 #include "InjectedBundleUserMessageCoders.h"
 #include "Logging.h"
 #include "PluginProcessConnectionManager.h"
+#include "SessionTracker.h"
 #include "StatisticsData.h"
+#include "UserData.h"
 #include "WebApplicationCacheManager.h"
 #include "WebConnectionToUIProcess.h"
 #include "WebContextMessages.h"
@@ -42,7 +45,6 @@
 #include "WebFrameNetworkingContext.h"
 #include "WebGeolocationManager.h"
 #include "WebIconDatabaseProxy.h"
-#include "WebKeyValueStorageManager.h"
 #include "WebMediaCacheManager.h"
 #include "WebMemorySampler.h"
 #include "WebPage.h"
@@ -63,6 +65,7 @@
 #include <WebCore/Font.h>
 #include <WebCore/FontCache.h>
 #include <WebCore/Frame.h>
+#include <WebCore/FrameLoader.h>
 #include <WebCore/GCController.h>
 #include <WebCore/GlyphPageTreeNode.h>
 #include <WebCore/IconDatabase.h>
@@ -74,33 +77,39 @@
 #include <WebCore/PageCache.h>
 #include <WebCore/PageGroup.h>
 #include <WebCore/ResourceHandle.h>
-#include <WebCore/RunLoop.h>
 #include <WebCore/SchemeRegistry.h>
 #include <WebCore/SecurityOrigin.h>
 #include <WebCore/Settings.h>
 #include <WebCore/StorageTracker.h>
+#include <unistd.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/HashCountedSet.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/RunLoop.h>
+#include <wtf/text/StringHash.h>
 
 #if ENABLE(NETWORK_INFO)
+#include "WebNetworkInfoManager.h"
 #include "WebNetworkInfoManagerMessages.h"
 #endif
 
 #if ENABLE(NETWORK_PROCESS)
+#if PLATFORM(MAC)
+#include "CookieStorageShim.h"
+#endif
 #include "NetworkProcessConnection.h"
 #endif
 
-#if !OS(WINDOWS)
-#include <unistd.h>
-#endif
-
-#if !ENABLE(PLUGIN_PROCESS)
-#include "NetscapePluginModule.h"
+#if ENABLE(SEC_ITEM_SHIM)
+#include "SecItemShim.h"
 #endif
 
 #if ENABLE(CUSTOM_PROTOCOLS)
 #include "CustomProtocolManager.h"
+#endif
+
+#if ENABLE(DATABASE_PROCESS)
+#include "WebToDatabaseProcessConnection.h"
 #endif
 
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
@@ -111,23 +120,26 @@
 #include "WebDatabaseManager.h"
 #endif
 
+#if ENABLE(BATTERY_STATUS)
+#include "WebBatteryManager.h"
+#endif
+
 #if ENABLE(NETWORK_PROCESS)
 #include "WebResourceLoadScheduler.h"
 #endif
 
-#if ENABLE(PLUGIN_PROCESS)
-#include "PluginProcessConnectionManager.h"
-#endif
-
-#if USE(SECURITY_FRAMEWORK)
-#include "SecItemShim.h"
+#if USE(SOUP) && !ENABLE(CUSTOM_PROTOCOLS)
+#include "WebSoupRequestManager.h"
 #endif
 
 using namespace JSC;
 using namespace WebCore;
 
 // This should be less than plugInAutoStartExpirationTimeThreshold in PlugInAutoStartProvider.
-static const double plugInAutoStartExpirationTimeUpdateThreshold = 29 * 24 * 60;
+static const double plugInAutoStartExpirationTimeUpdateThreshold = 29 * 24 * 60 * 60;
+
+// This should be greater than tileRevalidationTimeout in TileController.
+static const double nonVisibleProcessCleanupDelay = 10;
 
 namespace WebKit {
 
@@ -150,39 +162,23 @@ WebProcess::WebProcess()
     , m_clearResourceCachesDispatchGroup(0)
 #endif
     , m_fullKeyboardAccessEnabled(false)
-#if PLATFORM(QT)
-    , m_networkAccessManager(0)
-#endif
     , m_textCheckerState()
-#if ENABLE(BATTERY_STATUS)
-    , m_batteryManager(this)
-#endif
-#if ENABLE(NETWORK_INFO)
-    , m_networkInfoManager(this)
-#endif
     , m_iconDatabaseProxy(new WebIconDatabaseProxy(this))
 #if ENABLE(NETWORK_PROCESS)
     , m_usesNetworkProcess(false)
     , m_webResourceLoadScheduler(new WebResourceLoadScheduler)
 #endif
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
     , m_pluginProcessConnectionManager(PluginProcessConnectionManager::create())
 #endif
-#if USE(SOUP)
-    , m_soupRequestManager(this)
-#endif
+    , m_nonVisibleProcessCleanupTimer(this, &WebProcess::nonVisibleProcessCleanupTimerFired)
 {
-#if USE(PLATFORM_STRATEGIES)
     // Initialize our platform strategies.
     WebPlatformStrategies::initialize();
-#endif // USE(PLATFORM_STRATEGIES)
-
 
     // FIXME: This should moved to where WebProcess::initialize is called,
     // so that ports have a chance to customize, and ifdefs in this file are
     // limited.
-    addSupplement<WebKeyValueStorageManager>();
-
     addSupplement<WebGeolocationManager>();
     addSupplement<WebApplicationCacheManager>();
     addSupplement<WebResourceCacheManager>();
@@ -199,6 +195,15 @@ WebProcess::WebProcess()
 #if ENABLE(CUSTOM_PROTOCOLS)
     addSupplement<CustomProtocolManager>();
 #endif
+#if ENABLE(BATTERY_STATUS)
+    addSupplement<WebBatteryManager>();
+#endif
+#if ENABLE(NETWORK_INFO)
+    addSupplement<WebNetworkInfoManager>();
+#endif
+#if USE(SOUP) && !ENABLE(CUSTOM_PROTOCOLS)
+    addSupplement<WebSoupRequestManager>();
+#endif
 }
 
 void WebProcess::initializeProcess(const ChildProcessInitializationParameters& parameters)
@@ -206,7 +211,7 @@ void WebProcess::initializeProcess(const ChildProcessInitializationParameters& p
     platformInitializeProcess(parameters);
 }
 
-void WebProcess::initializeConnection(CoreIPC::Connection* connection)
+void WebProcess::initializeConnection(IPC::Connection* connection)
 {
     ChildProcess::initializeConnection(connection);
 
@@ -214,15 +219,26 @@ void WebProcess::initializeConnection(CoreIPC::Connection* connection)
 
     m_eventDispatcher->initializeConnection(connection);
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
     m_pluginProcessConnectionManager->initializeConnection(connection);
 #endif
 
-#if USE(SECURITY_FRAMEWORK)
+#if ENABLE(SEC_ITEM_SHIM)
     SecItemShim::shared().initializeConnection(connection);
 #endif
+    
+    WebProcessSupplementMap::const_iterator it = m_supplements.begin();
+    WebProcessSupplementMap::const_iterator end = m_supplements.end();
+    for (; it != end; ++it)
+        it->value->initializeConnection(connection);
 
     m_webConnection = WebConnectionToUIProcess::create(this);
+
+    // In order to ensure that the asynchronous messages that are used for notifying the UI process
+    // about when WebFrame objects come and go are always delivered before the synchronous policy messages,
+    // use this flag to force synchronous messages to be treated as asynchronous messages in the UI process
+    // unless when doing so would lead to a deadlock.
+    connection->setOnlySendMessagesAsDispatchWhenWaitingForSyncReplyWhenProcessingSuchAMessage(true);
 }
 
 void WebProcess::didCreateDownload()
@@ -235,7 +251,7 @@ void WebProcess::didDestroyDownload()
     enableTermination();
 }
 
-CoreIPC::Connection* WebProcess::downloadProxyConnection()
+IPC::Connection* WebProcess::downloadProxyConnection()
 {
     return parentProcessConnection();
 }
@@ -245,7 +261,7 @@ AuthenticationManager& WebProcess::downloadsAuthenticationManager()
     return *supplement<AuthenticationManager>();
 }
 
-void WebProcess::initializeWebProcess(const WebProcessCreationParameters& parameters, CoreIPC::MessageDecoder& decoder)
+void WebProcess::initializeWebProcess(const WebProcessCreationParameters& parameters, IPC::MessageDecoder& decoder)
 {
     ASSERT(m_pageMap.isEmpty());
 
@@ -253,7 +269,7 @@ void WebProcess::initializeWebProcess(const WebProcessCreationParameters& parame
 
     memoryPressureHandler().install();
 
-    RefPtr<APIObject> injectedBundleInitializationUserData;
+    RefPtr<API::Object> injectedBundleInitializationUserData;
     InjectedBundleUserMessageDecoder messageDecoder(injectedBundleInitializationUserData);
     if (!decoder.decode(messageDecoder))
         return;
@@ -320,16 +336,28 @@ void WebProcess::initializeWebProcess(const WebProcessCreationParameters& parame
         setShouldUseFontSmoothing(true);
 
 #if PLATFORM(MAC) || USE(CFNETWORK)
-    WebFrameNetworkingContext::setPrivateBrowsingStorageSessionIdentifierBase(parameters.uiProcessBundleIdentifier);
+    SessionTracker::setIdentifierBase(parameters.uiProcessBundleIdentifier);
 #endif
+
+    if (parameters.shouldUseTestingNetworkSession)
+        NetworkStorageSession::switchToNewTestingSession();
 
 #if ENABLE(NETWORK_PROCESS)
     m_usesNetworkProcess = parameters.usesNetworkProcess;
     ensureNetworkProcessConnection();
+
+#if PLATFORM(MAC)
+    if (usesNetworkProcess())
+        CookieStorageShim::shared().initialize();
+#endif
 #endif
     setTerminationTimeout(parameters.terminationTimeout);
 
-    resetPlugInAutoStartOrigins(parameters.plugInAutoStartOrigins);
+    resetPlugInAutoStartOriginHashes(parameters.plugInAutoStartOriginHashes);
+    for (size_t i = 0; i < parameters.plugInAutoStartOrigins.size(); ++i)
+        m_plugInAutoStartOrigins.add(parameters.plugInAutoStartOrigins[i]);
+
+    setMemoryCacheDisabled(parameters.memoryCacheDisabled);
 }
 
 #if ENABLE(NETWORK_PROCESS)
@@ -341,19 +369,21 @@ void WebProcess::ensureNetworkProcessConnection()
     if (m_networkProcessConnection)
         return;
 
-    CoreIPC::Attachment encodedConnectionIdentifier;
+    IPC::Attachment encodedConnectionIdentifier;
 
-    if (!connection()->sendSync(Messages::WebProcessProxy::GetNetworkProcessConnection(),
+    if (!parentProcessConnection()->sendSync(Messages::WebProcessProxy::GetNetworkProcessConnection(),
         Messages::WebProcessProxy::GetNetworkProcessConnection::Reply(encodedConnectionIdentifier), 0))
         return;
 
 #if PLATFORM(MAC)
-    CoreIPC::Connection::Identifier connectionIdentifier(encodedConnectionIdentifier.port());
-    if (CoreIPC::Connection::identifierIsNull(connectionIdentifier))
-        return;
+    IPC::Connection::Identifier connectionIdentifier(encodedConnectionIdentifier.port());
+#elif USE(UNIX_DOMAIN_SOCKETS)
+    IPC::Connection::Identifier connectionIdentifier = encodedConnectionIdentifier.releaseFileDescriptor();
 #else
     ASSERT_NOT_REACHED();
 #endif
+    if (IPC::Connection::identifierIsNull(connectionIdentifier))
+        return;
     m_networkProcessConnection = NetworkProcessConnection::create(connectionIdentifier);
 }
 #endif // ENABLE(NETWORK_PROCESS)
@@ -425,31 +455,29 @@ void WebProcess::fullKeyboardAccessModeChanged(bool fullKeyboardAccessEnabled)
     m_fullKeyboardAccessEnabled = fullKeyboardAccessEnabled;
 }
 
-void WebProcess::ensurePrivateBrowsingSession()
+void WebProcess::ensurePrivateBrowsingSession(uint64_t sessionID)
 {
-#if PLATFORM(MAC) || USE(CFNETWORK)
-    WebFrameNetworkingContext::ensurePrivateBrowsingSession();
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(SOUP)
+    WebFrameNetworkingContext::ensurePrivateBrowsingSession(sessionID);
 #endif
 }
 
-void WebProcess::destroyPrivateBrowsingSession()
+void WebProcess::destroyPrivateBrowsingSession(uint64_t sessionID)
 {
-#if PLATFORM(MAC) || USE(CFNETWORK)
-    WebFrameNetworkingContext::destroyPrivateBrowsingSession();
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(SOUP)
+    SessionTracker::destroySession(sessionID);
 #endif
 }
 
 DownloadManager& WebProcess::downloadManager()
 {
-#if ENABLE(NETWORK_PROCESS)
-    ASSERT(!m_usesNetworkProcess);
-#endif
+    ASSERT(!usesNetworkProcess());
 
-    DEFINE_STATIC_LOCAL(DownloadManager, downloadManager, (this));
+    static NeverDestroyed<DownloadManager> downloadManager(this);
     return downloadManager;
 }
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 PluginProcessConnectionManager& WebProcess::pluginProcessConnectionManager()
 {
     return *m_pluginProcessConnectionManager;
@@ -469,8 +497,8 @@ void WebProcess::visitedLinkStateChanged(const Vector<WebCore::LinkHash>& linkHa
 {
     // FIXME: We may want to track visited links per WebPageGroup rather than per WebContext.
     for (size_t i = 0; i < linkHashes.size(); ++i) {
-        HashMap<uint64_t, RefPtr<WebPageGroupProxy> >::const_iterator it = m_pageGroupMap.begin();
-        HashMap<uint64_t, RefPtr<WebPageGroupProxy> >::const_iterator end = m_pageGroupMap.end();
+        HashMap<uint64_t, RefPtr<WebPageGroupProxy>>::const_iterator it = m_pageGroupMap.begin();
+        HashMap<uint64_t, RefPtr<WebPageGroupProxy>>::const_iterator end = m_pageGroupMap.end();
         for (; it != end; ++it)
             Page::visitedStateChanged(PageGroup::pageGroup(it->value->identifier()), linkHashes[i]);
     }
@@ -481,8 +509,8 @@ void WebProcess::visitedLinkStateChanged(const Vector<WebCore::LinkHash>& linkHa
 void WebProcess::allVisitedLinkStateChanged()
 {
     // FIXME: We may want to track visited links per WebPageGroup rather than per WebContext.
-    HashMap<uint64_t, RefPtr<WebPageGroupProxy> >::const_iterator it = m_pageGroupMap.begin();
-    HashMap<uint64_t, RefPtr<WebPageGroupProxy> >::const_iterator end = m_pageGroupMap.end();
+    HashMap<uint64_t, RefPtr<WebPageGroupProxy>>::const_iterator it = m_pageGroupMap.begin();
+    HashMap<uint64_t, RefPtr<WebPageGroupProxy>>::const_iterator end = m_pageGroupMap.end();
     for (; it != end; ++it)
         Page::allVisitedStateChanged(PageGroup::pageGroup(it->value->identifier()));
 
@@ -514,8 +542,8 @@ void WebProcess::setCacheModel(uint32_t cm)
 
 WebPage* WebProcess::focusedWebPage() const
 {    
-    HashMap<uint64_t, RefPtr<WebPage> >::const_iterator end = m_pageMap.end();
-    for (HashMap<uint64_t, RefPtr<WebPage> >::const_iterator it = m_pageMap.begin(); it != end; ++it) {
+    HashMap<uint64_t, RefPtr<WebPage>>::const_iterator end = m_pageMap.end();
+    for (HashMap<uint64_t, RefPtr<WebPage>>::const_iterator it = m_pageMap.begin(); it != end; ++it) {
         WebPage* page = (*it).value.get();
         if (page->windowAndWebPageAreFocused())
             return page;
@@ -525,21 +553,22 @@ WebPage* WebProcess::focusedWebPage() const
     
 WebPage* WebProcess::webPage(uint64_t pageID) const
 {
-    return m_pageMap.get(pageID).get();
+    return m_pageMap.get(pageID);
 }
 
 void WebProcess::createWebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
 {
     // It is necessary to check for page existence here since during a window.open() (or targeted
     // link) the WebPage gets created both in the synchronous handler and through the normal way. 
-    HashMap<uint64_t, RefPtr<WebPage> >::AddResult result = m_pageMap.add(pageID, 0);
+    HashMap<uint64_t, RefPtr<WebPage>>::AddResult result = m_pageMap.add(pageID, nullptr);
     if (result.isNewEntry) {
         ASSERT(!result.iterator->value);
         result.iterator->value = WebPage::create(pageID, parameters);
 
         // Balanced by an enableTermination in removeWebPage.
         disableTermination();
-    }
+    } else
+        result.iterator->value->reinitializeWebPage(parameters);
 
     ASSERT(result.iterator->value);
 }
@@ -548,6 +577,7 @@ void WebProcess::removeWebPage(uint64_t pageID)
 {
     ASSERT(m_pageMap.contains(pageID));
 
+    pageWillLeaveWindow(pageID);
     m_pageMap.remove(pageID);
 
     enableTermination();
@@ -556,16 +586,11 @@ void WebProcess::removeWebPage(uint64_t pageID)
 bool WebProcess::shouldTerminate()
 {
     ASSERT(m_pageMap.isEmpty());
-
-#if ENABLE(NETWORK_PROCESS)
-    ASSERT(m_usesNetworkProcess || !downloadManager().isDownloading());
-#else
-    ASSERT(!downloadManager().isDownloading());
-#endif
+    ASSERT(usesNetworkProcess() || !downloadManager().isDownloading());
 
     // FIXME: the ShouldTerminate message should also send termination parameters, such as any session cookies that need to be preserved.
     bool shouldTerminate = false;
-    if (connection()->sendSync(Messages::WebProcessProxy::ShouldTerminate(), Messages::WebProcessProxy::ShouldTerminate::Reply(shouldTerminate), 0)
+    if (parentProcessConnection()->sendSync(Messages::WebProcessProxy::ShouldTerminate(), Messages::WebProcessProxy::ShouldTerminate::Reply(shouldTerminate), 0)
         && !shouldTerminate)
         return false;
 
@@ -588,12 +613,12 @@ void WebProcess::terminate()
     ChildProcess::terminate();
 }
 
-void WebProcess::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
+void WebProcess::didReceiveSyncMessage(IPC::Connection* connection, IPC::MessageDecoder& decoder, std::unique_ptr<IPC::MessageEncoder>& replyEncoder)
 {
     messageReceiverMap().dispatchSyncMessage(connection, decoder, replyEncoder);
 }
 
-void WebProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
+void WebProcess::didReceiveMessage(IPC::Connection* connection, IPC::MessageDecoder& decoder)
 {
     if (messageReceiverMap().dispatchMessage(connection, decoder))
         return;
@@ -616,13 +641,13 @@ void WebProcess::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::Mes
     }
 }
 
-void WebProcess::didClose(CoreIPC::Connection*)
+void WebProcess::didClose(IPC::Connection*)
 {
 #ifndef NDEBUG
     m_inDidClose = true;
 
     // Close all the live pages.
-    Vector<RefPtr<WebPage> > pages;
+    Vector<RefPtr<WebPage>> pages;
     copyValuesToVector(m_pageMap, pages);
     for (size_t i = 0; i < pages.size(); ++i)
         pages[i]->close();
@@ -634,10 +659,10 @@ void WebProcess::didClose(CoreIPC::Connection*)
 #endif    
 
     // The UI process closed this connection, shut down.
-    RunLoop::main()->stop();
+    stopRunLoop();
 }
 
-void WebProcess::didReceiveInvalidMessage(CoreIPC::Connection*, CoreIPC::StringReference, CoreIPC::StringReference)
+void WebProcess::didReceiveInvalidMessage(IPC::Connection*, IPC::StringReference, IPC::StringReference)
 {
     // We received an invalid message, but since this is from the UI process (which we trust),
     // we'll let it slide.
@@ -666,14 +691,24 @@ void WebProcess::removeWebFrame(uint64_t frameID)
     parentProcessConnection()->send(Messages::WebProcessProxy::DidDestroyFrame(frameID), 0);
 }
 
+WebPageGroupProxy* WebProcess::webPageGroup(PageGroup* pageGroup)
+{
+    for (HashMap<uint64_t, RefPtr<WebPageGroupProxy>>::const_iterator it = m_pageGroupMap.begin(), end = m_pageGroupMap.end(); it != end; ++it) {
+        if (it->value->corePageGroup() == pageGroup)
+            return it->value.get();
+    }
+
+    return 0;
+}
+
 WebPageGroupProxy* WebProcess::webPageGroup(uint64_t pageGroupID)
 {
-    return m_pageGroupMap.get(pageGroupID).get();
+    return m_pageGroupMap.get(pageGroupID);
 }
 
 WebPageGroupProxy* WebProcess::webPageGroup(const WebPageGroupData& pageGroupData)
 {
-    HashMap<uint64_t, RefPtr<WebPageGroupProxy> >::AddResult result = m_pageGroupMap.add(pageGroupData.pageGroupID, 0);
+    auto result = m_pageGroupMap.add(pageGroupData.pageGroupID, nullptr);
     if (result.isNewEntry) {
         ASSERT(!result.iterator->value);
         result.iterator->value = WebPageGroupProxy::create(pageGroupData);
@@ -704,102 +739,101 @@ void WebProcess::clearApplicationCache()
     cacheStorage().empty();
 }
 
-#if ENABLE(NETSCAPE_PLUGIN_API) && !ENABLE(PLUGIN_PROCESS)
-void WebProcess::getSitesWithPluginData(const Vector<String>& pluginPaths, uint64_t callbackID)
+static inline void addCaseFoldedCharacters(StringHasher& hasher, const String& string)
 {
-    HashSet<String> sitesSet;
-
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    for (size_t i = 0; i < pluginPaths.size(); ++i) {
-        RefPtr<NetscapePluginModule> netscapePluginModule = NetscapePluginModule::getOrCreate(pluginPaths[i]);
-        if (!netscapePluginModule)
-            continue;
-
-        Vector<String> sites = netscapePluginModule->sitesWithData();
-        for (size_t i = 0; i < sites.size(); ++i)
-            sitesSet.add(sites[i]);
+    if (string.isEmpty())
+        return;
+    if (string.is8Bit()) {
+        hasher.addCharacters<LChar, CaseFoldingHash::foldCase<LChar>>(string.characters8(), string.length());
+        return;
     }
-#else
-    UNUSED_PARAM(pluginPaths);
-#endif
-
-    Vector<String> sites;
-    copyToVector(sitesSet, sites);
-
-    parentProcessConnection()->send(Messages::WebProcessProxy::DidGetSitesWithPluginData(sites, callbackID), 0);
+    hasher.addCharacters<UChar, CaseFoldingHash::foldCase<UChar>>(string.characters16(), string.length());
 }
 
-void WebProcess::clearPluginSiteData(const Vector<String>& pluginPaths, const Vector<String>& sites, uint64_t flags, uint64_t maxAgeInSeconds, uint64_t callbackID)
+static unsigned hashForPlugInOrigin(const String& pageOrigin, const String& pluginOrigin, const String& mimeType)
 {
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    for (size_t i = 0; i < pluginPaths.size(); ++i) {
-        RefPtr<NetscapePluginModule> netscapePluginModule = NetscapePluginModule::getOrCreate(pluginPaths[i]);
-        if (!netscapePluginModule)
-            continue;
-
-        if (sites.isEmpty()) {
-            // Clear everything.
-            netscapePluginModule->clearSiteData(String(), flags, maxAgeInSeconds);
-            continue;
-        }
-
-        for (size_t i = 0; i < sites.size(); ++i)
-            netscapePluginModule->clearSiteData(sites[i], flags, maxAgeInSeconds);
-    }
-#else
-    UNUSED_PARAM(pluginPaths);
-    UNUSED_PARAM(sites);
-    UNUSED_PARAM(flags);
-    UNUSED_PARAM(maxAgeInSeconds);
-#endif
-
-    parentProcessConnection()->send(Messages::WebProcessProxy::DidClearPluginSiteData(callbackID), 0);
+    // We want to avoid concatenating the strings and then taking the hash, since that could lead to an expensive conversion.
+    // We also want to avoid using the hash() function in StringImpl or CaseFoldingHash because that masks out bits for the use of flags.
+    StringHasher hasher;
+    addCaseFoldedCharacters(hasher, pageOrigin);
+    hasher.addCharacter(0);
+    addCaseFoldedCharacters(hasher, pluginOrigin);
+    hasher.addCharacter(0);
+    addCaseFoldedCharacters(hasher, mimeType);
+    return hasher.hash();
 }
-#endif
 
-bool WebProcess::isPlugInAutoStartOrigin(unsigned plugInOriginHash)
+bool WebProcess::isPlugInAutoStartOriginHash(unsigned plugInOriginHash)
 {
-    HashMap<unsigned, double>::const_iterator it = m_plugInAutoStartOrigins.find(plugInOriginHash);
-    if (it == m_plugInAutoStartOrigins.end())
+    HashMap<unsigned, double>::const_iterator it = m_plugInAutoStartOriginHashes.find(plugInOriginHash);
+    if (it == m_plugInAutoStartOriginHashes.end())
         return false;
     return currentTime() < it->value;
 }
 
-void WebProcess::addPlugInAutoStartOrigin(const String& pageOrigin, unsigned plugInOriginHash)
+bool WebProcess::shouldPlugInAutoStartFromOrigin(const WebPage* page, const String& pageOrigin, const String& pluginOrigin, const String& mimeType)
+{
+    if (m_plugInAutoStartOrigins.contains(pluginOrigin))
+        return true;
+
+#ifdef ENABLE_PRIMARY_SNAPSHOTTED_PLUGIN_HEURISTIC
+    // The plugin wasn't in the general whitelist, so check if it similar to the primary plugin for the page (if we've found one).
+    if (page && page->matchesPrimaryPlugIn(pageOrigin, pluginOrigin, mimeType))
+        return true;
+#else
+    UNUSED_PARAM(page);
+#endif
+
+    // Lastly check against the more explicit hash list.
+    return isPlugInAutoStartOriginHash(hashForPlugInOrigin(pageOrigin, pluginOrigin, mimeType));
+}
+
+void WebProcess::plugInDidStartFromOrigin(const String& pageOrigin, const String& pluginOrigin, const String& mimeType)
 {
     if (pageOrigin.isEmpty()) {
         LOG(Plugins, "Not adding empty page origin");
         return;
     }
 
-    if (isPlugInAutoStartOrigin(plugInOriginHash)) {
+    unsigned plugInOriginHash = hashForPlugInOrigin(pageOrigin, pluginOrigin, mimeType);
+    if (isPlugInAutoStartOriginHash(plugInOriginHash)) {
         LOG(Plugins, "Hash %x already exists as auto-start origin (request for %s)", plugInOriginHash, pageOrigin.utf8().data());
         return;
     }
 
+    // We might attempt to start another plugin before the didAddPlugInAutoStartOrigin message
+    // comes back from the parent process. Temporarily add this hash to the list with a thirty
+    // second timeout. That way, even if the parent decides not to add it, we'll only be
+    // incorrect for a little while.
+    m_plugInAutoStartOriginHashes.set(plugInOriginHash, currentTime() + 30 * 1000);
+
     parentProcessConnection()->send(Messages::WebContext::AddPlugInAutoStartOriginHash(pageOrigin, plugInOriginHash), 0);
 }
 
-void WebProcess::didAddPlugInAutoStartOrigin(unsigned plugInOriginHash, double expirationTime)
+void WebProcess::didAddPlugInAutoStartOriginHash(unsigned plugInOriginHash, double expirationTime)
 {
     // When called, some web process (which also might be this one) added the origin for auto-starting,
     // or received user interaction.
     // Set the bit to avoid having redundantly call into the UI process upon user interaction.
-    m_plugInAutoStartOrigins.set(plugInOriginHash, expirationTime);
+    m_plugInAutoStartOriginHashes.set(plugInOriginHash, expirationTime);
 }
 
-void WebProcess::resetPlugInAutoStartOrigins(const HashMap<unsigned, double>& hashes)
+void WebProcess::resetPlugInAutoStartOriginHashes(const HashMap<unsigned, double>& hashes)
 {
-    m_plugInAutoStartOrigins.swap(const_cast<HashMap<unsigned, double>&>(hashes));
+    m_plugInAutoStartOriginHashes.swap(const_cast<HashMap<unsigned, double>&>(hashes));
 }
 
-void WebProcess::plugInDidReceiveUserInteraction(unsigned plugInOriginHash)
+void WebProcess::plugInDidReceiveUserInteraction(const String& pageOrigin, const String& pluginOrigin, const String& mimeType)
 {
+    if (pageOrigin.isEmpty())
+        return;
+
+    unsigned plugInOriginHash = hashForPlugInOrigin(pageOrigin, pluginOrigin, mimeType);
     if (!plugInOriginHash)
         return;
 
-    HashMap<unsigned, double>::iterator it = m_plugInAutoStartOrigins.find(plugInOriginHash);
-    if (it == m_plugInAutoStartOrigins.end())
+    HashMap<unsigned, double>::iterator it = m_plugInAutoStartOriginHashes.find(plugInOriginHash);
+    if (it == m_plugInAutoStartOriginHashes.end())
         return;
     if (it->value - currentTime() > plugInAutoStartExpirationTimeUpdateThreshold)
         return;
@@ -814,12 +848,12 @@ static void fromCountedSetToHashMap(TypeCountSet* countedSet, HashMap<String, ui
         map.set(it->key, it->value);
 }
 
-static void getWebCoreMemoryCacheStatistics(Vector<HashMap<String, uint64_t> >& result)
+static void getWebCoreMemoryCacheStatistics(Vector<HashMap<String, uint64_t>>& result)
 {
-    DEFINE_STATIC_LOCAL(String, imagesString, (ASCIILiteral("Images")));
-    DEFINE_STATIC_LOCAL(String, cssString, (ASCIILiteral("CSS")));
-    DEFINE_STATIC_LOCAL(String, xslString, (ASCIILiteral("XSL")));
-    DEFINE_STATIC_LOCAL(String, javaScriptString, (ASCIILiteral("JavaScript")));
+    String imagesString(ASCIILiteral("Images"));
+    String cssString(ASCIILiteral("CSS"));
+    String xslString(ASCIILiteral("XSL"));
+    String javaScriptString(ASCIILiteral("JavaScript"));
     
     MemoryCache::Statistics memoryCacheStatistics = memoryCache()->getStatistics();
     
@@ -872,40 +906,40 @@ void WebProcess::getWebCoreStatistics(uint64_t callbackID)
     
     // Gather JavaScript statistics.
     {
-        JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
-        data.statisticsNumbers.set("JavaScriptObjectsCount", JSDOMWindow::commonJSGlobalData()->heap.objectCount());
-        data.statisticsNumbers.set("JavaScriptGlobalObjectsCount", JSDOMWindow::commonJSGlobalData()->heap.globalObjectCount());
-        data.statisticsNumbers.set("JavaScriptProtectedObjectsCount", JSDOMWindow::commonJSGlobalData()->heap.protectedObjectCount());
-        data.statisticsNumbers.set("JavaScriptProtectedGlobalObjectsCount", JSDOMWindow::commonJSGlobalData()->heap.protectedGlobalObjectCount());
+        JSLockHolder lock(JSDOMWindow::commonVM());
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptObjectsCount"), JSDOMWindow::commonVM()->heap.objectCount());
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptGlobalObjectsCount"), JSDOMWindow::commonVM()->heap.globalObjectCount());
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptProtectedObjectsCount"), JSDOMWindow::commonVM()->heap.protectedObjectCount());
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptProtectedGlobalObjectsCount"), JSDOMWindow::commonVM()->heap.protectedGlobalObjectCount());
         
-        OwnPtr<TypeCountSet> protectedObjectTypeCounts(JSDOMWindow::commonJSGlobalData()->heap.protectedObjectTypeCounts());
+        OwnPtr<TypeCountSet> protectedObjectTypeCounts(JSDOMWindow::commonVM()->heap.protectedObjectTypeCounts());
         fromCountedSetToHashMap(protectedObjectTypeCounts.get(), data.javaScriptProtectedObjectTypeCounts);
         
-        OwnPtr<TypeCountSet> objectTypeCounts(JSDOMWindow::commonJSGlobalData()->heap.objectTypeCounts());
+        OwnPtr<TypeCountSet> objectTypeCounts(JSDOMWindow::commonVM()->heap.objectTypeCounts());
         fromCountedSetToHashMap(objectTypeCounts.get(), data.javaScriptObjectTypeCounts);
         
-        uint64_t javaScriptHeapSize = JSDOMWindow::commonJSGlobalData()->heap.size();
-        data.statisticsNumbers.set("JavaScriptHeapSize", javaScriptHeapSize);
-        data.statisticsNumbers.set("JavaScriptFreeSize", JSDOMWindow::commonJSGlobalData()->heap.capacity() - javaScriptHeapSize);
+        uint64_t javaScriptHeapSize = JSDOMWindow::commonVM()->heap.size();
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptHeapSize"), javaScriptHeapSize);
+        data.statisticsNumbers.set(ASCIILiteral("JavaScriptFreeSize"), JSDOMWindow::commonVM()->heap.capacity() - javaScriptHeapSize);
     }
 
     WTF::FastMallocStatistics fastMallocStatistics = WTF::fastMallocStatistics();
-    data.statisticsNumbers.set("FastMallocReservedVMBytes", fastMallocStatistics.reservedVMBytes);
-    data.statisticsNumbers.set("FastMallocCommittedVMBytes", fastMallocStatistics.committedVMBytes);
-    data.statisticsNumbers.set("FastMallocFreeListBytes", fastMallocStatistics.freeListBytes);
+    data.statisticsNumbers.set(ASCIILiteral("FastMallocReservedVMBytes"), fastMallocStatistics.reservedVMBytes);
+    data.statisticsNumbers.set(ASCIILiteral("FastMallocCommittedVMBytes"), fastMallocStatistics.committedVMBytes);
+    data.statisticsNumbers.set(ASCIILiteral("FastMallocFreeListBytes"), fastMallocStatistics.freeListBytes);
     
     // Gather icon statistics.
-    data.statisticsNumbers.set("IconPageURLMappingCount", iconDatabase().pageURLMappingCount());
-    data.statisticsNumbers.set("IconRetainedPageURLCount", iconDatabase().retainedPageURLCount());
-    data.statisticsNumbers.set("IconRecordCount", iconDatabase().iconRecordCount());
-    data.statisticsNumbers.set("IconsWithDataCount", iconDatabase().iconRecordCountWithData());
+    data.statisticsNumbers.set(ASCIILiteral("IconPageURLMappingCount"), iconDatabase().pageURLMappingCount());
+    data.statisticsNumbers.set(ASCIILiteral("IconRetainedPageURLCount"), iconDatabase().retainedPageURLCount());
+    data.statisticsNumbers.set(ASCIILiteral("IconRecordCount"), iconDatabase().iconRecordCount());
+    data.statisticsNumbers.set(ASCIILiteral("IconsWithDataCount"), iconDatabase().iconRecordCountWithData());
     
     // Gather font statistics.
-    data.statisticsNumbers.set("CachedFontDataCount", fontCache()->fontDataCount());
-    data.statisticsNumbers.set("CachedFontDataInactiveCount", fontCache()->inactiveFontDataCount());
+    data.statisticsNumbers.set(ASCIILiteral("CachedFontDataCount"), fontCache()->fontDataCount());
+    data.statisticsNumbers.set(ASCIILiteral("CachedFontDataInactiveCount"), fontCache()->inactiveFontDataCount());
     
     // Gather glyph page statistics.
-    data.statisticsNumbers.set("GlyphPageCount", GlyphPageTreeNode::treeGlyphPageCount());
+    data.statisticsNumbers.set(ASCIILiteral("GlyphPageCount"), GlyphPageTreeNode::treeGlyphPageCount());
     
     // Get WebCore memory cache statistics
     getWebCoreMemoryCacheStatistics(data.webCoreCacheStatistics);
@@ -923,24 +957,33 @@ void WebProcess::setJavaScriptGarbageCollectorTimerEnabled(bool flag)
     gcController().setJavaScriptGarbageCollectorTimerEnabled(flag);
 }
 
-void WebProcess::postInjectedBundleMessage(const CoreIPC::DataReference& messageData)
+void WebProcess::postInjectedBundleMessage(const IPC::DataReference& messageData)
 {
     InjectedBundle* injectedBundle = WebProcess::shared().injectedBundle();
     if (!injectedBundle)
         return;
 
-    OwnPtr<CoreIPC::ArgumentDecoder> decoder = CoreIPC::ArgumentDecoder::create(messageData.data(), messageData.size());
+    IPC::ArgumentDecoder decoder(messageData.data(), messageData.size());
 
     String messageName;
-    if (!decoder->decode(messageName))
+    if (!decoder.decode(messageName))
         return;
 
-    RefPtr<APIObject> messageBody;
+    RefPtr<API::Object> messageBody;
     InjectedBundleUserMessageDecoder messageBodyDecoder(messageBody);
-    if (!decoder->decode(messageBodyDecoder))
+    if (!decoder.decode(messageBodyDecoder))
         return;
 
     injectedBundle->didReceiveMessage(messageName, messageBody.get());
+}
+
+bool WebProcess::usesNetworkProcess() const
+{
+#if ENABLE(NETWORK_PROCESS)
+    return m_usesNetworkProcess;
+#else
+    return false;
+#endif
 }
 
 #if ENABLE(NETWORK_PROCESS)
@@ -961,8 +1004,6 @@ NetworkProcessConnection* WebProcess::networkConnection()
 
 void WebProcess::networkProcessConnectionClosed(NetworkProcessConnection* connection)
 {
-    // FIXME (NetworkProcess): How do we handle not having the connection when the WebProcess needs it?
-    // If the NetworkProcess crashed, for example.  Do we respawn it?
     ASSERT(m_networkProcessConnection);
     ASSERT(m_networkProcessConnection == connection);
 
@@ -975,7 +1016,47 @@ WebResourceLoadScheduler& WebProcess::webResourceLoadScheduler()
 {
     return *m_webResourceLoadScheduler;
 }
+#endif // ENABLED(NETWORK_PROCESS)
+
+#if ENABLE(DATABASE_PROCESS)
+void WebProcess::webToDatabaseProcessConnectionClosed(WebToDatabaseProcessConnection* connection)
+{
+    ASSERT(m_webToDatabaseProcessConnection);
+    ASSERT(m_webToDatabaseProcessConnection == connection);
+
+    m_webToDatabaseProcessConnection = 0;
+}
+
+WebToDatabaseProcessConnection* WebProcess::webToDatabaseProcessConnection()
+{
+    if (!m_webToDatabaseProcessConnection)
+        ensureWebToDatabaseProcessConnection();
+
+    return m_webToDatabaseProcessConnection.get();
+}
+
+void WebProcess::ensureWebToDatabaseProcessConnection()
+{
+    if (m_webToDatabaseProcessConnection)
+        return;
+
+    IPC::Attachment encodedConnectionIdentifier;
+
+    if (!parentProcessConnection()->sendSync(Messages::WebProcessProxy::GetDatabaseProcessConnection(),
+        Messages::WebProcessProxy::GetDatabaseProcessConnection::Reply(encodedConnectionIdentifier), 0))
+        return;
+
+#if PLATFORM(MAC)
+    IPC::Connection::Identifier connectionIdentifier(encodedConnectionIdentifier.port());
+    if (IPC::Connection::identifierIsNull(connectionIdentifier))
+        return;
+#else
+    ASSERT_NOT_REACHED();
 #endif
+    m_webToDatabaseProcessConnection = WebToDatabaseProcessConnection::create(connectionIdentifier);
+}
+
+#endif // ENABLED(DATABASE_PROCESS)
 
 void WebProcess::downloadRequest(uint64_t downloadID, uint64_t initiatingPageID, const ResourceRequest& request)
 {
@@ -983,7 +1064,7 @@ void WebProcess::downloadRequest(uint64_t downloadID, uint64_t initiatingPageID,
 
     ResourceRequest requestWithOriginalURL = request;
     if (initiatingPage)
-        initiatingPage->mainFrame()->loader()->setOriginalURLForDownloadRequest(requestWithOriginalURL);
+        initiatingPage->mainFrame()->loader().setOriginalURLForDownloadRequest(requestWithOriginalURL);
 
     downloadManager().startDownload(downloadID, requestWithOriginalURL);
 }
@@ -992,13 +1073,6 @@ void WebProcess::cancelDownload(uint64_t downloadID)
 {
     downloadManager().cancelDownload(downloadID);
 }
-
-#if PLATFORM(QT)
-void WebProcess::startTransfer(uint64_t downloadID, const String& destination)
-{
-    downloadManager().startTransfer(downloadID, destination);
-}
-#endif
 
 void WebProcess::setEnhancedAccessibility(bool flag)
 {
@@ -1009,6 +1083,10 @@ void WebProcess::startMemorySampler(const SandboxExtension::Handle& sampleLogFil
 {
 #if ENABLE(MEMORY_SAMPLER)    
     WebMemorySampler::shared()->start(sampleLogFileHandle, sampleLogFilePath, interval);
+#else
+    UNUSED_PARAM(sampleLogFileHandle);
+    UNUSED_PARAM(sampleLogFilePath);
+    UNUSED_PARAM(interval);
 #endif
 }
     
@@ -1029,14 +1107,21 @@ void WebProcess::setTextCheckerState(const TextCheckerState& textCheckerState)
     if (!continuousSpellCheckingTurnedOff && !grammarCheckingTurnedOff)
         return;
 
-    HashMap<uint64_t, RefPtr<WebPage> >::iterator end = m_pageMap.end();
-    for (HashMap<uint64_t, RefPtr<WebPage> >::iterator it = m_pageMap.begin(); it != end; ++it) {
+    HashMap<uint64_t, RefPtr<WebPage>>::iterator end = m_pageMap.end();
+    for (HashMap<uint64_t, RefPtr<WebPage>>::iterator it = m_pageMap.begin(); it != end; ++it) {
         WebPage* page = (*it).value.get();
         if (continuousSpellCheckingTurnedOff)
             page->unmarkAllMisspellings();
         if (grammarCheckingTurnedOff)
             page->unmarkAllBadGrammar();
     }
+}
+
+void WebProcess::releasePageCache()
+{
+    int savedPageCacheCapacity = pageCache()->capacity();
+    pageCache()->setCapacity(0);
+    pageCache()->setCapacity(savedPageCacheCapacity);
 }
 
 #if !PLATFORM(MAC)
@@ -1051,6 +1136,69 @@ void WebProcess::initializeSandbox(const ChildProcessInitializationParameters&, 
 void WebProcess::platformInitializeProcess(const ChildProcessInitializationParameters&)
 {
 }
+
+void WebProcess::updateActivePages()
+{
+}
+
 #endif
+
+#if PLATFORM(IOS)
+void WebProcess::resetAllGeolocationPermissions()
+{
+    for (auto it = m_pageMap.begin(), end = m_pageMap.end(); it != end; ++it) {
+        WebPage* page = (*it).value.get();
+        if (Frame* mainFrame = page->mainFrame())
+            mainFrame->resetAllGeolocationPermission();
+    }
+}
+#endif // PLATFORM(IOS)
+
+void WebProcess::pageDidEnterWindow(uint64_t pageID)
+{
+    m_pagesInWindows.add(pageID);
+    m_nonVisibleProcessCleanupTimer.stop();
+}
+
+void WebProcess::pageWillLeaveWindow(uint64_t pageID)
+{
+    m_pagesInWindows.remove(pageID);
+
+    if (m_pagesInWindows.isEmpty() && !m_nonVisibleProcessCleanupTimer.isActive())
+        m_nonVisibleProcessCleanupTimer.startOneShot(nonVisibleProcessCleanupDelay);
+}
+    
+void WebProcess::nonVisibleProcessCleanupTimerFired(Timer<WebProcess>*)
+{
+    ASSERT(m_pagesInWindows.isEmpty());
+    if (!m_pagesInWindows.isEmpty())
+        return;
+
+#if PLATFORM(MAC)
+    wkDestroyRenderingResources();
+#endif
+}
+
+RefPtr<API::Object> WebProcess::apiObjectByConvertingFromHandles(API::Object* object)
+{
+    return UserData::transform(object, [this](const API::Object& object) -> RefPtr<API::Object> {
+        switch (object.type()) {
+        case API::Object::Type::FrameHandle: {
+            auto& frameHandle = static_cast<const API::FrameHandle&>(object);
+
+            return webFrame(frameHandle.frameID());
+        }
+
+        default:
+            return nullptr;
+        }
+    });
+}
+
+void WebProcess::setMemoryCacheDisabled(bool disabled)
+{
+    if (memoryCache()->disabled() != disabled)
+        memoryCache()->setDisabled(disabled);
+}
 
 } // namespace WebKit

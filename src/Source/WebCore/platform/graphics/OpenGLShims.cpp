@@ -22,7 +22,7 @@
 #define DISABLE_SHIMS
 #include "OpenGLShims.h"
 
-#if !PLATFORM(QT)
+#if !OS(WINDOWS)
 #include <dlfcn.h>
 #endif
 
@@ -37,10 +37,10 @@ OpenGLFunctionTable* openGLFunctionTable()
     return &table;
 }
 
-#if PLATFORM(QT)
+#if OS(WINDOWS)
 static void* getProcAddress(const char* procName)
 {
-    return reinterpret_cast<void*>(QOpenGLContext::currentContext()->getProcAddress(procName));
+    return reinterpret_cast<void*>(GetProcAddress(GetModuleHandleA("libGLESv2"), procName));
 }
 #else
 typedef void* (*glGetProcAddressType) (const char* procName);
@@ -84,6 +84,8 @@ static void* lookupOpenGLFunctionAddress(const char* functionName, bool* success
     fullFunctionName = functionName;
     fullFunctionName.append("ANGLE");
     target = getProcAddress(fullFunctionName.utf8().data());
+    if (target)
+        return target;
 
     fullFunctionName = functionName;
     fullFunctionName.append("APPLE");
@@ -97,18 +99,8 @@ static void* lookupOpenGLFunctionAddress(const char* functionName, bool* success
     return target;
 }
 
-#if PLATFORM(QT) && defined(QT_OPENGL_ES_2)
-
-// With Angle only EGL/GLES2 extensions are available through eglGetProcAddress, not the regular standardized functions.
-#define ASSIGN_FUNCTION_TABLE_ENTRY(FunctionName, success) \
-    openGLFunctionTable()->FunctionName = reinterpret_cast<FunctionName##Type>(::FunctionName)
-
-#else
-
 #define ASSIGN_FUNCTION_TABLE_ENTRY(FunctionName, success) \
     openGLFunctionTable()->FunctionName = reinterpret_cast<FunctionName##Type>(lookupOpenGLFunctionAddress(#FunctionName, &success))
-
-#endif
 
 #define ASSIGN_FUNCTION_TABLE_ENTRY_EXT(FunctionName) \
     openGLFunctionTable()->FunctionName = reinterpret_cast<FunctionName##Type>(lookupOpenGLFunctionAddress(#FunctionName))
@@ -142,6 +134,8 @@ bool initializeOpenGLShims()
     ASSIGN_FUNCTION_TABLE_ENTRY(glBufferSubData, success);
     ASSIGN_FUNCTION_TABLE_ENTRY(glCheckFramebufferStatus, success);
     ASSIGN_FUNCTION_TABLE_ENTRY(glCompileShader, success);
+    ASSIGN_FUNCTION_TABLE_ENTRY(glCompressedTexImage2D, success);
+    ASSIGN_FUNCTION_TABLE_ENTRY(glCompressedTexSubImage2D, success);
     ASSIGN_FUNCTION_TABLE_ENTRY(glCreateProgram, success);
     ASSIGN_FUNCTION_TABLE_ENTRY(glCreateShader, success);
     ASSIGN_FUNCTION_TABLE_ENTRY(glDeleteBuffers, success);

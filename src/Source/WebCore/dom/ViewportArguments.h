@@ -39,8 +39,7 @@ enum ViewportErrorCode {
     UnrecognizedViewportArgumentKeyError,
     UnrecognizedViewportArgumentValueError,
     TruncatedViewportArgumentValueError,
-    MaximumScaleTooLargeError,
-    TargetDensityDpiUnsupported
+    MaximumScaleTooLargeError
 };
 
 struct ViewportAttributes {
@@ -64,6 +63,10 @@ struct ViewportArguments {
         HandheldFriendlyMeta,
         MobileOptimizedMeta,
 #endif
+#if PLATFORM(IOS)
+        PluginDocument,
+        ImageDocument,
+#endif
         ViewportMeta,
         CSSDeviceAdaptation
     } type;
@@ -76,7 +79,7 @@ struct ViewportArguments {
         ValueLandscape = -5
     };
 
-    ViewportArguments(Type type = Implicit)
+    explicit ViewportArguments(Type type = Implicit)
         : type(type)
         , width(ValueAuto)
         , minWidth(ValueAuto)
@@ -89,6 +92,9 @@ struct ViewportArguments {
         , maxZoom(ValueAuto)
         , userZoom(ValueAuto)
         , orientation(ValueAuto)
+#if PLATFORM(IOS)
+        , minimalUI(false)
+#endif
     {
     }
 
@@ -106,11 +112,18 @@ struct ViewportArguments {
     float maxZoom;
     float userZoom;
     float orientation;
+#if PLATFORM(IOS)
+    bool minimalUI;
+#endif
 
     bool operator==(const ViewportArguments& other) const
     {
         // Used for figuring out whether to reset the viewport or not,
         // thus we are not taking type into account.
+#if PLATFORM(IOS)
+        // We ignore minimalUI for the same reason -- it is a higher-level
+        // property that doesn't affect the actual viewport.
+#endif
         return width == other.width
             && minWidth == other.minWidth
             && maxWidth == other.maxWidth
@@ -129,9 +142,11 @@ struct ViewportArguments {
         return !(*this == other);
     }
 
+#if PLATFORM(GTK)
     // FIXME: We're going to keep this constant around until all embedders
     // refactor their code to no longer need it.
     static const float deprecatedTargetDPI;
+#endif
 };
 
 ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktopWidth, int deviceWidth, int deviceHeight, float devicePixelRatio, IntSize visibleViewport);
@@ -142,6 +157,10 @@ float computeMinimumScaleFactorForContentContained(const ViewportAttributes& res
 
 void setViewportFeature(const String& keyString, const String& valueString, Document*, void* data);
 void reportViewportWarning(Document*, ViewportErrorCode, const String& replacement1, const String& replacement2);
+
+#if PLATFORM(IOS)
+void finalizeViewportArguments(ViewportArguments&);
+#endif
 
 } // namespace WebCore
 

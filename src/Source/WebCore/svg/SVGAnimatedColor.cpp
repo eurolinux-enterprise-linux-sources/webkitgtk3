@@ -23,7 +23,7 @@
 #include "SVGAnimatedColor.h"
 
 #include "ColorDistance.h"
-#include "RenderObject.h"
+#include "RenderElement.h"
 #include "SVGAnimateElement.h"
 #include "SVGColor.h"
 
@@ -34,11 +34,11 @@ SVGAnimatedColorAnimator::SVGAnimatedColorAnimator(SVGAnimationElement* animatio
 {
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedColorAnimator::constructFromString(const String& string)
+std::unique_ptr<SVGAnimatedType> SVGAnimatedColorAnimator::constructFromString(const String& string)
 {
-    OwnPtr<SVGAnimatedType> animtedType = SVGAnimatedType::createColor(new Color);
-    animtedType->color() = string.isEmpty() ? Color() : SVGColor::colorFromRGBColorString(string);
-    return animtedType.release();
+    auto animatedType = SVGAnimatedType::createColor(std::make_unique<Color>());
+    animatedType->color() = string.isEmpty() ? Color() : SVGColor::colorFromRGBColorString(string);
+    return animatedType;
 }
 
 void SVGAnimatedColorAnimator::addAnimatedTypes(SVGAnimatedType* from, SVGAnimatedType* to)
@@ -52,8 +52,8 @@ static inline void adjustForCurrentColor(SVGElement* targetElement, Color& color
 {
     ASSERT(targetElement);
 
-    if (RenderObject* targetRenderer = targetElement->renderer())
-        color = targetRenderer->style()->visitedDependentColor(CSSPropertyColor);
+    if (RenderElement* targetRenderer = targetElement->renderer())
+        color = targetRenderer->style().visitedDependentColor(CSSPropertyColor);
     else
         color = Color();
 }

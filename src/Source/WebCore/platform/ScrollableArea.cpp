@@ -35,23 +35,18 @@
 #include "GraphicsContext.h"
 #include "GraphicsLayer.h"
 #include "FloatPoint.h"
-#include "PlatformMemoryInstrumentation.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollAnimator.h"
 #include "ScrollbarTheme.h"
 #include <wtf/PassOwnPtr.h>
-
-#if PLATFORM(CHROMIUM)
-#include "TraceEvent.h"
-#endif
 
 namespace WebCore {
 
 struct SameSizeAsScrollableArea {
     virtual ~SameSizeAsScrollableArea();
     void* pointer;
-    unsigned bitfields : 16;
     IntPoint origin;
+    unsigned bitfields : 16;
 };
 
 COMPILE_ASSERT(sizeof(ScrollableArea) == sizeof(SameSizeAsScrollableArea), ScrollableArea_should_stay_small);
@@ -145,10 +140,6 @@ void ScrollableArea::notifyScrollPositionChanged(const IntPoint& position)
 
 void ScrollableArea::scrollPositionChanged(const IntPoint& position)
 {
-#if PLATFORM(CHROMIUM)
-    TRACE_EVENT0("webkit", "ScrollableArea::scrollPositionChanged");
-#endif
-
     IntPoint oldPosition = scrollPosition();
     // Tell the derived class to scroll its contents.
     setScrollOffset(position);
@@ -184,6 +175,13 @@ bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
 {
     return scrollAnimator()->handleWheelEvent(wheelEvent);
 }
+
+#if ENABLE(TOUCH_EVENTS)
+bool ScrollableArea::handleTouchEvent(const PlatformTouchEvent& touchEvent)
+{
+    return scrollAnimator()->handleTouchEvent(touchEvent);
+}
+#endif
 
 // NOTE: Only called from Internals for testing.
 void ScrollableArea::setScrollOffsetFromInternals(const IntPoint& offset)
@@ -263,36 +261,36 @@ void ScrollableArea::contentAreaDidHide() const
         scrollAnimator->contentAreaDidHide();
 }
 
-void ScrollableArea::finishCurrentScrollAnimations() const
+void ScrollableArea::lockOverlayScrollbarStateToHidden(bool shouldLockState) const
 {
     if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
-        scrollAnimator->finishCurrentScrollAnimations();
+        scrollAnimator->lockOverlayScrollbarStateToHidden(shouldLockState);
 }
 
-void ScrollableArea::didAddVerticalScrollbar(Scrollbar* scrollbar)
+bool ScrollableArea::scrollbarsCanBeActive() const
 {
-    scrollAnimator()->didAddVerticalScrollbar(scrollbar);
+    if (ScrollAnimator* scrollAnimator = existingScrollAnimator())
+        return scrollAnimator->scrollbarsCanBeActive();
+    return true;
+}
+
+void ScrollableArea::didAddScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orientation)
+{
+    if (orientation == VerticalScrollbar)
+        scrollAnimator()->didAddVerticalScrollbar(scrollbar);
+    else
+        scrollAnimator()->didAddHorizontalScrollbar(scrollbar);
 
     // <rdar://problem/9797253> AppKit resets the scrollbar's style when you attach a scrollbar
     setScrollbarOverlayStyle(scrollbarOverlayStyle());
 }
 
-void ScrollableArea::willRemoveVerticalScrollbar(Scrollbar* scrollbar)
+void ScrollableArea::willRemoveScrollbar(Scrollbar* scrollbar, ScrollbarOrientation orientation)
 {
-    scrollAnimator()->willRemoveVerticalScrollbar(scrollbar);
-}
-
-void ScrollableArea::didAddHorizontalScrollbar(Scrollbar* scrollbar)
-{
-    scrollAnimator()->didAddHorizontalScrollbar(scrollbar);
-
-    // <rdar://problem/9797253> AppKit resets the scrollbar's style when you attach a scrollbar
-    setScrollbarOverlayStyle(scrollbarOverlayStyle());
-}
-
-void ScrollableArea::willRemoveHorizontalScrollbar(Scrollbar* scrollbar)
-{
-    scrollAnimator()->willRemoveHorizontalScrollbar(scrollbar);
+    if (orientation == VerticalScrollbar)
+        scrollAnimator()->willRemoveVerticalScrollbar(scrollbar);
+    else
+        scrollAnimator()->willRemoveHorizontalScrollbar(scrollbar);
 }
 
 void ScrollableArea::contentsResized()
@@ -353,6 +351,18 @@ void ScrollableArea::invalidateScrollCorner(const IntRect& rect)
     invalidateScrollCornerRect(rect);
 }
 
+#if USE(ACCELERATED_COMPOSITING)
+void ScrollableArea::verticalScrollbarLayerDidChange()
+{
+    scrollAnimator()->verticalScrollbarLayerDidChange();
+}
+
+void ScrollableArea::horizontalScrollbarLayerDidChange()
+{
+    scrollAnimator()->horizontalScrollbarLayerDidChange();
+}
+#endif
+
 bool ScrollableArea::hasLayerForHorizontalScrollbar() const
 {
 #if USE(ACCELERATED_COMPOSITING)
@@ -386,6 +396,31 @@ void ScrollableArea::serviceScrollAnimations()
         scrollAnimator->serviceScrollAnimations();
 }
 
+#if PLATFORM(IOS)
+bool ScrollableArea::isPinnedInBothDirections(const IntSize& scrollDelta) const
+{
+    return isPinnedHorizontallyInDirection(scrollDelta.width()) && isPinnedVerticallyInDirection(scrollDelta.height());
+}
+
+bool ScrollableArea::isPinnedHorizontallyInDirection(int horizontalScrollDelta) const
+{
+    if (horizontalScrollDelta < 0 && isHorizontalScrollerPinnedToMinimumPosition())
+        return true;
+    if (horizontalScrollDelta > 0 && isHorizontalScrollerPinnedToMaximumPosition())
+        return true;
+    return false;
+}
+
+bool ScrollableArea::isPinnedVerticallyInDirection(int verticalScrollDelta) const
+{
+    if (verticalScrollDelta < 0 && isVerticalScrollerPinnedToMinimumPosition())
+        return true;
+    if (verticalScrollDelta > 0 && isVerticalScrollerPinnedToMaximumPosition())
+        return true;
+    return false;
+}
+#endif // PLATFORM(IOS)
+
 IntPoint ScrollableArea::scrollPosition() const
 {
     int x = horizontalScrollbar() ? horizontalScrollbar()->value() : 0;
@@ -400,10 +435,27 @@ IntPoint ScrollableArea::minimumScrollPosition() const
 
 IntPoint ScrollableArea::maximumScrollPosition() const
 {
-    return IntPoint(contentsSize().width() - visibleWidth(), contentsSize().height() - visibleHeight());
+    return IntPoint(totalContentsSize().width() - visibleWidth(), totalContentsSize().height() - visibleHeight());
 }
 
-IntRect ScrollableArea::visibleContentRect(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
+IntSize ScrollableArea::totalContentsSize() const
+{
+    IntSize totalContentsSize = contentsSize();
+    totalContentsSize.setHeight(totalContentsSize.height() + headerHeight() + footerHeight());
+    return totalContentsSize;
+}
+
+IntRect ScrollableArea::visibleContentRect(VisibleContentRectBehavior visibleContentRectBehavior) const
+{
+    return visibleContentRectInternal(ExcludeScrollbars, visibleContentRectBehavior);
+}
+
+IntRect ScrollableArea::visibleContentRectIncludingScrollbars(VisibleContentRectBehavior visibleContentRectBehavior) const
+{
+    return visibleContentRectInternal(IncludeScrollbars, visibleContentRectBehavior);
+}
+
+IntRect ScrollableArea::visibleContentRectInternal(VisibleContentRectIncludesScrollbars scrollbarInclusion, VisibleContentRectBehavior) const
 {
     int verticalScrollbarWidth = 0;
     int horizontalScrollbarHeight = 0;
@@ -421,42 +473,58 @@ IntRect ScrollableArea::visibleContentRect(VisibleContentRectIncludesScrollbars 
                    std::max(0, visibleHeight() + horizontalScrollbarHeight));
 }
 
-static int constrainedScrollPosition(int visibleContentSize, int contentsSize, int scrollPosition, int scrollOrigin)
+IntPoint ScrollableArea::constrainScrollPositionForOverhang(const IntRect& visibleContentRect, const IntSize& totalContentsSize, const IntPoint& scrollPosition, const IntPoint& scrollOrigin, int headerHeight, int footerHeight)
 {
-    int maxValue = contentsSize - visibleContentSize;
-    if (maxValue <= 0)
-        return 0;
+    // The viewport rect that we're scrolling shouldn't be larger than our document.
+    IntSize idealScrollRectSize(std::min(visibleContentRect.width(), totalContentsSize.width()), std::min(visibleContentRect.height(), totalContentsSize.height()));
+    
+    IntRect scrollRect(scrollPosition + scrollOrigin - IntSize(0, headerHeight), idealScrollRectSize);
+    IntRect documentRect(IntPoint(), IntSize(totalContentsSize.width(), totalContentsSize.height() - headerHeight - footerHeight));
 
-    if (!scrollOrigin) {
-        if (scrollPosition <= 0)
-            return 0;
-        if (scrollPosition > maxValue)
-            scrollPosition = maxValue;
-    } else {
-        if (scrollPosition >= 0)
-            return 0;
-        if (scrollPosition < -maxValue)
-            scrollPosition = -maxValue;
+    // Use intersection to constrain our ideal scroll rect by the document rect.
+    scrollRect.intersect(documentRect);
+
+    if (scrollRect.size() != idealScrollRectSize) {
+        // If the rect was clipped, restore its size, effectively pushing it "down" from the top left.
+        scrollRect.setSize(idealScrollRectSize);
+
+        // If we still clip, push our rect "up" from the bottom right.
+        scrollRect.intersect(documentRect);
+        if (scrollRect.width() < idealScrollRectSize.width())
+            scrollRect.move(-(idealScrollRectSize.width() - scrollRect.width()), 0);
+        if (scrollRect.height() < idealScrollRectSize.height())
+            scrollRect.move(0, -(idealScrollRectSize.height() - scrollRect.height()));
     }
 
-    return scrollPosition;
-}
-
-IntPoint ScrollableArea::constrainScrollPositionForOverhang(const IntRect& visibleContentRect, const IntSize& contentsSize, const IntPoint& scrollPosition, const IntPoint& scrollOrigin)
-{
-    return IntPoint(constrainedScrollPosition(visibleContentRect.width(), contentsSize.width(), scrollPosition.x(), scrollOrigin.x()),
-        constrainedScrollPosition(visibleContentRect.height(), contentsSize.height(), scrollPosition.y(), scrollOrigin.y()));
+    return scrollRect.location() - toIntSize(scrollOrigin);
 }
 
 IntPoint ScrollableArea::constrainScrollPositionForOverhang(const IntPoint& scrollPosition)
 {
-    return constrainScrollPositionForOverhang(visibleContentRect(), contentsSize(), scrollPosition, scrollOrigin());
+    return constrainScrollPositionForOverhang(visibleContentRect(), totalContentsSize(), scrollPosition, scrollOrigin(), headerHeight(), footerHeight());
 }
 
-void ScrollableArea::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+void ScrollableArea::computeScrollbarValueAndOverhang(float currentPosition, float totalSize, float visibleSize, float& doubleValue, float& overhangAmount)
 {
-    MemoryClassInfo info(memoryObjectInfo, this);
-    info.addMember(m_scrollAnimator, "scrollAnimator");
+    doubleValue = 0;
+    overhangAmount = 0;
+    float maximum = totalSize - visibleSize;
+
+    if (currentPosition < 0) {
+        // Scrolled past the top.
+        doubleValue = 0;
+        overhangAmount = -currentPosition;
+    } else if (visibleSize + currentPosition > totalSize) {
+        // Scrolled past the bottom.
+        doubleValue = 1;
+        overhangAmount = currentPosition + visibleSize - totalSize;
+    } else {
+        // Within the bounds of the scrollable area.
+        if (maximum > 0)
+            doubleValue = currentPosition / maximum;
+        else
+            doubleValue = 0;
+    }
 }
 
 } // namespace WebCore

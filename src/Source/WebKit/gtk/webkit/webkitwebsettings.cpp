@@ -28,14 +28,14 @@
 
 #include "EditingBehavior.h"
 #include "FileSystem.h"
-#include "KURL.h"
+#include "URL.h"
 #include "PluginDatabase.h"
 #include "UserAgentGtk.h"
 #include "webkitenumtypes.h"
 #include "webkitglobalsprivate.h"
 #include "webkitversion.h"
 #include "webkitwebsettingsprivate.h"
-#include <wtf/gobject/GOwnPtr.h>
+#include <wtf/gobject/GUniquePtr.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringConcatenate.h>
 #include <glib/gi18n-lib.h>
@@ -44,9 +44,9 @@
  * SECTION:webkitwebsettings
  * @short_description: Control the behaviour of a #WebKitWebView
  *
- * #WebKitWebSettings can be applied to a #WebKitWebView to control text encoding, 
- * color, font sizes, printing mode, script support, loading of images and various other things. 
- * After creation, a #WebKitWebSettings object contains default settings. 
+ * #WebKitWebSettings can be applied to a #WebKitWebView to control text encoding,
+ * color, font sizes, printing mode, script support, loading of images and various other things.
+ * After creation, a #WebKitWebSettings object contains default settings.
  *
  * <informalexample><programlisting>
  * /<!-- -->* Create a new websettings and disable java script *<!-- -->/
@@ -121,9 +121,9 @@ enum {
     PROP_ENABLE_SMOOTH_SCROLLING,
     PROP_MEDIA_PLAYBACK_REQUIRES_USER_GESTURE,
     PROP_MEDIA_PLAYBACK_ALLOWS_INLINE,
-    PROP_ENABLE_CSS_SHADERS,
     PROP_ENABLE_RUNNING_OF_INSECURE_CONTENT,
-    PROP_ENABLE_DISPLAY_OF_INSECURE_CONTENT
+    PROP_ENABLE_DISPLAY_OF_INSECURE_CONTENT,
+    PROP_ENABLE_MEDIA_SOURCE
 };
 
 static void webkit_web_settings_finalize(GObject* object);
@@ -483,7 +483,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
     *
     * Since: 1.5.2
     */
-    GOwnPtr<gchar> localStoragePath(g_build_filename(g_get_user_data_dir(), "webkit", "databases", NULL));
+    GUniquePtr<gchar> localStoragePath(g_build_filename(g_get_user_data_dir(), "webkit", "databases", NULL));
     g_object_class_install_property(gobject_class,
                                     PROP_HTML5_LOCAL_STORAGE_DATABASE_PATH,
                                     g_param_spec_string("html5-local-storage-database-path",
@@ -492,7 +492,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                         localStoragePath.get(),
                                                         flags));
     /**
-    * WebKitWebSettings:enable-xss-auditor
+    * WebKitWebSettings:enable-xss-auditor:
     *
     * Whether to enable the XSS Auditor. This feature filters some kinds of
     * reflective XSS attacks on vulnerable web sites.
@@ -507,7 +507,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          TRUE,
                                                          flags));
     /**
-    * WebKitWebSettings:enable-spatial-navigation
+    * WebKitWebSettings:enable-spatial-navigation:
     *
     * Whether to enable the Spatial Navigation. This feature consists in the ability
     * to navigate between focusable elements in a Web page, such as hyperlinks and
@@ -526,7 +526,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          FALSE,
                                                          flags));
     /**
-    * WebKitWebSettings:enable-frame-flattening
+    * WebKitWebSettings:enable-frame-flattening:
     *
     * Whether to enable the Frame Flattening. With this setting each subframe is expanded
     * to its contents, which will flatten all the frames to become one scrollable page.
@@ -564,7 +564,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                         flags));
 
     /**
-    * WebKitWebSettings:javascript-can-open-windows-automatically
+    * WebKitWebSettings:javascript-can-open-windows-automatically:
     *
     * Whether JavaScript can open popup windows automatically without user
     * intervention.
@@ -580,7 +580,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:javascript-can-access-clipboard
+    * WebKitWebSettings:javascript-can-access-clipboard:
     *
     * Whether JavaScript can access Clipboard.
     *
@@ -595,7 +595,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:enable-offline-web-application-cache
+    * WebKitWebSettings:enable-offline-web-application-cache:
     *
     * Whether to enable HTML5 offline web application cache support. Offline
     * Web Application Cache ensures web applications are available even when
@@ -613,12 +613,12 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
 
 
     /**
-    * WebKitWebSettings:editing-behavior
+    * WebKitWebSettings:editing-behavior:
     *
     * This setting controls various editing behaviors that differ
     * between platforms and that have been combined in two groups,
     * 'Mac' and 'Windows'. Some examples:
-    * 
+    *
     *  1) Clicking below the last line of an editable area puts the
     * caret at the end of the last line on Mac, but in the middle of
     * the last line on Windows.
@@ -639,7 +639,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                       flags));
 
     /**
-     * WebKitWebSettings:enable-universal-access-from-file-uris
+     * WebKitWebSettings:enable-universal-access-from-file-uris:
      *
      * Whether to allow files loaded through file:// URIs universal access to
      * all pages.
@@ -655,7 +655,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-     * WebKitWebSettings:enable-dom-paste
+     * WebKitWebSettings:enable-dom-paste:
      *
      * Whether to enable DOM paste. If set to %TRUE, document.execCommand("Paste")
      * will correctly execute and paste content of the clipboard.
@@ -713,7 +713,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                     flags));
 
     /**
-     * WebKitWebSettings::enable-site-specific-quirks
+     * WebKitWebSettings::enable-site-specific-quirks:
      *
      * Whether to turn on site-specific hacks.  Turning this on will
      * tell WebKitGTK+ to use some site-specific workarounds for
@@ -766,7 +766,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
     * you'd like it to do so. If you wish to handle this manually, you
     * can connect to the notify signal for the
     * #WebKitWebWindowFeatures of your #WebKitWebView.
-    * 
+    *
     * Since: 1.1.22
     */
     g_object_class_install_property(gobject_class,
@@ -825,14 +825,25 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          FALSE,
                                                          flags));
 
-    /* Undocumented for now */
+    /**
+    * WebKitWebSettings:enable-fullscreen:
+    *
+    *
+    * Whether to enable the Javascript Fullscreen API. The API
+    * allows any HTML element to request fullscreen display. See also
+    * the current draft of the spec:
+    * http://www.w3.org/TR/fullscreen/
+    *
+    * Since: 2.4
+    */
     g_object_class_install_property(gobject_class,
-                                    PROP_ENABLE_FULLSCREEN,
-                                    g_param_spec_boolean("enable-fullscreen",
-                                                         _("Enable Fullscreen"),
-                                                         _("Whether the Mozilla style API should be enabled."),
-                                                         FALSE,
-                                                         flags));
+        PROP_ENABLE_FULLSCREEN,
+        g_param_spec_boolean("enable-fullscreen",
+            _("Enable Fullscreen"),
+            _("Whether to enable the Javascript Fullscreen API"),
+            TRUE,
+            flags));
+
     /**
     * WebKitWebSettings:enable-webgl:
     *
@@ -888,7 +899,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
 
 
     /**
-    * WebKitWebSettings:enable-dns-prefetching
+    * WebKitWebSettings:enable-dns-prefetching:
     *
     * Whether webkit prefetches domain names.  This is a separate knob from private browsing.
     * Whether private browsing should set this or not is up for debate, for now it doesn't.
@@ -923,7 +934,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:enable-smooth-scrolling
+    * WebKitWebSettings:enable-smooth-scrolling:
     *
     * Enable or disable support for smooth scrolling. The current implementation relies upon
     * CPU work to produce a smooth scrolling experience.
@@ -939,7 +950,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:media-playback-requires-user-gesture
+    * WebKitWebSettings:media-playback-requires-user-gesture:
     *
     * Whether a user gesture (such as clicking the play button) would
     * be required to start media playback or load media. This is off
@@ -958,7 +969,7 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:media-playback-allows-inline
+    * WebKitWebSettings:media-playback-allows-inline:
     *
     * Whether media playback is full-screen only or inline playback is allowed.
     * This is true by default, so media playback can be inline. Setting it to
@@ -975,29 +986,10 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
                                                          flags));
 
     /**
-    * WebKitWebSettings:enable-css-shaders
-    *
-    * Enable or disable support for css shaders (css custom filters).
-    * Accelerated compositing needs to be enabled at compile time, but needs
-    * not be enabled at runtime.
-    *
-    * See also https://dvcs.w3.org/hg/FXTF/raw-file/tip/custom/index.html
-    *
-    * Since: 2.0
-    */
-    g_object_class_install_property(gobject_class,
-                                    PROP_ENABLE_CSS_SHADERS,
-                                    g_param_spec_boolean("enable-css-shaders",
-                                                         _("Enable CSS shaders"),
-                                                         _("Whether to enable css shaders"),
-                                                         FALSE,
-                                                         flags));
-
-    /**
-    * WebKitWebSettings:enable-display-of-insecure-content
+    * WebKitWebSettings:enable-display-of-insecure-content:
     *
     * Whether pages loaded via HTTPS should load subresources such as
-    * images and frames from non-HTTPS URLs. 
+    * images and frames from non-HTTPS URLs.
     *
     * Since: 2.0
     */
@@ -1010,10 +1002,10 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
             flags));
 
     /**
-    * WebKitWebSettings:enable-running-of-insecure-content
+    * WebKitWebSettings:enable-running-of-insecure-content:
     *
     * Whether pages loaded via HTTPS should run subresources such as
-    * CSS, scripts, and plugins from non-HTTPS URLs. 
+    * CSS, scripts, and plugins from non-HTTPS URLs.
     *
     * Since: 2.0
     */
@@ -1023,6 +1015,26 @@ static void webkit_web_settings_class_init(WebKitWebSettingsClass* klass)
             _("Enable running of insecure content"),
             _("Whether non-HTTPS resources can run on HTTPS pages."),
             TRUE,
+            flags));
+
+    /**
+    * WebKitWebSettings:enable-mediasource:
+    *
+    * Enable or disable support for MediaSource on pages. MediaSource is an
+    * experimental proposal which extends HTMLMediaElement to allow
+    * JavaScript to generate media streams for playback.  The standard is
+    * currently a work-in-progress by the W3C HTML Media Task Force.
+    *
+    * See also http://www.w3.org/TR/media-source/
+    *
+    * Since: 2.4
+    */
+    g_object_class_install_property(gobject_class,
+        PROP_ENABLE_MEDIA_SOURCE,
+        g_param_spec_boolean("enable-mediasource",
+            _("Enable MediaSource"),
+            _("Whether MediaSource should be enabled."),
+            FALSE,
             flags));
 }
 
@@ -1208,9 +1220,6 @@ static void webkit_web_settings_set_property(GObject* object, guint prop_id, con
     case PROP_ENABLE_SMOOTH_SCROLLING:
         priv->enableSmoothScrolling = g_value_get_boolean(value);
         break;
-    case PROP_ENABLE_CSS_SHADERS:
-        priv->enableCSSShaders = g_value_get_boolean(value);
-        break;
     case PROP_MEDIA_PLAYBACK_REQUIRES_USER_GESTURE:
         priv->mediaPlaybackRequiresUserGesture = g_value_get_boolean(value);
         break;
@@ -1222,6 +1231,9 @@ static void webkit_web_settings_set_property(GObject* object, guint prop_id, con
         break;
     case PROP_ENABLE_RUNNING_OF_INSECURE_CONTENT:
         priv->enableRunningOfInsecureContent = g_value_get_boolean(value);
+        break;
+    case PROP_ENABLE_MEDIA_SOURCE:
+        priv->enableMediaSource = g_value_get_boolean(value);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1397,9 +1409,6 @@ static void webkit_web_settings_get_property(GObject* object, guint prop_id, GVa
     case PROP_ENABLE_SMOOTH_SCROLLING:
         g_value_set_boolean(value, priv->enableSmoothScrolling);
         break;
-    case PROP_ENABLE_CSS_SHADERS:
-        g_value_set_boolean(value, priv->enableCSSShaders);
-        break;
     case PROP_MEDIA_PLAYBACK_REQUIRES_USER_GESTURE:
         g_value_set_boolean(value, priv->mediaPlaybackRequiresUserGesture);
         break;
@@ -1411,6 +1420,9 @@ static void webkit_web_settings_get_property(GObject* object, guint prop_id, GVa
         break;
     case PROP_ENABLE_RUNNING_OF_INSECURE_CONTENT:
         g_value_set_boolean(value, priv->enableRunningOfInsecureContent);
+        break;
+    case PROP_ENABLE_MEDIA_SOURCE:
+        g_value_set_boolean(value, priv->enableMediaSource);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1442,9 +1454,9 @@ WebKitWebSettings* webkit_web_settings_new()
 WebKitWebSettings* webkit_web_settings_copy(WebKitWebSettings* original)
 {
     unsigned numberOfProperties = 0;
-    GOwnPtr<GParamSpec*> properties(g_object_class_list_properties(
+    GUniquePtr<GParamSpec*> properties(g_object_class_list_properties(
         G_OBJECT_CLASS(WEBKIT_WEB_SETTINGS_GET_CLASS(original)), &numberOfProperties));
-    GOwnPtr<GParameter> parameters(g_new0(GParameter, numberOfProperties));
+    GUniquePtr<GParameter> parameters(g_new0(GParameter, numberOfProperties));
 
     for (size_t i = 0; i < numberOfProperties; i++) {
         GParamSpec* property = properties.get()[i];
@@ -1492,121 +1504,6 @@ const gchar* webkit_web_settings_get_user_agent(WebKitWebSettings* webSettings)
     return webSettings->priv->userAgent.data();
 }
 
-static void initializeDomainsList(HashSet<String>& googleDomains)
-{
-    // Google search domains.
-    googleDomains.add("biz");
-    googleDomains.add("com");
-    googleDomains.add("net");
-    googleDomains.add("org");
-    googleDomains.add("ae");
-    googleDomains.add("ag");
-    googleDomains.add("am");
-    googleDomains.add("at");
-    googleDomains.add("az");
-    googleDomains.add("be");
-    googleDomains.add("bi");
-    googleDomains.add("ca");
-    googleDomains.add("cc");
-    googleDomains.add("cd");
-    googleDomains.add("cg");
-    googleDomains.add("ch");
-    googleDomains.add("cl");
-    googleDomains.add("com.br");
-    googleDomains.add("com.do");
-    googleDomains.add("co.uk");
-    googleDomains.add("co.kr");
-    googleDomains.add("co.jp");
-    googleDomains.add("de");
-    googleDomains.add("dj");
-    googleDomains.add("dk");
-    googleDomains.add("ee");
-    googleDomains.add("es");
-    googleDomains.add("fi");
-    googleDomains.add("fm");
-    googleDomains.add("fr");
-    googleDomains.add("gg");
-    googleDomains.add("gl");
-    googleDomains.add("gm");
-    googleDomains.add("gs");
-    googleDomains.add("hn");
-    googleDomains.add("hu");
-    googleDomains.add("ie");
-    googleDomains.add("it");
-    googleDomains.add("je");
-    googleDomains.add("kz");
-    googleDomains.add("li");
-    googleDomains.add("lt");
-    googleDomains.add("lu");
-    googleDomains.add("lv");
-    googleDomains.add("ma");
-    googleDomains.add("ms");
-    googleDomains.add("mu");
-    googleDomains.add("mw");
-    googleDomains.add("nl");
-    googleDomains.add("no");
-    googleDomains.add("nu");
-    googleDomains.add("pl");
-    googleDomains.add("pn");
-    googleDomains.add("pt");
-    googleDomains.add("ru");
-    googleDomains.add("rw");
-    googleDomains.add("sh");
-    googleDomains.add("sk");
-    googleDomains.add("sm");
-    googleDomains.add("st");
-    googleDomains.add("td");
-    googleDomains.add("tk");
-    googleDomains.add("tp");
-    googleDomains.add("tv");
-    googleDomains.add("us");
-    googleDomains.add("uz");
-    googleDomains.add("ws");
-}
-
-static void initializeOtherGoogleDomains(Vector<String>& otherGoogleDomains)
-{
-    otherGoogleDomains.append("gmail.com");
-    otherGoogleDomains.append("youtube.com");
-    otherGoogleDomains.append("gstatic.com");
-    otherGoogleDomains.append("ytimg.com");
-}
-
-static bool isGoogleDomain(String host)
-{
-    DEFINE_STATIC_LOCAL(HashSet<String>, googleDomains, ());
-    DEFINE_STATIC_LOCAL(Vector<String>, otherGoogleDomains, ());
-
-    if (googleDomains.isEmpty())
-        initializeDomainsList(googleDomains);
-
-    if (otherGoogleDomains.isEmpty())
-        initializeOtherGoogleDomains(otherGoogleDomains);
-
-    // First check if this is one of the various google.com international domains.
-    int position = host.find(".google.");
-    if (position > 0 && googleDomains.contains(host.substring(position + sizeof(".google.") - 1)))
-        return true;
-
-    // Then we check the possibility of it being one of the other, .com-only google domains.
-    for (unsigned int i = 0; i < otherGoogleDomains.size(); i++) {
-        if (host.endsWith(otherGoogleDomains.at(i)))
-            return true;
-    }
-
-    return false;
-}
-
-static String userAgentForURL(const KURL& url)
-{
-    // For Google domains, drop the browser's custom User Agent string, and use the
-    // standard Chrome one, so they don't give us a broken experience.
-    if (isGoogleDomain(url.host()))
-        return standardUserAgent();
-
-    return String();
-}
-
 /*
  * Private usage only.
  * webkitWebSettingsUserAgentForURI:
@@ -1632,14 +1529,13 @@ static String userAgentForURL(const KURL& url)
  * Returns: (transfer full): a newly allocated string containing the
  * User-Agent that will be sent for the given URI.
  */
-char* webkitWebSettingsUserAgentForURI(WebKitWebSettings* webSettings, const char* uri)
+char* webkitWebSettingsUserAgentForURI(WebKitWebSettings* webSettings, const WebCore::URL& url)
 {
-    if (webSettings->priv->enableSiteSpecificQuirks) {
-        String userAgentString = userAgentForURL(WebCore::KURL(WebCore::KURL(), String::fromUTF8(uri)));
+    if (webSettings->priv->enableSiteSpecificQuirks && !url.isNull()) {
+        String userAgentString = WebCore::standardUserAgentForURL(url);
         if (!userAgentString.isEmpty())
             return g_strdup(userAgentString.utf8().data());
     }
-
     return g_strdup(webkit_web_settings_get_user_agent(webSettings));
 }
 

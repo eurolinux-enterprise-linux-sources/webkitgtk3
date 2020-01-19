@@ -30,16 +30,19 @@
 #include <wtf/Forward.h>
 
 namespace WebCore {
+
 class CachedCSSStyleSheet;
+class URL;
 
 class CachedStyleSheetClient : public CachedResourceClient {
 public:
     virtual ~CachedStyleSheetClient() { }
     static CachedResourceClientType expectedType() { return StyleSheetType; }
-    virtual CachedResourceClientType resourceClientType() const { return expectedType(); }
-    virtual void setCSSStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* charset */, const CachedCSSStyleSheet*) { }
-    virtual void setXSLStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* sheet */) { }
+    virtual CachedResourceClientType resourceClientType() const override { return expectedType(); }
+    virtual void setCSSStyleSheet(const String& /* href */, const URL& /* baseURL */, const String& /* charset */, const CachedCSSStyleSheet*) { }
+    virtual void setXSLStyleSheet(const String& /* href */, const URL& /* baseURL */, const String& /* sheet */) { }
 };
-}
+
+} // namespace WebCore
 
 #endif // CachedStyleSheetClient_h

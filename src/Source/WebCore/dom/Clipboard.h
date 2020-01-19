@@ -2,7 +2,7 @@
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2008, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -29,102 +29,95 @@
 #include "DragActions.h"
 #include "DragImage.h"
 #include "IntPoint.h"
-#include "Node.h"
+#include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
+    class CachedImage;
     class DataTransferItemList;
     class DragData;
+    class DragImageLoader;
+    class Element;
     class FileList;
-    class Frame;
+    class Pasteboard;
 
-    // State available during IE's events for drag and drop and copy/paste
     class Clipboard : public RefCounted<Clipboard> {
     public:
-        // Whether this clipboard is serving a drag-drop or copy-paste request.
-        enum ClipboardType {
-            CopyAndPaste,
-            DragAndDrop,
-        };
-        
-        static PassRefPtr<Clipboard> create(ClipboardAccessPolicy, DragData*, Frame*);
+        static PassRefPtr<Clipboard> createForCopyAndPaste(ClipboardAccessPolicy);
 
-        virtual ~Clipboard() { }
+        ~Clipboard();
 
-        bool isForCopyAndPaste() const { return m_clipboardType == CopyAndPaste; }
-        bool isForDragAndDrop() const { return m_clipboardType == DragAndDrop; }
-
-        String dropEffect() const { return dropEffectIsUninitialized() ? "none" : m_dropEffect; }
+        String dropEffect() const;
         void setDropEffect(const String&);
-        bool dropEffectIsUninitialized() const { return m_dropEffect == "uninitialized"; }
-        String effectAllowed() const { return m_effectAllowed; }
+
+        String effectAllowed() const;
         void setEffectAllowed(const String&);
-    
-        virtual void clearData(const String& type) = 0;
-        virtual void clearAllData() = 0;
-        virtual String getData(const String& type) const = 0;
-        virtual bool setData(const String& type, const String& data) = 0;
-    
-        // extensions beyond IE's API
-        virtual ListHashSet<String> types() const = 0;
-        virtual PassRefPtr<FileList> files() const = 0;
 
-        IntPoint dragLocation() const { return m_dragLoc; }
-        CachedImage* dragImage() const { return m_dragImage.get(); }
-        virtual void setDragImage(CachedImage*, const IntPoint&) = 0;
-        Node* dragImageElement() const { return m_dragImageElement.get(); }
-        virtual void setDragImageElement(Node*, const IntPoint&) = 0;
-        
-        virtual DragImageRef createDragImage(IntPoint& dragLocation) const = 0;
-#if ENABLE(DRAG_SUPPORT)
-        virtual void declareAndWriteDragImage(Element*, const KURL&, const String& title, Frame*) = 0;
+        Vector<String> types() const;
+
+        PassRefPtr<FileList> files() const;
+
+        void clearData(const String& type);
+        void clearData();
+
+        String getData(const String& type) const;
+
+        bool setData(const String& type, const String& data);
+
+        void setDragImage(Element*, int x, int y);
+
+#if ENABLE(DATA_TRANSFER_ITEMS)
+        PassRefPtr<DataTransferItemList> items() = 0;
 #endif
-        virtual void writeURL(const KURL&, const String&, Frame*) = 0;
-        virtual void writeRange(Range*, Frame*) = 0;
-        virtual void writePlainText(const String&) = 0;
 
-        virtual bool hasData() = 0;
-        
         void setAccessPolicy(ClipboardAccessPolicy);
-        ClipboardAccessPolicy policy() const { return m_policy; }
+        bool canReadTypes() const;
+        bool canReadData() const;
+        bool canWriteData() const;
+
+        Pasteboard& pasteboard() { return *m_pasteboard; }
+
+#if ENABLE(DRAG_SUPPORT)
+        static PassRefPtr<Clipboard> createForDragAndDrop();
+        static PassRefPtr<Clipboard> createForDragAndDrop(ClipboardAccessPolicy, const DragData&);
+
+        bool dropEffectIsUninitialized() const { return m_dropEffect == "uninitialized"; }
 
         DragOperation sourceOperation() const;
         DragOperation destinationOperation() const;
         void setSourceOperation(DragOperation);
         void setDestinationOperation(DragOperation);
-        
-        bool hasDropZoneType(const String&);
-        
-        void setDragHasStarted() { m_dragStarted = true; }
 
-#if ENABLE(DATA_TRANSFER_ITEMS)
-        virtual PassRefPtr<DataTransferItemList> items() = 0;
+        void setDragHasStarted() { m_shouldUpdateDragImage = true; }
+        DragImageRef createDragImage(IntPoint& dragLocation) const;
+        void updateDragImage();
 #endif
-        
-    protected:
-        Clipboard(ClipboardAccessPolicy, ClipboardType);
 
-        bool dragStarted() const { return m_dragStarted; }
-        
     private:
-        bool hasFileOfType(const String&) const;
-        bool hasStringOfType(const String&) const;
-        
+        enum ClipboardType { CopyAndPaste, DragAndDrop };
+        Clipboard(ClipboardAccessPolicy, PassOwnPtr<Pasteboard>, ClipboardType = CopyAndPaste, bool forFileDrag = false);
+
+#if ENABLE(DRAG_SUPPORT)
+        bool canSetDragImage() const;
+#endif
+
         ClipboardAccessPolicy m_policy;
+        OwnPtr<Pasteboard> m_pasteboard;
+
+#if ENABLE(DRAG_SUPPORT)
+        bool m_forDrag;
+        bool m_forFileDrag;
         String m_dropEffect;
         String m_effectAllowed;
-        bool m_dragStarted;
-        ClipboardType m_clipboardType;
-        
-    protected:
-        IntPoint m_dragLoc;
+        bool m_shouldUpdateDragImage;
+        IntPoint m_dragLocation;
         CachedResourceHandle<CachedImage> m_dragImage;
-        RefPtr<Node> m_dragImageElement;
+        RefPtr<Element> m_dragImageElement;
+        OwnPtr<DragImageLoader> m_dragImageLoader;
+#endif
     };
 
-    DragOperation convertDropZoneOperationToDragOperation(const String& dragOperation);
-    String convertDragOperationToDropZoneOperation(DragOperation);
-    
 } // namespace WebCore
 
 #endif // Clipboard_h

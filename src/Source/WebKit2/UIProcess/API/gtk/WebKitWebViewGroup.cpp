@@ -20,7 +20,8 @@
 #include "config.h"
 #include "WebKitWebViewGroup.h"
 
-#include "ImmutableArray.h"
+#include "APIArray.h"
+#include "APIString.h"
 #include "WebKitPrivate.h"
 #include "WebKitSettingsPrivate.h"
 #include "WebKitWebViewGroupPrivate.h"
@@ -226,17 +227,17 @@ void webkit_web_view_group_set_settings(WebKitWebViewGroup* group, WebKitSetting
 COMPILE_ASSERT_MATCHING_ENUM(WEBKIT_INJECTED_CONTENT_FRAMES_ALL, WebCore::InjectInAllFrames);
 COMPILE_ASSERT_MATCHING_ENUM(WEBKIT_INJECTED_CONTENT_FRAMES_TOP_ONLY, WebCore::InjectInTopFrameOnly);
 
-static PassRefPtr<ImmutableArray> toImmutableArray(const char* const* list)
+static PassRefPtr<API::Array> toAPIArray(const char* const* list)
 {
     if (!list)
         return 0;
 
-    Vector<RefPtr<APIObject> > entries;
+    Vector<RefPtr<API::Object> > entries;
     while (*list) {
-        entries.append(WebString::createFromUTF8String(*list));
+        entries.append(API::String::createFromUTF8String(*list));
         list++;
     }
-    return ImmutableArray::adopt(entries);
+    return API::Array::create(std::move(entries));
 }
 
 /**
@@ -246,7 +247,7 @@ static PassRefPtr<ImmutableArray> toImmutableArray(const char* const* list)
  * @base_uri: (allow-none): the base URI to use when processing the style_sheet contents or %NULL for about:blank
  * @whitelist: (array zero-terminated=1) (allow-none): a whitelist of URI patterns or %NULL
  * @blacklist: (array zero-terminated=1) (allow-none): a blacklist of URI patterns or %NULL
- * @injected_frames: a #WebKitInjectedFrames describing to which frames the style_sheet should apply
+ * @injected_frames: a #WebKitInjectedContentFrames describing to which frames the style_sheet should apply
  *
  * Inject an external style sheet into pages. It is possible to only apply the style sheet
  * to some URIs by passing non-null values for @whitelist or @blacklist. Passing a %NULL
@@ -260,8 +261,8 @@ void webkit_web_view_group_add_user_style_sheet(WebKitWebViewGroup* group, const
     g_return_if_fail(WEBKIT_IS_WEB_VIEW_GROUP(group));
     g_return_if_fail(source);
 
-    RefPtr<ImmutableArray> webWhitelist = toImmutableArray(whitelist);
-    RefPtr<ImmutableArray> webBlacklist = toImmutableArray(blacklist);
+    RefPtr<API::Array> webWhitelist = toAPIArray(whitelist);
+    RefPtr<API::Array> webBlacklist = toAPIArray(blacklist);
 
     // We always use UserStyleUserLevel to match the behavior of WKPageGroupAddUserStyleSheet.
     group->priv->pageGroup->addUserStyleSheet(
@@ -277,7 +278,7 @@ void webkit_web_view_group_add_user_style_sheet(WebKitWebViewGroup* group, const
  * webkit_web_view_group_remove_all_user_style_sheets:
  * @group: a #WebKitWebViewGroup
  *
- * Remove all style sheets previously injected into this #WebKitWebViewGroup
+ * Remove all style sheets previously injected into this #WebKitWebViewGroup 
  * via webkit_web_view_group_add_user_style_sheet().
  */
 void webkit_web_view_group_remove_all_user_style_sheets(WebKitWebViewGroup* group)

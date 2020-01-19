@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,9 +30,14 @@
 
 #include "AssemblerBuffer.h"
 #include "JITCompilationEffort.h"
+#include <limits.h>
 #include <stdint.h>
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
+
+#if USE(MASM_PROBE)
+#include <xmmintrin.h>
+#endif
 
 namespace JSC {
 
@@ -70,14 +75,92 @@ namespace X86Registers {
         xmm5,
         xmm6,
         xmm7,
+
+#if CPU(X86_64)
+        xmm8,
+        xmm9,
+        xmm10,
+        xmm11,
+        xmm12,
+        xmm13,
+        xmm14,
+        xmm15,
+#endif
     } XMMRegisterID;
+
+#if USE(MASM_PROBE)
+    #define FOR_EACH_CPU_REGISTER(V) \
+        FOR_EACH_CPU_GPREGISTER(V) \
+        FOR_EACH_CPU_SPECIAL_REGISTER(V) \
+        FOR_EACH_CPU_FPREGISTER(V)
+
+    #define FOR_EACH_CPU_GPREGISTER(V) \
+        V(void*, eax) \
+        V(void*, ebx) \
+        V(void*, ecx) \
+        V(void*, edx) \
+        V(void*, esi) \
+        V(void*, edi) \
+        V(void*, ebp) \
+        V(void*, esp) \
+        FOR_EACH_X86_64_CPU_GPREGISTER(V)
+
+    #define FOR_EACH_CPU_SPECIAL_REGISTER(V) \
+        V(void*, eip) \
+        V(void*, eflags) \
+
+    #define FOR_EACH_CPU_FPREGISTER(V) \
+        V(__m128, xmm0) \
+        V(__m128, xmm1) \
+        V(__m128, xmm2) \
+        V(__m128, xmm3) \
+        V(__m128, xmm4) \
+        V(__m128, xmm5) \
+        V(__m128, xmm6) \
+        V(__m128, xmm7)
+
+#if CPU(X86)
+    #define FOR_EACH_X86_64_CPU_GPREGISTER(V) // Nothing to add.
+#elif CPU(X86_64)
+    #define FOR_EACH_X86_64_CPU_GPREGISTER(V) \
+        V(void*, r8) \
+        V(void*, r9) \
+        V(void*, r10) \
+        V(void*, r11) \
+        V(void*, r12) \
+        V(void*, r13) \
+        V(void*, r14) \
+        V(void*, r15)
+#endif // CPU(X86_64)
+#endif // USE(MASM_PROBE)
 }
 
 class X86Assembler {
 public:
     typedef X86Registers::RegisterID RegisterID;
+    
+    static RegisterID firstRegister() { return X86Registers::eax; }
+    static RegisterID lastRegister()
+    {
+#if CPU(X86_64)
+        return X86Registers::r15;
+#else
+        return X86Registers::edi;
+#endif
+    }
+    
     typedef X86Registers::XMMRegisterID XMMRegisterID;
     typedef XMMRegisterID FPRegisterID;
+    
+    static FPRegisterID firstFPRegister() { return X86Registers::xmm0; }
+    static FPRegisterID lastFPRegister()
+    {
+#if CPU(X86_64)
+        return X86Registers::xmm15;
+#else
+        return X86Registers::xmm7;
+#endif
+    }
 
     typedef enum {
         ConditionO,
@@ -185,6 +268,7 @@ private:
         OP2_MOVD_EdVd       = 0x7E,
         OP2_JCC_rel32       = 0x80,
         OP_SETCC            = 0x90,
+        OP2_3BYTE_ESCAPE    = 0xAE,
         OP2_IMUL_GvEv       = 0xAF,
         OP2_MOVZX_GvEb      = 0xB6,
         OP2_MOVSX_GvEb      = 0xBE,
@@ -195,6 +279,10 @@ private:
         OP2_PSRLQ_UdqIb     = 0x73,
         OP2_POR_VdqWdq      = 0XEB,
     } TwoByteOpcodeID;
+    
+    typedef enum {
+        OP3_MFENCE          = 0xF0,
+    } ThreeByteOpcodeID;
 
     TwoByteOpcodeID jccRel32(Condition cond)
     {
@@ -251,6 +339,8 @@ public:
         , m_indexOfTailOfLastWatchpoint(INT_MIN)
     {
     }
+    
+    AssemblerBuffer& buffer() { return m_formatter.m_buffer; }
 
     // Stack operations:
 
@@ -449,6 +539,30 @@ public:
         }
     }
 #endif
+
+    void dec_r(RegisterID dst)
+    {
+        m_formatter.oneByteOp(OP_GROUP5_Ev, GROUP1_OP_OR, dst);
+    }
+
+#if CPU(X86_64)
+    void decq_r(RegisterID dst)
+    {
+        m_formatter.oneByteOp64(OP_GROUP5_Ev, GROUP1_OP_OR, dst);
+    }
+#endif // CPU(X86_64)
+
+    void inc_r(RegisterID dst)
+    {
+        m_formatter.oneByteOp(OP_GROUP5_Ev, GROUP1_OP_ADD, dst);
+    }
+
+#if CPU(X86_64)
+    void incq_r(RegisterID dst)
+    {
+        m_formatter.oneByteOp64(OP_GROUP5_Ev, GROUP1_OP_ADD, dst);
+    }
+#endif // CPU(X86_64)
 
     void negl_r(RegisterID dst)
     {
@@ -745,12 +859,29 @@ public:
             m_formatter.immediate8(imm);
         }
     }
-#endif
+
+    void shlq_i8r(int imm, RegisterID dst)
+    {
+        if (imm == 1)
+            m_formatter.oneByteOp64(OP_GROUP2_Ev1, GROUP2_OP_SHL, dst);
+        else {
+            m_formatter.oneByteOp64(OP_GROUP2_EvIb, GROUP2_OP_SHL, dst);
+            m_formatter.immediate8(imm);
+        }
+    }
+#endif // CPU(X86_64)
 
     void imull_rr(RegisterID src, RegisterID dst)
     {
         m_formatter.twoByteOp(OP2_IMUL_GvEv, dst, src);
     }
+
+#if CPU(X86_64)
+    void imulq_rr(RegisterID src, RegisterID dst)
+    {
+        m_formatter.twoByteOp64(OP2_IMUL_GvEv, dst, src);
+    }
+#endif // CPU(X86_64)
 
     void imull_mr(int offset, RegisterID base, RegisterID dst)
     {
@@ -859,6 +990,11 @@ public:
     void cmpq_rm(RegisterID src, int offset, RegisterID base)
     {
         m_formatter.oneByteOp64(OP_CMP_EvGv, src, base, offset);
+    }
+
+    void cmpq_rm(RegisterID src, int offset, RegisterID base, RegisterID index, int scale)
+    {
+        m_formatter.oneByteOp64(OP_CMP_EvGv, src, base, index, scale, offset);
     }
 
     void cmpq_mr(int offset, RegisterID base, RegisterID src)
@@ -1177,6 +1313,18 @@ public:
         m_formatter.oneByteOp(OP_GROUP11_EvIb, GROUP11_MOV, base, index, scale, offset);
         m_formatter.immediate8(imm);
     }
+
+#if !CPU(X86_64)
+    void movb_rm(RegisterID src, const void* addr)
+    {
+        m_formatter.oneByteOp(OP_MOV_EbGb, src, addr);
+    }
+#endif
+    
+    void movb_rm(RegisterID src, int offset, RegisterID base)
+    {
+        m_formatter.oneByteOp8(OP_MOV_EbGb, src, base, offset);
+    }
     
     void movb_rm(RegisterID src, int offset, RegisterID base, RegisterID index, int scale)
     {
@@ -1323,6 +1471,13 @@ public:
     {
         m_formatter.twoByteOp(OP2_MOVZX_GvEb, dst, base, index, scale, offset);
     }
+
+#if !CPU(X86_64)
+    void movzbl_mr(const void* address, RegisterID dst)
+    {
+        m_formatter.twoByteOp(OP2_MOVZX_GvEb, dst, address);
+    }
+#endif
 
     void movsbl_mr(int offset, RegisterID base, RegisterID dst)
     {
@@ -1526,6 +1681,14 @@ public:
         m_formatter.prefix(PRE_SSE_F2);
         m_formatter.twoByteOp(OP2_CVTSI2SD_VsdEd, (RegisterID)dst, src);
     }
+
+#if CPU(X86_64)
+    void cvtsi2sdq_rr(RegisterID src, XMMRegisterID dst)
+    {
+        m_formatter.prefix(PRE_SSE_F2);
+        m_formatter.twoByteOp64(OP2_CVTSI2SD_VsdEd, (RegisterID)dst, src);
+    }
+#endif
 
     void cvtsi2sd_mr(int offset, RegisterID base, XMMRegisterID dst)
     {
@@ -1740,7 +1903,7 @@ public:
         m_formatter.prefix(PRE_SSE_F2);
         m_formatter.twoByteOp(OP2_SQRTSD_VsdWsd, (RegisterID)dst, (RegisterID)src);
     }
-
+    
     // Misc instructions:
 
     void int3()
@@ -1756,6 +1919,11 @@ public:
     void predictNotTaken()
     {
         m_formatter.prefix(PRE_PREDICT_BRANCH_NOT_TAKEN);
+    }
+    
+    void mfence()
+    {
+        m_formatter.threeByteOp(OP3_MFENCE);
     }
 
     // Assembler admin methods:
@@ -1991,16 +2159,16 @@ public:
         return b.m_offset - a.m_offset;
     }
     
-    PassRefPtr<ExecutableMemoryHandle> executableCopy(JSGlobalData& globalData, void* ownerUID, JITCompilationEffort effort)
-    {
-        return m_formatter.executableCopy(globalData, ownerUID, effort);
-    }
-
     unsigned debugOffset() { return m_formatter.debugOffset(); }
 
     void nop()
     {
         m_formatter.oneByteOp(OP_NOP);
+    }
+    
+    static void fillNops(void* base, size_t size)
+    {
+        memset(base, OP_NOP, size);
     }
 
     // This is a no-op on x86
@@ -2173,6 +2341,14 @@ private:
         }
 #endif
 
+        void threeByteOp(ThreeByteOpcodeID opcode)
+        {
+            m_buffer.ensureSpace(maxInstructionSize);
+            m_buffer.putByteUnchecked(OP_2BYTE_ESCAPE);
+            m_buffer.putByteUnchecked(OP2_3BYTE_ESCAPE);
+            m_buffer.putByteUnchecked(opcode);
+        }
+
 #if CPU(X86_64)
         // Quad-word-sized operands:
         //
@@ -2285,6 +2461,14 @@ private:
             registerModRM(reg, rm);
         }
 
+        void oneByteOp8(OneByteOpcodeID opcode, int reg, RegisterID base, int offset)
+        {
+            m_buffer.ensureSpace(maxInstructionSize);
+            emitRexIf(byteRegRequiresRex(reg) || byteRegRequiresRex(base), reg, 0, base);
+            m_buffer.putByteUnchecked(opcode);
+            memoryModRM(reg, base, offset);
+        }
+
         void oneByteOp8(OneByteOpcodeID opcode, int reg, RegisterID base, RegisterID index, int scale, int offset)
         {
             m_buffer.ensureSpace(maxInstructionSize);
@@ -2348,11 +2532,6 @@ private:
         AssemblerLabel label() const { return m_buffer.label(); }
         bool isAligned(int alignment) const { return m_buffer.isAligned(alignment); }
         void* data() const { return m_buffer.data(); }
-
-        PassRefPtr<ExecutableMemoryHandle> executableCopy(JSGlobalData& globalData, void* ownerUID, JITCompilationEffort effort)
-        {
-            return m_buffer.executableCopy(globalData, ownerUID, effort);
-        }
 
         unsigned debugOffset() { return m_buffer.debugOffset(); }
 
@@ -2527,6 +2706,7 @@ private:
         }
 #endif
 
+    public:
         AssemblerBuffer m_buffer;
     } m_formatter;
     int m_indexOfLastWatchpoint;

@@ -45,41 +45,11 @@ Screen::Screen(Frame* frame)
 {
 }
 
-unsigned Screen::horizontalDPI() const
-{
-    if (!m_frame)
-        return 0;
-
-    // Used by the testing system, can be set from internals.
-    IntSize override = m_frame->page()->settings()->resolutionOverride();
-    if (!override.isEmpty())
-        return override.width();
-
-    // The DPI is defined as dots per CSS inch and thus not device inch.
-    return m_frame->page()->deviceScaleFactor() * 96;
-}
-
-unsigned Screen::verticalDPI() const
-{
-    // The DPI is defined as dots per CSS inch and thus not device inch.
-    if (!m_frame)
-        return 0;
-
-    // Used by the testing system, can be set from internals.
-    IntSize override = m_frame->page()->settings()->resolutionOverride();
-    if (!override.isEmpty())
-        return override.height();
-
-    // The DPI is defined as dots per CSS inch and thus not device inch.
-    return m_frame->page()->deviceScaleFactor() * 96;
-}
-
 unsigned Screen::height() const
 {
     if (!m_frame)
         return 0;
     long height = static_cast<long>(screenRect(m_frame->view()).height());
-    InspectorInstrumentation::applyScreenHeightOverride(m_frame, &height);
     return static_cast<unsigned>(height);
 }
 
@@ -88,7 +58,6 @@ unsigned Screen::width() const
     if (!m_frame)
         return 0;
     long width = static_cast<long>(screenRect(m_frame->view()).width());
-    InspectorInstrumentation::applyScreenWidthOverride(m_frame, &width);
     return static_cast<unsigned>(width);
 }
 

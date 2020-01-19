@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 Google, Inc. All Rights Reserved.
+ * Copyright (C) 2013 Apple, Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,7 +38,7 @@
 static const int defaultParserChunkSize = 4096;
 
 // defaultParserTimeLimit is the seconds the parser will run in one write() call
-// before yielding.  Inline <script> execution can cause it to excede the limit.
+// before yielding. Inline <script> execution can cause it to exceed the limit.
 // FIXME: We would like this value to be 0.2.
 static const double defaultParserTimeLimit = 0.500;
 
@@ -93,12 +94,15 @@ PumpSession::~PumpSession()
 {
 }
 
-HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser* parser)
+HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser& parser)
     : m_parser(parser)
-    , m_parserTimeLimit(parserTimeLimit(m_parser->document()->page()))
-    , m_parserChunkSize(parserChunkSize(m_parser->document()->page()))
+    , m_parserTimeLimit(parserTimeLimit(m_parser.document()->page()))
+    , m_parserChunkSize(parserChunkSize(m_parser.document()->page()))
     , m_continueNextChunkTimer(this, &HTMLParserScheduler::continueNextChunkTimerFired)
     , m_isSuspendedWithActiveTimer(false)
+#if !ASSERT_DISABLED
+    , m_suspended(false)
+#endif
 {
 }
 
@@ -107,23 +111,25 @@ HTMLParserScheduler::~HTMLParserScheduler()
     m_continueNextChunkTimer.stop();
 }
 
-void HTMLParserScheduler::continueNextChunkTimerFired(Timer<HTMLParserScheduler>* timer)
+void HTMLParserScheduler::continueNextChunkTimerFired(Timer<HTMLParserScheduler>& timer)
 {
-    ASSERT_UNUSED(timer, timer == &m_continueNextChunkTimer);
+    ASSERT(!m_suspended);
+    ASSERT_UNUSED(timer, &timer == &m_continueNextChunkTimer);
+
     // FIXME: The timer class should handle timer priorities instead of this code.
     // If a layout is scheduled, wait again to let the layout timer run first.
-    if (m_parser->document()->isLayoutTimerActive()) {
+    if (m_parser.document()->isLayoutTimerActive()) {
         m_continueNextChunkTimer.startOneShot(0);
         return;
     }
-    m_parser->resumeParsingAfterYield();
+    m_parser.resumeParsingAfterYield();
 }
 
 void HTMLParserScheduler::checkForYieldBeforeScript(PumpSession& session)
 {
     // If we've never painted before and a layout is pending, yield prior to running
     // scripts to give the page a chance to paint earlier.
-    Document* document = m_parser->document();
+    Document* document = m_parser.document();
     bool needsFirstPaint = document->view() && !document->view()->hasEverPainted();
     if (needsFirstPaint && document->isLayoutTimerActive())
         session.needsYield = true;
@@ -132,13 +138,18 @@ void HTMLParserScheduler::checkForYieldBeforeScript(PumpSession& session)
 
 void HTMLParserScheduler::scheduleForResume()
 {
+    ASSERT(!m_suspended);
     m_continueNextChunkTimer.startOneShot(0);
 }
 
-
 void HTMLParserScheduler::suspend()
 {
+    ASSERT(!m_suspended);
     ASSERT(!m_isSuspendedWithActiveTimer);
+#if !ASSERT_DISABLED
+    m_suspended = true;
+#endif
+
     if (!m_continueNextChunkTimer.isActive())
         return;
     m_isSuspendedWithActiveTimer = true;
@@ -147,7 +158,12 @@ void HTMLParserScheduler::suspend()
 
 void HTMLParserScheduler::resume()
 {
+    ASSERT(m_suspended);
     ASSERT(!m_continueNextChunkTimer.isActive());
+#if !ASSERT_DISABLED
+    m_suspended = false;
+#endif
+
     if (!m_isSuspendedWithActiveTimer)
         return;
     m_isSuspendedWithActiveTimer = false;

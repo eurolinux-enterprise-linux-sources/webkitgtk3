@@ -27,13 +27,14 @@
 #define IntRect_h
 
 #include "IntPoint.h"
+#include "LayoutUnit.h"
 #include <wtf/Vector.h>
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGRect CGRect;
 #endif
 
-#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN)) || (PLATFORM(QT) && USE(QTKIT))
+#if PLATFORM(MAC) && !PLATFORM(IOS)
 #ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
 typedef struct CGRect NSRect;
 #else
@@ -41,37 +42,24 @@ typedef struct _NSRect NSRect;
 #endif
 #endif
 
+#if PLATFORM(IOS)
+#ifndef NSRect
+#define NSRect CGRect
+#endif
+#endif
+
 #if PLATFORM(WIN)
 typedef struct tagRECT RECT;
-#elif PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QRect;
-QT_END_NAMESPACE
 #elif PLATFORM(GTK)
 #ifdef GTK_API_VERSION_2
 typedef struct _GdkRectangle GdkRectangle;
 #endif
 #elif PLATFORM(EFL)
 typedef struct _Eina_Rectangle Eina_Rectangle;
-#elif PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class IntRect;
-}
-}
 #endif
 
 #if USE(CAIRO)
 typedef struct _cairo_rectangle_int cairo_rectangle_int_t;
-#endif
-
-#if PLATFORM(WX)
-class wxRect;
-#endif
-
-#if USE(SKIA)
-struct SkRect;
-struct SkIRect;
 #endif
 
 namespace WebCore {
@@ -103,17 +91,6 @@ public:
     int maxY() const { return y() + height(); }
     int width() const { return m_size.width(); }
     int height() const { return m_size.height(); }
-
-    // FIXME: These methods are here only to ease the transition to sub-pixel layout. They should
-    // be removed when we close http://webkit.org/b/60318
-    int pixelSnappedX() const { return m_location.x(); }
-    int pixelSnappedY() const { return m_location.y(); }
-    int pixelSnappedMaxX() const { return x() + width(); }
-    int pixelSnappedMaxY() const { return y() + height(); }
-    int pixelSnappedWidth() const { return m_size.width(); }
-    int pixelSnappedHeight() const { return m_size.height(); }
-    IntPoint pixelSnappedLocation() const { return location(); }
-    IntSize pixelSnappedSize() const { return size(); }
 
     void setX(int x) { m_location.setX(x); }
     void setY(int y) { m_location.setY(y); }
@@ -194,17 +171,9 @@ public:
 
     IntRect transposedRect() const { return IntRect(m_location.transposedPoint(), m_size.transposedSize()); }
 
-#if PLATFORM(WX)
-    IntRect(const wxRect&);
-    operator wxRect() const;
-#endif
-
 #if PLATFORM(WIN)
     IntRect(const RECT&);
     operator RECT() const;
-#elif PLATFORM(QT)
-    IntRect(const QRect&);
-    operator QRect() const;
 #elif PLATFORM(GTK)
 #ifdef GTK_API_VERSION_2
     IntRect(const GdkRectangle&);
@@ -220,26 +189,20 @@ public:
     operator cairo_rectangle_int_t() const;
 #endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
     operator CGRect() const;
 #endif
 
-#if USE(SKIA)
-    IntRect(const SkIRect&);
-    operator SkRect() const;
-    operator SkIRect() const;
-#endif
-
-#if (PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))) \
-        && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES) \
-        || (PLATFORM(QT) && USE(QTKIT))
+#if !PLATFORM(IOS)
+#if (PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES))
     operator NSRect() const;
 #endif
+#endif // !PLATFORM(IOS)
 
-#if PLATFORM(BLACKBERRY)
-    IntRect(const BlackBerry::Platform::IntRect&);
-    operator BlackBerry::Platform::IntRect() const;
-#endif
+    void dump(PrintStream& out) const;
+
+    static IntRect infiniteRect();
+    bool isInfinite() const;
 
 private:
     IntPoint m_location;
@@ -272,21 +235,38 @@ inline bool operator!=(const IntRect& a, const IntRect& b)
     return a.location() != b.location() || a.size() != b.size();
 }
 
-// FIXME: This method is here only to ease the transition to sub-pixel layout. It should
-// be removed when we close http://webkit.org/b/60318
-inline IntRect enclosingIntRect(const IntRect& rect)
+inline IntRect IntRect::infiniteRect()
 {
-    return rect;
+    static IntRect infiniteRect(-LayoutUnit::max() / 2, -LayoutUnit::max() / 2, LayoutUnit::max(), LayoutUnit::max());
+    return infiniteRect;
 }
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+inline bool IntRect::isInfinite() const
+{
+    return *this == infiniteRect();
+}
+
+inline IntRect& operator-=(IntRect& r, const IntPoint& offset)
+{
+    r.move(-offset.x(), -offset.y());
+    return r;
+}
+
+inline IntRect operator-(const IntRect& r, const IntPoint& offset)
+{
+    IntRect t = r;
+    return t -= offset;
+}
+
+#if USE(CG)
 IntRect enclosingIntRect(const CGRect&);
 #endif
 
-#if (PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)) \
-        || (PLATFORM(CHROMIUM) && OS(DARWIN)) || (PLATFORM(QT) && USE(QTKIT))
+#if !PLATFORM(IOS)
+#if (PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES))
 IntRect enclosingIntRect(const NSRect&);
 #endif
+#endif // !PLATFORM(IOS)
 
 } // namespace WebCore
 

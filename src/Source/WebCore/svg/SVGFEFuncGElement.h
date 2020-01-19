@@ -26,13 +26,15 @@
 
 namespace WebCore {
 
-class SVGFEFuncGElement : public SVGComponentTransferFunctionElement {
+class SVGFEFuncGElement final : public SVGComponentTransferFunctionElement {
 public:
-    static PassRefPtr<SVGFEFuncGElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGFEFuncGElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGFEFuncGElement(const QualifiedName&, Document*);
+    SVGFEFuncGElement(const QualifiedName&, Document&);
 };
+
+NODE_TYPE_CASTS(SVGFEFuncGElement)
 
 } // namespace WebCore
 

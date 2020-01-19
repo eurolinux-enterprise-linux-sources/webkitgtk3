@@ -47,7 +47,7 @@
 #include <glib.h>
 #include <libsoup/soup.h>
 #include <webkit/webkit.h>
-#include <wtf/gobject/GOwnPtr.h>
+#include <wtf/gobject/GUniquePtr.h>
 #include <wtf/text/WTFString.h>
 
 extern "C" {
@@ -108,11 +108,6 @@ void TestRunner::keepWebHistory()
     // FIXME: implement
 }
 
-JSValueRef TestRunner::computedStyleIncludingVisitedInfo(JSContextRef context, JSValueRef value)
-{
-    return DumpRenderTreeSupportGtk::computedStyleIncludingVisitedInfo(context, value);
-}
-
 size_t TestRunner::webHistoryItemCount()
 {
     WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
@@ -127,12 +122,6 @@ size_t TestRunner::webHistoryItemCount()
             webkit_web_back_forward_list_get_forward_length(list);
 }
 
-JSRetainPtr<JSStringRef> TestRunner::platformName() const
-{
-    JSRetainPtr<JSStringRef> platformName(Adopt, JSStringCreateWithUTF8CString("gtk"));
-    return platformName;
-}
-
 void TestRunner::notifyDone()
 {
     if (m_waitToDump && !topLoadingFrame && !WorkQueue::shared()->count())
@@ -143,40 +132,19 @@ void TestRunner::notifyDone()
 
 JSStringRef TestRunner::pathToLocalResource(JSContextRef context, JSStringRef url)
 {
-    GOwnPtr<char> urlCString(JSStringCopyUTF8CString(url));
+    GUniquePtr<char> urlCString(JSStringCopyUTF8CString(url));
     if (!g_str_has_prefix(urlCString.get(), "file:///tmp/LayoutTests/"))
         return JSStringRetain(url);
 
     const char* layoutTestsSuffix = urlCString.get() + strlen("file:///tmp/");
-    GOwnPtr<char> testPath(g_build_filename(getTopLevelPath().data(), layoutTestsSuffix, NULL));
-    GOwnPtr<char> testURI(g_filename_to_uri(testPath.get(), 0, 0));
+    GUniquePtr<char> testPath(g_build_filename(getTopLevelPath().data(), layoutTestsSuffix, nullptr));
+    GUniquePtr<char> testURI(g_filename_to_uri(testPath.get(), 0, 0));
     return JSStringCreateWithUTF8CString(testURI.get());
-}
-
-static CString soupURIToStringPreservingPassword(SoupURI* soupURI)
-{
-    if (!soupURI->password) {
-        GOwnPtr<char> uriString(soup_uri_to_string(soupURI, FALSE));
-        return uriString.get();
-    }
-
-    // soup_uri_to_string does not insert the password into the string, so we need to create the
-    // URI string and then reinsert any credentials that were present in the SoupURI. All tests that
-    // use URL-embedded credentials use HTTP, so it's safe here.
-    GOwnPtr<char> password(soupURI->password);
-    GOwnPtr<char> user(soupURI->user);
-    soupURI->password = 0;
-    soupURI->user = 0;
-
-    GOwnPtr<char> uriString(soup_uri_to_string(soupURI, FALSE));
-    String absoluteURIWithoutCredentialString = String::fromUTF8(uriString.get());
-    String protocolAndCredential = String::format("http://%s:%s@", user ? user.get() : "", password.get());
-    return absoluteURIWithoutCredentialString.replace("http://", protocolAndCredential).utf8();
 }
 
 void TestRunner::queueLoad(JSStringRef url, JSStringRef target)
 {
-    GOwnPtr<gchar> relativeURL(JSStringCopyUTF8CString(url));
+    GUniquePtr<gchar> relativeURL(JSStringCopyUTF8CString(url));
     SoupURI* baseURI = soup_uri_new(webkit_web_frame_get_uri(mainFrame));
     SoupURI* absoluteURI = soup_uri_new_with_base(baseURI, relativeURL.get());
     soup_uri_free(baseURI);
@@ -251,9 +219,9 @@ void TestRunner::addOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStrin
 
 void TestRunner::removeOriginAccessWhitelistEntry(JSStringRef sourceOrigin, JSStringRef protocol, JSStringRef host, bool includeSubdomains)
 {
-    GOwnPtr<gchar> sourceOriginGChar(JSStringCopyUTF8CString(sourceOrigin));
-    GOwnPtr<gchar> protocolGChar(JSStringCopyUTF8CString(protocol));
-    GOwnPtr<gchar> hostGChar(JSStringCopyUTF8CString(host));
+    GUniquePtr<gchar> sourceOriginGChar(JSStringCopyUTF8CString(sourceOrigin));
+    GUniquePtr<gchar> protocolGChar(JSStringCopyUTF8CString(protocol));
+    GUniquePtr<gchar> hostGChar(JSStringCopyUTF8CString(host));
     DumpRenderTreeSupportGtk::removeWhiteListAccessFromOrigin(sourceOriginGChar.get(), protocolGChar.get(), hostGChar.get(), includeSubdomains);
 }
 
@@ -328,11 +296,6 @@ void TestRunner::setWindowIsKey(bool windowIsKey)
     // FIXME: implement
 }
 
-void TestRunner::setSmartInsertDeleteEnabled(bool flag)
-{
-    DumpRenderTreeSupportGtk::setSmartInsertDeleteEnabled(webkit_web_frame_get_web_view(mainFrame), flag);
-}
-
 static gboolean waitToDumpWatchdogFired(void*)
 {
     setWaitToDumpWatchdog(0);
@@ -345,8 +308,11 @@ void TestRunner::setWaitToDump(bool waitUntilDone)
     static const int timeoutSeconds = 30;
 
     m_waitToDump = waitUntilDone;
-    if (m_waitToDump && shouldSetWaitToDumpWatchdog())
-        setWaitToDumpWatchdog(g_timeout_add_seconds(timeoutSeconds, waitToDumpWatchdogFired, 0));
+    if (m_waitToDump && shouldSetWaitToDumpWatchdog()) {
+        guint id = g_timeout_add_seconds(timeoutSeconds, waitToDumpWatchdogFired, 0);
+        g_source_set_name_by_id(id, "[WebKit] waitToDumpWatchdogFired");
+        setWaitToDumpWatchdog(id);
+    }
 }
 
 int TestRunner::windowCount()
@@ -414,11 +380,6 @@ void TestRunner::setAuthorAndUserStylesEnabled(bool flag)
     // FIXME: implement
 }
 
-void TestRunner::setAutofilled(JSContextRef context, JSValueRef nodeObject, bool isAutofilled)
-{
-    DumpRenderTreeSupportGtk::setAutofilled(context, nodeObject, isAutofilled);
-}
-
 void TestRunner::setMockDeviceOrientation(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma)
 {
     // FIXME: Implement for DeviceOrientation layout tests.
@@ -442,7 +403,7 @@ void TestRunner::setMockGeolocationPositionUnavailableError(JSStringRef message)
         view = webkit_web_frame_get_web_view(mainFrame);
     ASSERT(view);
 
-    GOwnPtr<gchar> cMessage(JSStringCopyUTF8CString(message));
+    GUniquePtr<gchar> cMessage(JSStringCopyUTF8CString(message));
     DumpRenderTreeSupportGtk::setMockGeolocationPositionUnavailableError(view, cMessage.get());
 }
 
@@ -489,15 +450,10 @@ void TestRunner::setIconDatabaseEnabled(bool enabled)
 {
     WebKitIconDatabase* database = webkit_get_icon_database();
     if (enabled) {
-        GOwnPtr<gchar> iconDatabasePath(g_build_filename(g_get_tmp_dir(), "DumpRenderTree", "icondatabase", NULL));
+        GUniquePtr<gchar> iconDatabasePath(g_build_filename(g_get_tmp_dir(), "DumpRenderTree", "icondatabase", nullptr));
         webkit_icon_database_set_path(database, iconDatabasePath.get());
     } else
         webkit_icon_database_set_path(database, 0);
-}
-
-void TestRunner::setSelectTrailingWhitespaceEnabled(bool flag)
-{
-    DumpRenderTreeSupportGtk::setSelectTrailingWhitespaceEnabled(flag);
 }
 
 void TestRunner::setPopupBlockingEnabled(bool flag)
@@ -517,11 +473,6 @@ void TestRunner::setPluginsEnabled(bool flag)
 
     WebKitWebSettings* settings = webkit_web_view_get_settings(view);
     g_object_set(G_OBJECT(settings), "enable-plugins", flag, NULL);
-}
-
-bool TestRunner::elementDoesAutoCompleteForElementWithId(JSStringRef id) 
-{
-    return DumpRenderTreeSupportGtk::elementDoesAutoCompleteForElementWithId(mainFrame, id);
 }
 
 void TestRunner::execCommand(JSStringRef name, JSStringRef value)
@@ -547,7 +498,7 @@ bool TestRunner::findString(JSContextRef context, JSStringRef target, JSObjectRe
     if (!JSValueIsNumber(context, lengthValue))
         return false;
 
-    GOwnPtr<gchar> targetString(JSStringCopyUTF8CString(target));
+    GUniquePtr<gchar> targetString(JSStringCopyUTF8CString(target));
 
     size_t length = static_cast<size_t>(JSValueToNumber(context, lengthValue, 0));
     for (size_t i = 0; i < length; ++i) {
@@ -618,11 +569,6 @@ void TestRunner::clearAllApplicationCaches()
     // FIXME: Implement to support application cache quotas.
 }
 
-void TestRunner::setApplicationCacheOriginQuota(unsigned long long quota)
-{
-    // FIXME: Implement to support application cache quotas.
-}
-
 void TestRunner::clearApplicationCacheForOrigin(OpaqueJSString*)
 {
     // FIXME: Implement to support deleting all application caches for an origin.
@@ -685,7 +631,7 @@ void TestRunner::syncLocalStorage()
 
 void TestRunner::setDomainRelaxationForbiddenForURLScheme(bool forbidden, JSStringRef scheme)
 {
-    GOwnPtr<gchar> urlScheme(JSStringCopyUTF8CString(scheme));
+    GUniquePtr<gchar> urlScheme(JSStringCopyUTF8CString(scheme));
     DumpRenderTreeSupportGtk::setDomainRelaxationForbiddenForURLScheme(forbidden, urlScheme.get());
 }
 
@@ -713,8 +659,8 @@ static gboolean booleanFromValue(gchar* value)
 
 void TestRunner::overridePreference(JSStringRef key, JSStringRef value)
 {
-    GOwnPtr<gchar> originalName(JSStringCopyUTF8CString(key));
-    GOwnPtr<gchar> valueAsString(JSStringCopyUTF8CString(value));
+    GUniquePtr<gchar> originalName(JSStringCopyUTF8CString(key));
+    GUniquePtr<gchar> valueAsString(JSStringCopyUTF8CString(value));
 
     WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
     ASSERT(view);
@@ -741,6 +687,10 @@ void TestRunner::overridePreference(JSStringRef key, JSStringRef value)
         propertyName = "enable-webaudio";
     else if (g_str_equal(originalName.get(), "WebKitDisplayImagesKey"))
         propertyName = "auto-load-images";
+    else if (g_str_equal(originalName.get(), "WebKitShouldRespectImageOrientation"))
+        propertyName = "respect-image-orientation";
+    else if (g_str_equal(originalName.get(), "WebKitMediaSourceEnabled"))
+        propertyName = "enable-mediasource";
     else if (g_str_equal(originalName.get(), "WebKitTabToLinksPreferenceKey")) {
         DumpRenderTreeSupportGtk::setLinksIncludedInFocusChain(booleanFromValue(valueAsString.get()));
         return;
@@ -752,9 +702,6 @@ void TestRunner::overridePreference(JSStringRef key, JSStringRef value)
         return;
     } else if (g_str_equal(originalName.get(), "WebKitCSSRegionsEnabled")) {
         DumpRenderTreeSupportGtk::setCSSRegionsEnabled(webkit_web_frame_get_web_view(mainFrame), booleanFromValue(valueAsString.get()));
-        return;
-    } else if (g_str_equal(originalName.get(), "WebKitCSSCustomFilterEnabled")) {
-        DumpRenderTreeSupportGtk::setCSSCustomFilterEnabled(webkit_web_frame_get_web_view(mainFrame), booleanFromValue(valueAsString.get()));
         return;
     } else {
         fprintf(stderr, "TestRunner::overridePreference tried to override "
@@ -784,13 +731,13 @@ void TestRunner::overridePreference(JSStringRef key, JSStringRef value)
 
 void TestRunner::addUserScript(JSStringRef source, bool runAtStart, bool allFrames)
 {
-    GOwnPtr<gchar> sourceCode(JSStringCopyUTF8CString(source));
+    GUniquePtr<gchar> sourceCode(JSStringCopyUTF8CString(source));
     DumpRenderTreeSupportGtk::addUserScript(mainFrame, sourceCode.get(), runAtStart, allFrames);
 }
 
 void TestRunner::addUserStyleSheet(JSStringRef source, bool allFrames)
 {
-    GOwnPtr<gchar> sourceCode(JSStringCopyUTF8CString(source));
+    GUniquePtr<gchar> sourceCode(JSStringCopyUTF8CString(source));
     DumpRenderTreeSupportGtk::addUserStyleSheet(mainFrame, sourceCode.get(), allFrames);
     // FIXME: needs more investigation why userscripts/user-style-top-frame-only.html fails when allFrames is false.
 
@@ -802,11 +749,6 @@ void TestRunner::setDeveloperExtrasEnabled(bool enabled)
     WebKitWebSettings* webSettings = webkit_web_view_get_settings(webView);
 
     g_object_set(webSettings, "enable-developer-extras", enabled, NULL);
-}
-
-void TestRunner::setAsynchronousSpellCheckingEnabled(bool)
-{
-    // FIXME: Implement this.
 }
 
 void TestRunner::showWebInspector()
@@ -869,16 +811,6 @@ void TestRunner::setWebViewEditable(bool)
 {
 }
 
-JSRetainPtr<JSStringRef> TestRunner::markerTextForListItem(JSContextRef context, JSValueRef nodeObject) const
-{
-    CString markerTextGChar = DumpRenderTreeSupportGtk::markerTextForListItem(mainFrame, context, nodeObject);
-    if (markerTextGChar.isNull())
-        return 0;
-
-    JSRetainPtr<JSStringRef> markerText(Adopt, JSStringCreateWithUTF8CString(markerTextGChar.data()));
-    return markerText;
-}
-
 void TestRunner::authenticateSession(JSStringRef, JSStringRef, JSStringRef)
 {
 }
@@ -894,7 +826,7 @@ void TestRunner::setSerializeHTTPLoads(bool serialize)
 
 void TestRunner::setTextDirection(JSStringRef direction)
 {
-    GOwnPtr<gchar> writingDirection(JSStringCopyUTF8CString(direction));
+    GUniquePtr<gchar> writingDirection(JSStringCopyUTF8CString(direction));
 
     WebKitWebView* view = webkit_web_frame_get_web_view(mainFrame);
     ASSERT(view);
@@ -947,12 +879,24 @@ void TestRunner::simulateLegacyWebNotificationClick(JSStringRef title)
 
 void TestRunner::resetPageVisibility()
 {
-    // FIXME: Implement this.
+    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
+    DumpRenderTreeSupportGtk::setPageVisibility(webView, WebCore::PageVisibilityStateVisible, true);
 }
 
-void TestRunner::setPageVisibility(const char*)
+void TestRunner::setPageVisibility(const char* visibility)
 {
-    // FIXME: Implement this.
+    WebKitWebView* webView = webkit_web_frame_get_web_view(mainFrame);
+    String visibilityString(visibility);
+    WebCore::PageVisibilityState visibilityState = WebCore::PageVisibilityStateVisible;
+
+    if (visibilityString == "visible")
+        visibilityState = WebCore::PageVisibilityStateVisible;
+    else if (visibilityString == "hidden")
+        visibilityState = WebCore::PageVisibilityStateHidden;
+    else
+        return;
+
+    DumpRenderTreeSupportGtk::setPageVisibility(webView, visibilityState, false);
 }
 
 void TestRunner::setAutomaticLinkDetectionEnabled(bool)

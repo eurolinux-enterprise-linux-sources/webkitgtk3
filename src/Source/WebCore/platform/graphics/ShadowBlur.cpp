@@ -3,6 +3,7 @@
  * Copyright (C) 2010 Sencha, Inc. All rights reserved.
  * Copyright (C) 2010 Igalia S.L. All rights reserved.
  * Copyright (C) Research In Motion Limited 2011. All rights reserved.
+ * Copyright (C) 2013 Digia Plc. and/or its subsidiary(-ies).
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,9 +37,6 @@
 #include "Timer.h"
 #include <wtf/MathExtras.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/UnusedParam.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -141,9 +139,10 @@ private:
     {
         m_imageBuffer = nullptr;
         m_lastRadius = FloatSize();
+        m_lastLayerSize = FloatSize();
     }
 
-    OwnPtr<ImageBuffer> m_imageBuffer;
+    std::unique_ptr<ImageBuffer> m_imageBuffer;
     Timer<ScratchBuffer> m_purgeTimer;
     
     FloatRect m_lastInsetBounds;
@@ -168,6 +167,13 @@ ScratchBuffer& ScratchBuffer::shared()
 
 static const int templateSideLength = 1;
 
+#if USE(CG)
+static float radiusToLegacyRadius(float radius)
+{
+    return radius > 8 ? 8 + 4 * sqrt((radius - 8) / 2) : radius;
+}
+#endif
+
 ShadowBlur::ShadowBlur(const FloatSize& radius, const FloatSize& offset, const Color& color, ColorSpace colorSpace)
     : m_color(color)
     , m_colorSpace(colorSpace)
@@ -176,6 +182,23 @@ ShadowBlur::ShadowBlur(const FloatSize& radius, const FloatSize& offset, const C
     , m_layerImage(0)
     , m_shadowsIgnoreTransforms(false)
 {
+    updateShadowBlurValues();
+}
+
+ShadowBlur::ShadowBlur(const GraphicsContextState& state)
+    : m_color(state.shadowColor)
+    , m_colorSpace(state.shadowColorSpace)
+    , m_blurRadius(state.shadowBlur, state.shadowBlur)
+    , m_offset(state.shadowOffset)
+    , m_layerImage(0)
+    , m_shadowsIgnoreTransforms(state.shadowsIgnoreTransforms)
+{
+#if USE(CG)
+    if (state.shadowsUseLegacyRadius) {
+        float shadowBlur = radiusToLegacyRadius(state.shadowBlur);
+        m_blurRadius = FloatSize(shadowBlur, shadowBlur);
+    }
+#endif
     updateShadowBlurValues();
 }
 
@@ -224,7 +247,7 @@ static void calculateLobes(int lobes[][2], float blurRadius, bool shadowsIgnoreT
 {
     int diameter;
     if (shadowsIgnoreTransforms)
-        diameter = max(2, static_cast<int>(floorf((2 / 3.f) * blurRadius))); // Canvas shadow. FIXME: we should adjust the blur radius higher up.
+        diameter = std::max(2, static_cast<int>(floorf((2 / 3.f) * blurRadius))); // Canvas shadow. FIXME: we should adjust the blur radius higher up.
     else {
         // http://dev.w3.org/csswg/css3-background/#box-shadow
         // Approximate a Gaussian blur with a standard deviation equal to half the blur radius,
@@ -234,7 +257,7 @@ static void calculateLobes(int lobes[][2], float blurRadius, bool shadowsIgnoreT
         float stdDev = blurRadius / 2;
         const float gaussianKernelFactor = 3 / 4.f * sqrtf(2 * piFloat);
         const float fudgeFactor = 0.88f;
-        diameter = max(2, static_cast<int>(floorf(stdDev * gaussianKernelFactor * fudgeFactor + 0.5f)));
+        diameter = std::max(2, static_cast<int>(floorf(stdDev * gaussianKernelFactor * fudgeFactor + 0.5f)));
     }
 
     if (diameter & 1) {
@@ -461,11 +484,11 @@ void ShadowBlur::drawShadowBuffer(GraphicsContext* graphicsContext)
 
 static void computeSliceSizesFromRadii(const IntSize& twiceRadius, const RoundedRect::Radii& radii, int& leftSlice, int& rightSlice, int& topSlice, int& bottomSlice)
 {
-    leftSlice = twiceRadius.width() + max(radii.topLeft().width(), radii.bottomLeft().width()); 
-    rightSlice = twiceRadius.width() + max(radii.topRight().width(), radii.bottomRight().width()); 
+    leftSlice = twiceRadius.width() + std::max(radii.topLeft().width(), radii.bottomLeft().width());
+    rightSlice = twiceRadius.width() + std::max(radii.topRight().width(), radii.bottomRight().width());
 
-    topSlice = twiceRadius.height() + max(radii.topLeft().height(), radii.topRight().height());
-    bottomSlice = twiceRadius.height() + max(radii.bottomLeft().height(), radii.bottomRight().height());
+    topSlice = twiceRadius.height() + std::max(radii.topLeft().height(), radii.topRight().height());
+    bottomSlice = twiceRadius.height() + std::max(radii.bottomLeft().height(), radii.bottomRight().height());
 }
 
 IntSize ShadowBlur::templateSize(const IntSize& radiusPadding, const RoundedRect::Radii& radii) const
@@ -679,12 +702,17 @@ void ShadowBlur::drawInsetShadowWithTiling(GraphicsContext* graphicsContext, con
 
         blurAndColorShadowBuffer(templateSize);
     }
+    FloatSize offset = m_offset;
+    if (shadowsIgnoreTransforms()) {
+        AffineTransform transform = graphicsContext->getCTM();
+        offset.scale(1 / transform.xScale(), 1 / transform.yScale());
+    }
 
     FloatRect boundingRect = rect;
-    boundingRect.move(m_offset);
+    boundingRect.move(offset);
 
     FloatRect destHoleRect = holeRect;
-    destHoleRect.move(m_offset);
+    destHoleRect.move(offset);
     FloatRect destHoleBounds = destHoleRect;
     destHoleBounds.inflateX(edgeSize.width());
     destHoleBounds.inflateY(edgeSize.height());
@@ -696,9 +724,9 @@ void ShadowBlur::drawInsetShadowWithTiling(GraphicsContext* graphicsContext, con
 
     {
         GraphicsContextStateSaver fillStateSaver(*graphicsContext);
-        graphicsContext->clearShadow();
         graphicsContext->setFillRule(RULE_EVENODD);
         graphicsContext->setFillColor(m_color, m_colorSpace);
+        graphicsContext->clearShadow();
         graphicsContext->fillPath(exteriorPath);
     }
     
@@ -736,9 +764,14 @@ void ShadowBlur::drawRectShadowWithTiling(GraphicsContext* graphicsContext, cons
 
         blurAndColorShadowBuffer(templateSize);
     }
+    FloatSize offset = m_offset;
+    if (shadowsIgnoreTransforms()) {
+        AffineTransform transform = graphicsContext->getCTM();
+        offset.scale(1 / transform.xScale(), 1 / transform.yScale());
+    }
 
     FloatRect shadowBounds = shadowedRect;
-    shadowBounds.move(m_offset.width(), m_offset.height());
+    shadowBounds.move(offset);
     shadowBounds.inflateX(edgeSize.width());
     shadowBounds.inflateY(edgeSize.height());
 
@@ -772,8 +805,8 @@ void ShadowBlur::drawLayerPieces(GraphicsContext* graphicsContext, const FloatRe
     }
 
     GraphicsContextStateSaver stateSaver(*graphicsContext);
-    graphicsContext->clearShadow();
     graphicsContext->setFillColor(m_color, m_colorSpace);
+    graphicsContext->clearShadow();
 
     // Note that drawing the ImageBuffer is faster than creating a Image and drawing that,
     // because ImageBuffer::draw() knows that it doesn't have to copy the image bits.
@@ -886,23 +919,5 @@ void ShadowBlur::endShadowLayer(GraphicsContext* context)
     m_layerImage = 0;
     ScratchBuffer::shared().scheduleScratchBufferPurge();
 }
-
-#if PLATFORM(QT) || USE(CAIRO)
-bool ShadowBlur::mustUseShadowBlur(GraphicsContext* context) const
-{
-    // We can't avoid ShadowBlur, since the shadow has blur.
-    if (type() == BlurShadow)
-        return true;
-    // We can avoid ShadowBlur and optimize, since we're not drawing on a
-    // canvas and box shadows are affected by the transformation matrix.
-    if (!shadowsIgnoreTransforms())
-        return false;
-    // We can avoid ShadowBlur, since there are no transformations to apply to the canvas.
-    if (context->getCTM().isIdentity())
-        return false;
-    // Otherwise, no chance avoiding ShadowBlur.
-    return true;
-}
-#endif
 
 } // namespace WebCore

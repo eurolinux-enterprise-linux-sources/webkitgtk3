@@ -32,28 +32,39 @@
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
+namespace API {
+class Object;
+
+template<> struct ClientTraits<WKBundlePageFormClientBase> {
+    typedef std::tuple<WKBundlePageFormClientV0, WKBundlePageFormClientV1, WKBundlePageFormClientV2> Versions;
+};
+}
+
 namespace WebCore {
-    class HTMLFormElement;
-    class HTMLInputElement;
-    class HTMLTextAreaElement;
+class Element;
+class HTMLFormElement;
+class HTMLInputElement;
+class HTMLTextAreaElement;
 }
 
 namespace WebKit {
 
-class APIObject;
 class ImmutableDictionary;
 class WebFrame;
 class WebPage;
 
-class InjectedBundlePageFormClient : public APIClient<WKBundlePageFormClient, kWKBundlePageFormClientCurrentVersion> {
+class InjectedBundlePageFormClient : public API::Client<WKBundlePageFormClientBase> {
 public:
+    void didFocusTextField(WebPage*, WebCore::HTMLInputElement*, WebFrame*);
     void textFieldDidBeginEditing(WebPage*, WebCore::HTMLInputElement*, WebFrame*);
     void textFieldDidEndEditing(WebPage*, WebCore::HTMLInputElement*, WebFrame*);
     void textDidChangeInTextField(WebPage*, WebCore::HTMLInputElement*, WebFrame*);
     void textDidChangeInTextArea(WebPage*, WebCore::HTMLTextAreaElement*, WebFrame*);
     bool shouldPerformActionInTextField(WebPage*, WebCore::HTMLInputElement*, WKInputFieldActionType, WebFrame*);    
-    void willSubmitForm(WebPage*, WebCore::HTMLFormElement*, WebFrame*, WebFrame* sourceFrame, const Vector<std::pair<String, String> >&, RefPtr<APIObject>& userData);
-    void willSendSubmitEvent(WebPage*, WebCore::HTMLFormElement*, WebFrame*, WebFrame* sourceFrame, const Vector<std::pair<String, String> >&);
+    void willSubmitForm(WebPage*, WebCore::HTMLFormElement*, WebFrame*, WebFrame* sourceFrame, const Vector<std::pair<String, String>>&, RefPtr<API::Object>& userData);
+    void willSendSubmitEvent(WebPage*, WebCore::HTMLFormElement*, WebFrame*, WebFrame* sourceFrame, const Vector<std::pair<String, String>>&);
+    void didAssociateFormControls(WebPage*, const Vector<RefPtr<WebCore::Element>>&);
+    bool shouldNotifyOnFormChanges(WebPage*);
 };
 
 } // namespace WebKit

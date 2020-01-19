@@ -21,15 +21,11 @@
 #include "config.h"
 #include "ResourceResponse.h"
 
-#include <wtf/gobject/GOwnPtr.h>
 #include "HTTPParsers.h"
 #include "MIMETypeRegistry.h"
-#include "SoupURIUtils.h"
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -60,7 +56,7 @@ SoupMessage* ResourceResponse::toSoupMessage() const
 
 void ResourceResponse::updateFromSoupMessage(SoupMessage* soupMessage)
 {
-    m_url = soupURIToKURL(soup_message_get_uri(soupMessage));
+    m_url = URL(soup_message_get_uri(soupMessage));
 
     m_httpStatusCode = soupMessage->status_code;
     setHTTPStatusText(soupMessage->reason_phrase);
@@ -87,7 +83,7 @@ void ResourceResponse::updateFromSoupMessageHeaders(const SoupMessageHeaders* me
 
     soup_message_headers_iter_init(&headersIter, headers);
     while (soup_message_headers_iter_next(&headersIter, &headerName, &headerValue))
-        addHTTPHeaderField(String::fromUTF8WithLatin1Fallback(headerName, strlen(headerName)), String::fromUTF8WithLatin1Fallback(headerValue, strlen(headerValue)));
+        addHTTPHeaderField(String(headerName), String(headerValue));
 
     String contentType;
     const char* officialType = soup_message_headers_get_one(headers, "Content-Type");

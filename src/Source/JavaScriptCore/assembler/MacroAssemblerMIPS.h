@@ -80,6 +80,7 @@ public:
     enum ResultCondition {
         Overflow,
         Signed,
+        PositiveOrZero,
         Zero,
         NonZero
     };
@@ -100,6 +101,7 @@ public:
     };
 
     static const RegisterID stackPointerRegister = MIPSRegisters::sp;
+    static const RegisterID framePointerRegister = MIPSRegisters::fp;
     static const RegisterID returnAddressRegister = MIPSRegisters::ra;
 
     // Integer arithmetic operations:
@@ -265,6 +267,12 @@ public:
             m_assembler.addiu(dataTempRegister, dataTempRegister, -1);
         m_assembler.addu(dataTempRegister, dataTempRegister, immTempRegister);
         m_assembler.sw(dataTempRegister, addrTempRegister, 4);
+    }
+
+    void and32(Address src, RegisterID dest)
+    {
+        load32(src, dataTempRegister);
+        and32(dataTempRegister, dest);
     }
 
     void and32(RegisterID src, RegisterID dest)
@@ -684,6 +692,21 @@ public:
         }
     }
 
+    ALWAYS_INLINE void load8(AbsoluteAddress address, RegisterID dest)
+    {
+        load8(address.m_ptr, dest);
+    }
+
+    void load8(const void* address, RegisterID dest)
+    {
+        /*
+            li  addrTemp, address
+            lbu dest, 0(addrTemp)
+        */
+        move(TrustedImmPtr(address), addrTempRegister);
+        m_assembler.lbu(dest, addrTempRegister, 0);
+    }
+
     void load8Signed(BaseIndex address, RegisterID dest)
     {
         if (address.offset >= -32768 && address.offset <= 32767
@@ -967,6 +990,12 @@ public:
             m_assembler.addu(addrTempRegister, addrTempRegister, immTempRegister);
             m_assembler.sb(src, addrTempRegister, address.offset);
         }
+    }
+
+    void store8(RegisterID src, void* address)
+    {
+        move(TrustedImmPtr(address), addrTempRegister);
+        m_assembler.sb(src, addrTempRegister, 0);
     }
 
     void store8(TrustedImm32 imm, void* address)
@@ -1285,6 +1314,15 @@ public:
         return branch32(cond, dataTempRegister, immTempRegister);
     }
 
+    Jump branch8(RelationalCondition cond, AbsoluteAddress left, TrustedImm32 right)
+    {
+        // Make sure the immediate value is unsigned 8 bits.
+        ASSERT(!(right.m_value & 0xFFFFFF00));
+        load8(left, dataTempRegister);
+        move(right, immTempRegister);
+        return branch32(cond, dataTempRegister, immTempRegister);
+    }
+
     void compare8(RelationalCondition cond, Address left, TrustedImm32 right, RegisterID dest)
     {
         // Make sure the immediate value is unsigned 8 bits.
@@ -1437,6 +1475,12 @@ public:
         return branchTest32(cond, dataTempRegister, mask);
     }
 
+    Jump branchTest8(ResultCondition cond, BaseIndex address, TrustedImm32 mask = TrustedImm32(-1))
+    {
+        load8(address, dataTempRegister);
+        return branchTest32(cond, dataTempRegister, mask);
+    }
+
     Jump branchTest8(ResultCondition cond, Address address, TrustedImm32 mask = TrustedImm32(-1))
     {
         load8(address, dataTempRegister);
@@ -1503,7 +1547,7 @@ public:
 
     Jump branchAdd32(ResultCondition cond, RegisterID src, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == PositiveOrZero) || (cond == Zero) || (cond == NonZero));
         if (cond == Overflow) {
             /*
                 move    dest, dataTemp
@@ -1536,6 +1580,12 @@ public:
             m_assembler.slt(cmpTempRegister, dest, MIPSRegisters::zero);
             return branchNotEqual(cmpTempRegister, MIPSRegisters::zero);
         }
+        if (cond == PositiveOrZero) {
+            add32(src, dest);
+            // Check if dest is not negative.
+            m_assembler.slt(cmpTempRegister, dest, MIPSRegisters::zero);
+            return branchEqual(cmpTempRegister, MIPSRegisters::zero);
+        }
         if (cond == Zero) {
             add32(src, dest);
             return branchEqual(dest, MIPSRegisters::zero);
@@ -1550,7 +1600,7 @@ public:
 
     Jump branchAdd32(ResultCondition cond, RegisterID op1, RegisterID op2, RegisterID dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == PositiveOrZero) || (cond == Zero) || (cond == NonZero));
         if (cond == Overflow) {
             /*
                 move    dataTemp, op1
@@ -1583,6 +1633,12 @@ public:
             m_assembler.slt(cmpTempRegister, dest, MIPSRegisters::zero);
             return branchNotEqual(cmpTempRegister, MIPSRegisters::zero);
         }
+        if (cond == PositiveOrZero) {
+            add32(op1, op2, dest);
+            // Check if dest is not negative.
+            m_assembler.slt(cmpTempRegister, dest, MIPSRegisters::zero);
+            return branchEqual(cmpTempRegister, MIPSRegisters::zero);
+        }
         if (cond == Zero) {
             add32(op1, op2, dest);
             return branchEqual(dest, MIPSRegisters::zero);
@@ -1610,7 +1666,7 @@ public:
 
     Jump branchAdd32(ResultCondition cond, TrustedImm32 imm, AbsoluteAddress dest)
     {
-        ASSERT((cond == Overflow) || (cond == Signed) || (cond == Zero) || (cond == NonZero));
+        ASSERT((cond == Overflow) || (cond == Signed) || (cond == PositiveOrZero) || (cond == Zero) || (cond == NonZero));
         if (cond == Overflow) {
             /*
                 move    dataTemp, dest
@@ -1659,6 +1715,11 @@ public:
             // Check if dest is negative.
             m_assembler.slt(cmpTempRegister, dataTempRegister, MIPSRegisters::zero);
             return branchNotEqual(cmpTempRegister, MIPSRegisters::zero);
+        }
+        if (cond == PositiveOrZero) {
+            // Check if dest is not negative.
+            m_assembler.slt(cmpTempRegister, dataTempRegister, MIPSRegisters::zero);
+            return branchEqual(cmpTempRegister, MIPSRegisters::zero);
         }
         if (cond == Zero)
             return branchEqual(dataTempRegister, MIPSRegisters::zero);
@@ -2616,13 +2677,14 @@ public:
     // If the result is not representable as a 32 bit value, branch.
     // May also branch for some values that are representable in 32 bits
     // (specifically, in this case, 0).
-    void branchConvertDoubleToInt32(FPRegisterID src, RegisterID dest, JumpList& failureCases, FPRegisterID fpTemp)
+    void branchConvertDoubleToInt32(FPRegisterID src, RegisterID dest, JumpList& failureCases, FPRegisterID fpTemp, bool negZeroCheck = true)
     {
         m_assembler.cvtwd(fpTempRegister, src);
         m_assembler.mfc1(dest, fpTempRegister);
 
         // If the result is zero, it might have been -0.0, and the double comparison won't catch this!
-        failureCases.append(branch32(Equal, dest, MIPSRegisters::zero));
+        if (negZeroCheck)
+            failureCases.append(branch32(Equal, dest, MIPSRegisters::zero));
 
         // Convert the integer result back to float & compare to the original value - if not equal or unordered (NaN) then jump.
         convertInt32ToDouble(dest, fpTemp);
@@ -2673,6 +2735,11 @@ public:
         m_assembler.nop();
     }
 
+    void memoryFence()
+    {
+        m_assembler.sync();
+    }
+
     static FunctionPtr readCallTarget(CodeLocationCall call)
     {
         return FunctionPtr(reinterpret_cast<void(*)()>(MIPSAssembler::readCallTarget(call.dataLocation())));
@@ -2707,7 +2774,7 @@ public:
         return CodeLocationLabel();
     }
 
-    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel instructionStart, Address, void* initialValue)
+    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel, Address, void*)
     {
         UNREACHABLE_FOR_PLATFORM();
     }

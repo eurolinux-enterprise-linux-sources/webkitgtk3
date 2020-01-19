@@ -27,25 +27,32 @@
 #include "CredentialStorage.h"
 
 #include "Credential.h"
-#include "KURL.h"
+#include "URL.h"
 #include "ProtectionSpaceHash.h"
 #include <wtf/text/WTFString.h>
 #include <wtf/text/StringHash.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
+#include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
+
+#if PLATFORM(IOS)
+#include "WebCoreThread.h"
+#endif
 
 namespace WebCore {
 
 typedef HashMap<ProtectionSpace, Credential> ProtectionSpaceToCredentialMap;
 static ProtectionSpaceToCredentialMap& protectionSpaceToCredentialMap()
 {
+    ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(ProtectionSpaceToCredentialMap, map, ());
     return map;
 }
 
 static HashSet<String>& originsWithCredentials()
 {
+    ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(HashSet<String>, set, ());
     return set;
 }
@@ -53,11 +60,12 @@ static HashSet<String>& originsWithCredentials()
 typedef HashMap<String, ProtectionSpace> PathToDefaultProtectionSpaceMap;
 static PathToDefaultProtectionSpaceMap& pathToDefaultProtectionSpaceMap()
 {
+    ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(PathToDefaultProtectionSpaceMap, map, ());
     return map;
 }
 
-static String originStringFromURL(const KURL& url)
+static String originStringFromURL(const URL& url)
 {
     if (url.port())
         return url.protocol() + "://" + url.host() + ':' + String::number(url.port()) + '/';
@@ -65,7 +73,7 @@ static String originStringFromURL(const KURL& url)
     return url.protocol() + "://" + url.host() + '/';
 }
 
-static String protectionSpaceMapKeyFromURL(const KURL& url)
+static String protectionSpaceMapKeyFromURL(const URL& url)
 {
     ASSERT(url.isValid());
 
@@ -83,12 +91,17 @@ static String protectionSpaceMapKeyFromURL(const KURL& url)
     return directoryURL;
 }
 
-void CredentialStorage::set(const Credential& credential, const ProtectionSpace& protectionSpace, const KURL& url)
+void CredentialStorage::set(const Credential& credential, const ProtectionSpace& protectionSpace, const URL& url)
 {
     ASSERT(protectionSpace.isProxy() || url.protocolIsInHTTPFamily());
     ASSERT(protectionSpace.isProxy() || url.isValid());
 
     protectionSpaceToCredentialMap().set(protectionSpace, credential);
+
+#if PLATFORM(IOS)
+    saveToPersistentStorage(protectionSpace, credential);
+#endif
+
     if (!protectionSpace.isProxy()) {
         originsWithCredentials().add(originStringFromURL(url));
 
@@ -110,7 +123,7 @@ void CredentialStorage::remove(const ProtectionSpace& protectionSpace)
     protectionSpaceToCredentialMap().remove(protectionSpace);
 }
 
-static PathToDefaultProtectionSpaceMap::iterator findDefaultProtectionSpaceForURL(const KURL& url)
+static PathToDefaultProtectionSpaceMap::iterator findDefaultProtectionSpaceForURL(const URL& url)
 {
     ASSERT(url.protocolIsInHTTPFamily());
     ASSERT(url.isValid());
@@ -139,7 +152,7 @@ static PathToDefaultProtectionSpaceMap::iterator findDefaultProtectionSpaceForUR
     }
 }
 
-bool CredentialStorage::set(const Credential& credential, const KURL& url)
+bool CredentialStorage::set(const Credential& credential, const URL& url)
 {
     ASSERT(url.protocolIsInHTTPFamily());
     ASSERT(url.isValid());
@@ -151,13 +164,22 @@ bool CredentialStorage::set(const Credential& credential, const KURL& url)
     return true;
 }
 
-Credential CredentialStorage::get(const KURL& url)
+Credential CredentialStorage::get(const URL& url)
 {
     PathToDefaultProtectionSpaceMap::iterator iter = findDefaultProtectionSpaceForURL(url);
     if (iter == pathToDefaultProtectionSpaceMap().end())
         return Credential();
     return protectionSpaceToCredentialMap().get(iter->value);
 }
+
+#if PLATFORM(IOS)
+void CredentialStorage::clearCredentials()
+{
+    pathToDefaultProtectionSpaceMap().clear();
+    originsWithCredentials().clear();
+    protectionSpaceToCredentialMap().clear();
+}
+#endif
 
 void CredentialStorage::setPrivateMode(bool mode)
 {

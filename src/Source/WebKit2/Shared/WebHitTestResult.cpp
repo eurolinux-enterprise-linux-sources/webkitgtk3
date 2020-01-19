@@ -21,8 +21,12 @@
 #include "WebHitTestResult.h"
 
 #include "WebCoreArgumentCoders.h"
-
-#include <WebCore/KURL.h>
+#include <WebCore/Document.h>
+#include <WebCore/Frame.h>
+#include <WebCore/FrameView.h>
+#include <WebCore/HitTestResult.h>
+#include <WebCore/URL.h>
+#include <WebCore/Node.h>
 #include <wtf/text/WTFString.h>
 
 using namespace WebCore;
@@ -34,7 +38,28 @@ PassRefPtr<WebHitTestResult> WebHitTestResult::create(const WebHitTestResult::Da
     return adoptRef(new WebHitTestResult(hitTestResultData));
 }
 
-void WebHitTestResult::Data::encode(CoreIPC::ArgumentEncoder& encoder) const
+WebHitTestResult::Data::Data()
+{
+}
+
+WebHitTestResult::Data::Data(const HitTestResult& hitTestResult)
+    : absoluteImageURL(hitTestResult.absoluteImageURL().string())
+    , absolutePDFURL(hitTestResult.absolutePDFURL().string())
+    , absoluteLinkURL(hitTestResult.absoluteLinkURL().string())
+    , absoluteMediaURL(hitTestResult.absoluteMediaURL().string())
+    , linkLabel(hitTestResult.textContent())
+    , linkTitle(hitTestResult.titleDisplayString())
+    , isContentEditable(hitTestResult.isContentEditable())
+    , elementBoundingBox(elementBoundingBoxInWindowCoordinates(hitTestResult))
+    , isScrollbar(hitTestResult.scrollbar())
+{
+}
+
+WebHitTestResult::Data::~Data()
+{
+}
+
+void WebHitTestResult::Data::encode(IPC::ArgumentEncoder& encoder) const
 {
     encoder << absoluteImageURL;
     encoder << absolutePDFURL;
@@ -47,7 +72,7 @@ void WebHitTestResult::Data::encode(CoreIPC::ArgumentEncoder& encoder) const
     encoder << isScrollbar;
 }
 
-bool WebHitTestResult::Data::decode(CoreIPC::ArgumentDecoder& decoder, WebHitTestResult::Data& hitTestResultData)
+bool WebHitTestResult::Data::decode(IPC::ArgumentDecoder& decoder, WebHitTestResult::Data& hitTestResultData)
 {
     if (!decoder.decode(hitTestResultData.absoluteImageURL)
         || !decoder.decode(hitTestResultData.absolutePDFURL)
@@ -61,6 +86,23 @@ bool WebHitTestResult::Data::decode(CoreIPC::ArgumentDecoder& decoder, WebHitTes
         return false;
 
     return true;
+}
+
+IntRect WebHitTestResult::Data::elementBoundingBoxInWindowCoordinates(const HitTestResult& hitTestResult)
+{
+    Node* node = hitTestResult.innerNonSharedNode();
+    if (!node)
+        return IntRect();
+
+    Frame* frame = node->document().frame();
+    if (!frame)
+        return IntRect();
+
+    FrameView* view = frame->view();
+    if (!view)
+        return IntRect();
+
+    return view->contentsToWindow(node->pixelSnappedBoundingBox());
 }
 
 } // WebKit

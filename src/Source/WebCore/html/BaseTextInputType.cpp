@@ -26,7 +26,7 @@
 
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
-#include "RegularExpression.h"
+#include <yarr/RegularExpression.h>
 
 namespace WebCore {
 
@@ -39,14 +39,13 @@ bool BaseTextInputType::isTextType() const
 
 bool BaseTextInputType::patternMismatch(const String& value) const
 {
-    const AtomicString& rawPattern = element()->fastGetAttribute(patternAttr);
-    // Empty values can't be mismatched
-    if (rawPattern.isNull() || value.isEmpty())
+    const AtomicString& rawPattern = element().fastGetAttribute(patternAttr);
+    if (rawPattern.isNull() || value.isEmpty() || !JSC::Yarr::RegularExpression(rawPattern, TextCaseSensitive).isValid())
         return false;
-    String pattern = "^(" + rawPattern + ")$";
+    String pattern = "^(?:" + rawPattern + ")$";
     int matchLength = 0;
     int valueLength = value.length();
-    int matchOffset = RegularExpression(pattern, TextCaseSensitive).match(value, 0, &matchLength);
+    int matchOffset = JSC::Yarr::RegularExpression(pattern, TextCaseSensitive).match(value, 0, &matchLength);
     return matchOffset || matchLength != valueLength;
 }
 

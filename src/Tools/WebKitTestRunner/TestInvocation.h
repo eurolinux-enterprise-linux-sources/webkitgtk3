@@ -49,6 +49,7 @@ public:
     WKRetainPtr<WKTypeRef> didReceiveSynchronousMessageFromInjectedBundle(WKStringRef messageName, WKTypeRef messageBody);
 
     void dumpWebProcessUnresponsiveness();
+    static void dumpWebProcessUnresponsiveness(const char* errorMessage);
     void outputText(const WTF::String&);
 private:
     void dumpResults();
@@ -57,10 +58,8 @@ private:
     void dumpAudio(WKDataRef);
     bool compareActualHashToExpectedAndDumpResults(const char[33]);
 
-#if PLATFORM(QT) || PLATFORM(EFL)
     static void forceRepaintDoneCallback(WKErrorRef, void* context);
-#endif
-    
+
     WKRetainPtr<WKURLRef> m_url;
     std::string m_pathOrURL;
     

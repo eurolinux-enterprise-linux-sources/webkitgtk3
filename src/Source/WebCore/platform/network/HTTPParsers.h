@@ -31,6 +31,7 @@
 #ifndef HTTPParsers_h
 #define HTTPParsers_h
 
+#include "ContentSecurityPolicy.h"
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
@@ -39,19 +40,12 @@ namespace WebCore {
 class HTTPHeaderMap;
 class ResourceResponseBase;
 
-enum XSSProtectionDisposition {
-    XSSProtectionInvalid,
-    XSSProtectionDisabled,
-    XSSProtectionEnabled,
-    XSSProtectionBlockEnabled
-};
-
-typedef enum {
+enum ContentDispositionType {
     ContentDispositionNone,
     ContentDispositionInline,
     ContentDispositionAttachment,
     ContentDispositionOther
-} ContentDispositionType;
+};
 
 #if ENABLE(NOSNIFF)
 enum ContentTypeOptionsDisposition {
@@ -60,16 +54,27 @@ enum ContentTypeOptionsDisposition {
 };
 #endif
 
+enum XFrameOptionsDisposition {
+    XFrameOptionsNone,
+    XFrameOptionsDeny,
+    XFrameOptionsSameOrigin,
+    XFrameOptionsAllowAll,
+    XFrameOptionsInvalid,
+    XFrameOptionsConflict
+};
+
 ContentDispositionType contentDispositionType(const String&);
-bool isRFC2616Token(const String&);
+bool isValidHTTPHeaderValue(const String&);
+bool isValidHTTPToken(const String&);
 bool parseHTTPRefresh(const String& refresh, bool fromHttpEquivMeta, double& delay, String& url);
 double parseDate(const String&);
 String filenameFromHTTPContentDisposition(const String&); 
 String extractMIMETypeFromMediaType(const String&);
 String extractCharsetFromMediaType(const String&); 
 void findCharsetInMediaType(const String& mediaType, unsigned int& charsetPos, unsigned int& charsetLen, unsigned int start = 0);
-XSSProtectionDisposition parseXSSProtectionHeader(const String& header, String& failureReason, unsigned& failurePosition, String& reportURL);
+ContentSecurityPolicy::ReflectedXSSDisposition parseXSSProtectionHeader(const String& header, String& failureReason, unsigned& failurePosition, String& reportURL);
 String extractReasonPhraseFromHTTPStatusLine(const String&);
+XFrameOptionsDisposition parseXFrameOptionsHeader(const String&);
 
 // -1 could be set to one of the return parameters to indicate the value is not specified.
 bool parseRange(const String&, long long& rangeOffset, long long& rangeEnd, long long& rangeSuffixLength);
@@ -81,7 +86,7 @@ ContentTypeOptionsDisposition parseContentTypeOptionsHeader(const String& header
 // Parsing Complete HTTP Messages.
 enum HTTPVersion { Unknown, HTTP_1_0, HTTP_1_1 };
 size_t parseHTTPRequestLine(const char* data, size_t length, String& failureReason, String& method, String& url, HTTPVersion&);
-size_t parseHTTPHeader(const char* data, size_t length, String& failureReason, AtomicString& nameStr, String& valueStr);
+size_t parseHTTPHeader(const char* data, size_t length, String& failureReason, AtomicString& nameStr, String& valueStr, bool strict = true);
 size_t parseHTTPRequestBody(const char* data, size_t length, Vector<unsigned char>& body);
 
 }

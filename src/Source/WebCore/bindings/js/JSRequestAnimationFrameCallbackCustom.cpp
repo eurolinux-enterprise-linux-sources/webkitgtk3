@@ -38,9 +38,9 @@ bool JSRequestAnimationFrameCallback::handleEvent(double highResNowMs)
     if (!canInvokeCallback())
         return true;
 
-    RefPtr<JSRequestAnimationFrameCallback> protect(this);
+    Ref<JSRequestAnimationFrameCallback> protect(*this);
 
-    JSLockHolder lock(m_data->globalObject()->globalData());
+    JSLockHolder lock(m_data->globalObject()->vm());
 
     MarkedArgumentBuffer args;
     args.append(jsNumber(highResNowMs));

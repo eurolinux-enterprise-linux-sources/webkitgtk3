@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2012 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2013 Xidorn Quan (quanxunzhen@gmail.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,18 +34,16 @@
 #include <algorithm>
 #include <limits>
 
-using namespace std;
-
 namespace WebCore {
 
 static inline float min4(float a, float b, float c, float d)
 {
-    return min(min(a, b), min(c, d));
+    return std::min(std::min(a, b), std::min(c, d));
 }
 
 static inline float max4(float a, float b, float c, float d)
 {
-    return max(max(a, b), max(c, d));
+    return std::max(std::max(a, b), std::max(c, d));
 }
 
 inline float dot(const FloatSize& a, const FloatSize& b)
@@ -93,7 +92,7 @@ FloatRect FloatQuad::boundingBox() const
 
 static inline bool withinEpsilon(float a, float b)
 {
-    return fabs(a - b) < numeric_limits<float>::epsilon();
+    return fabs(a - b) < std::numeric_limits<float>::epsilon();
 }
 
 bool FloatQuad::isRectilinear() const
@@ -175,6 +174,55 @@ bool FloatQuad::intersectsRect(const FloatRect& rect) const
     // If not all of the rectangle is outside one of the quad's four sides, then that means at least
     // a part of the rectangle is overlapping the quad.
     return true;
+}
+
+// Tests whether the line is contained by or intersected with the circle.
+static inline bool lineIntersectsCircle(const FloatPoint& center, float radius, const FloatPoint& p0, const FloatPoint& p1)
+{
+    float x0 = p0.x() - center.x(), y0 = p0.y() - center.y();
+    float x1 = p1.x() - center.x(), y1 = p1.y() - center.y();
+    float radius2 = radius * radius;
+    if ((x0 * x0 + y0 * y0) <= radius2 || (x1 * x1 + y1 * y1) <= radius2)
+        return true;
+    if (p0 == p1)
+        return false;
+
+    float a = y0 - y1;
+    float b = x1 - x0;
+    float c = x0 * y1 - x1 * y0;
+    float distance2 = c * c / (a * a + b * b);
+    // If distance between the center point and the line > the radius,
+    // the line doesn't cross (or is contained by) the ellipse.
+    if (distance2 > radius2)
+        return false;
+
+    // The nearest point on the line is between p0 and p1?
+    float x = - a * c / (a * a + b * b);
+    float y = - b * c / (a * a + b * b);
+    return (((x0 <= x && x <= x1) || (x0 >= x && x >= x1))
+        && ((y0 <= y && y <= y1) || (y1 <= y && y <= y0)));
+}
+
+bool FloatQuad::intersectsCircle(const FloatPoint& center, float radius) const
+{
+    return containsPoint(center) // The circle may be totally contained by the quad.
+        || lineIntersectsCircle(center, radius, m_p1, m_p2)
+        || lineIntersectsCircle(center, radius, m_p2, m_p3)
+        || lineIntersectsCircle(center, radius, m_p3, m_p4)
+        || lineIntersectsCircle(center, radius, m_p4, m_p1);
+}
+
+bool FloatQuad::intersectsEllipse(const FloatPoint& center, const FloatSize& radii) const
+{
+    // Transform the ellipse to an origin-centered circle whose radius is the product of major radius and minor radius.
+    // Here we apply the same transformation to the quad.
+    FloatQuad transformedQuad(*this);
+    transformedQuad.move(-center.x(), -center.y());
+    transformedQuad.scale(radii.height(), radii.width());
+
+    FloatPoint originPoint;
+    return transformedQuad.intersectsCircle(originPoint, radii.height() * radii.width());
+
 }
 
 bool FloatQuad::isCounterclockwise() const

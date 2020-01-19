@@ -26,21 +26,26 @@
  */
 
 #include "config.h"
-#include "GraphicsContext3D.h"
 
 #if USE(3D_GRAPHICS)
+#include "GraphicsContext3D.h"
 
+#include "CairoUtilities.h"
 #include "GraphicsContext3DPrivate.h"
 #include "Image.h"
 #include "ImageSource.h"
 #include "NotImplemented.h"
 #include "PlatformContextCairo.h"
 #include "RefPtrCairo.h"
-#include "ShaderLang.h"
 #include <cairo.h>
-#include <wtf/NotFound.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
+
+#if PLATFORM(WIN)
+#include "GLSLANG/ShaderLang.h"
+#else
+#include "ShaderLang.h"
+#endif
 
 #if USE(OPENGL_ES_2)
 #include "Extensions3DOpenGLES.h"
@@ -75,13 +80,12 @@ PassRefPtr<GraphicsContext3D> GraphicsContext3D::create(GraphicsContext3D::Attri
 GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attributes, HostWindow*, GraphicsContext3D::RenderStyle renderStyle)
     : m_currentWidth(0)
     , m_currentHeight(0)
+    , m_compiler(isGLES2Compliant() ? SH_ESSL_OUTPUT : SH_GLSL_OUTPUT)
     , m_attrs(attributes)
     , m_texture(0)
+    , m_compositorTexture(0)
     , m_fbo(0)
     , m_depthStencilBuffer(0)
-    , m_boundFBO(0)
-    , m_activeTexture(GL_TEXTURE0)
-    , m_boundTexture0(0)
     , m_multisampleFBO(0)
     , m_multisampleDepthStencilBuffer(0)
     , m_multisampleColorBuffer(0)
@@ -105,7 +109,7 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attributes, H
         ::glGenFramebuffers(1, &m_fbo);
         ::glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
 
-        m_boundFBO = m_fbo;
+        m_state.boundFBO = m_fbo;
         if (!m_attrs.antialias && (m_attrs.stencil || m_attrs.depth))
             ::glGenRenderbuffers(1, &m_depthStencilBuffer);
 
@@ -113,7 +117,7 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attributes, H
         if (m_attrs.antialias) {
             ::glGenFramebuffers(1, &m_multisampleFBO);
             ::glBindFramebuffer(GL_FRAMEBUFFER, m_multisampleFBO);
-            m_boundFBO = m_multisampleFBO;
+            m_state.boundFBO = m_multisampleFBO;
             ::glGenRenderbuffers(1, &m_multisampleColorBuffer);
             if (m_attrs.stencil || m_attrs.depth)
                 ::glGenRenderbuffers(1, &m_multisampleDepthStencilBuffer);
@@ -134,6 +138,11 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attributes, H
 
     // Always set to 1 for OpenGL ES.
     ANGLEResources.MaxDrawBuffers = 1;
+
+    GC3Dint range[2], precision;
+    getShaderPrecisionFormat(GraphicsContext3D::FRAGMENT_SHADER, GraphicsContext3D::HIGH_FLOAT, range, &precision);
+    ANGLEResources.FragmentPrecisionHigh = (range[0] || range[1] || precision);
+
     m_compiler.setResources(ANGLEResources);
 
 #if !USE(OPENGL_ES_2)
@@ -150,7 +159,11 @@ GraphicsContext3D::~GraphicsContext3D()
         return;
 
     makeContextCurrent();
-    ::glDeleteTextures(1, &m_texture);
+    if (m_texture)
+        ::glDeleteTextures(1, &m_texture);
+    if (m_compositorTexture)
+        ::glDeleteTextures(1, &m_compositorTexture);
+
     if (m_attrs.antialias) {
         ::glDeleteRenderbuffers(1, &m_multisampleColorBuffer);
         if (m_attrs.stencil || m_attrs.depth)
@@ -184,24 +197,32 @@ bool GraphicsContext3D::ImageExtractor::extractImage(bool premultiplyAlpha, bool
         decoder.setData(m_image->data(), true);
         if (!decoder.frameCount() || !decoder.frameIsCompleteAtIndex(0))
             return false;
-        OwnPtr<NativeImageCairo> nativeImage = adoptPtr(decoder.createFrameAtIndex(0));
-        m_imageSurface = nativeImage->surface();
+        m_imageSurface = decoder.createFrameAtIndex(0);
     } else {
-        NativeImageCairo* nativeImage = m_image->nativeImageForCurrentFrame();
-        m_imageSurface = (nativeImage) ? nativeImage->surface() : 0;
+        m_imageSurface = m_image->nativeImageForCurrentFrame();
         // 1. For texImage2D with HTMLVideoElment input, assume no PremultiplyAlpha had been applied and the alpha value is 0xFF for each pixel,
         // which is true at present and may be changed in the future and needs adjustment accordingly.
         // 2. For texImage2D with HTMLCanvasElement input in which Alpha is already Premultiplied in this port, 
         // do AlphaDoUnmultiply if UNPACK_PREMULTIPLY_ALPHA_WEBGL is set to false.
         if (!premultiplyAlpha && m_imageHtmlDomSource != HtmlDomVideo)
             m_alphaOp = AlphaDoUnmultiply;
+
+        // if m_imageSurface is not an image, extract a copy of the surface
+        if (m_imageSurface && cairo_surface_get_type(m_imageSurface.get()) != CAIRO_SURFACE_TYPE_IMAGE) {
+            RefPtr<cairo_surface_t> tmpSurface = adoptRef(cairo_image_surface_create(CAIRO_FORMAT_ARGB32, m_imageWidth, m_imageHeight));
+            copyRectFromOneSurfaceToAnother(m_imageSurface.get(), tmpSurface.get(), IntSize(), IntRect(0, 0, m_imageWidth, m_imageHeight), IntSize(), CAIRO_OPERATOR_SOURCE);
+            m_imageSurface = tmpSurface.release();
+        }
     }
 
     if (!m_imageSurface)
         return false;
 
-    m_imageWidth = cairo_image_surface_get_width(m_imageSurface.get());
-    m_imageHeight = cairo_image_surface_get_height(m_imageSurface.get());
+    ASSERT(cairo_surface_get_type(m_imageSurface.get()) == CAIRO_SURFACE_TYPE_IMAGE);
+
+    IntSize imageSize = cairoSurfaceSize(m_imageSurface.get());
+    m_imageWidth = imageSize.width();
+    m_imageHeight = imageSize.height();
     if (!m_imageWidth || !m_imageHeight)
         return false;
 
@@ -265,9 +286,15 @@ bool GraphicsContext3D::makeContextCurrent()
         return false;
     return m_private->makeContextCurrent();
 }
+
 PlatformGraphicsContext3D GraphicsContext3D::platformGraphicsContext3D()
 {
     return m_private->platformContext();
+}
+
+Platform3DObject GraphicsContext3D::platformTexture() const
+{
+    return m_texture;
 }
 
 bool GraphicsContext3D::isGLES2Compliant() const

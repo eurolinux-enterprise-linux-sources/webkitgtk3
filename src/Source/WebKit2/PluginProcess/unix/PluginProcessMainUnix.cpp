@@ -33,11 +33,14 @@
 #include "Logging.h"
 #include "NetscapePlugin.h"
 #include "PluginProcess.h"
-#include "ScriptController.h"
-#include <WebCore/RunLoop.h>
+#include "WebKit2Initialize.h"
+#include <libgen.h>
+#include <wtf/RunLoop.h>
 #if PLATFORM(GTK)
-#include <gdk/gdkx.h>
 #include <gtk/gtk.h>
+#if PLATFORM(X11) && defined(GDK_WINDOWING_X11)
+#include <gdk/gdkx.h>
+#endif
 #elif PLATFORM(EFL) && HAVE_ECORE_X
 #include <Ecore_X.h>
 #endif
@@ -73,7 +76,9 @@ static int webkitXError(Display* xdisplay, XErrorEvent* error)
 
 WK_EXPORT int PluginProcessMainUnix(int argc, char* argv[])
 {
+#if PLUGIN_ARCHITECTURE(X11)
     bool scanPlugin = !strcmp(argv[1], "-scanPlugin");
+#endif
     ASSERT_UNUSED(argc, argc == 3);
 
 #if PLATFORM(GTK)
@@ -85,16 +90,16 @@ WK_EXPORT int PluginProcessMainUnix(int argc, char* argv[])
         return 1;
 #endif
 
-    ScriptController::initializeThreading();
+    InitializeWebKit2();
 
+#if PLUGIN_ARCHITECTURE(X11)
     if (scanPlugin) {
         String pluginPath(argv[2]);
         if (!NetscapePluginModule::scanPlugin(pluginPath))
             return EXIT_FAILURE;
         return EXIT_SUCCESS;
     }
-
-    RunLoop::initializeMainRunLoop();
+#endif
 
     // Plugins can produce X errors that are handled by the GDK X error handler, which
     // exits the process. Since we don't want to crash due to plugin bugs, we install a

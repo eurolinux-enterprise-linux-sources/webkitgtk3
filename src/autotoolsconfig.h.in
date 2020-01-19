@@ -8,8 +8,11 @@
 /* */
 #undef ENABLE_CREDENTIAL_STORAGE
 
-/* Define to enable GObject introspection support */
-#undef ENABLE_INTROSPECTION
+/* */
+#undef ENABLE_FTL_JIT
+
+/* */
+#undef ENABLE_JIT
 
 /* Define to enable Opcode statistics */
 #undef ENABLE_OPCODE_STATS
@@ -20,29 +23,14 @@
 /* */
 #undef ENABLE_SPELLCHECK
 
-/* */
-#undef GDK_DISABLE_DEPRECATED
-
-/* */
-#undef GDK_PIXBUF_DISABLE_DEPRECATED
-
 /* Minimum GTK/GDK version required */
 #undef GDK_VERSION_MIN_REQUIRED
 
 /* The gettext catalog name */
 #undef GETTEXT_PACKAGE
 
-/* Using GStreamer 1.0 */
-#undef GST_API_VERSION_1
-
-/* */
-#undef GST_DISABLE_DEPRECATED
-
 /* */
 #undef GTK_API_VERSION_2
-
-/* */
-#undef GTK_DISABLE_DEPRECATED
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
@@ -64,6 +52,12 @@
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
+
+/* Define to 1 if you have the `z' library (-lz). */
+#undef HAVE_LIBZ
+
+/* */
+#undef HAVE_LLVM
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
@@ -95,6 +89,9 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
+/* Define to 1 if you have the <unicode/uchar.h> header file. */
+#undef HAVE_UNICODE_UCHAR_H
+
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
@@ -104,8 +101,7 @@
 /* Define to 1 if the system has the type `_Bool'. */
 #undef HAVE__BOOL
 
-/* Define to the sub-directory in which libtool stores uninstalled libraries.
-   */
+/* Define to the sub-directory where libtool stores uninstalled libraries. */
 #undef LT_OBJDIR
 
 /* */
@@ -113,9 +109,6 @@
 
 /* Define to disable debugging */
 #undef NDEBUG
-
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-#undef NO_MINUS_C_MINUS_O
 
 /* Name of package */
 #undef PACKAGE
@@ -138,17 +131,23 @@
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
 
-/* */
-#undef PANGO_DISABLE_DEPRECATED
-
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
 /* */
 #undef UNICODE
 
+/* The major version used in user agent string */
+#undef USER_AGENT_GTK_MAJOR_VERSION
+
+/* The minor version used in user agent string */
+#undef USER_AGENT_GTK_MINOR_VERSION
+
 /* Version number of package */
 #undef VERSION
+
+/* Define if target is Wayland */
+#undef WTF_PLATFORM_WAYLAND
 
 /* Define if target is X11 */
 #undef WTF_PLATFORM_X11
@@ -160,16 +159,10 @@
 #undef WTF_USE_ACCELERATED_COMPOSITING
 
 /* */
-#undef WTF_USE_CLUTTER
-
-/* */
 #undef WTF_USE_EGL
 
 /* */
-#undef WTF_USE_FREETYPE
-
-/* */
-#undef WTF_USE_GLIB
+#undef WTF_USE_GEOCLUE2
 
 /* */
 #undef WTF_USE_GLX
@@ -178,34 +171,19 @@
 #undef WTF_USE_GSTREAMER
 
 /* */
-#undef WTF_USE_HARFBUZZ
-
-/* */
-#undef WTF_USE_ICU_UNICODE
-
-/* */
 #undef WTF_USE_OPENGL
 
 /* */
 #undef WTF_USE_OPENGL_ES_2
 
 /* */
-#undef WTF_USE_SOUP
-
-/* */
 #undef WTF_USE_TEXTURE_MAPPER
-
-/* */
-#undef WTF_USE_TEXTURE_MAPPER_CAIRO
 
 /* */
 #undef WTF_USE_TEXTURE_MAPPER_GL
 
 /* 1 */
 #undef WTF_USE_WEBAUDIO_GSTREAMER
-
-/* */
-#undef WTF_USE_WEBP
 
 /* */
 #undef XP_UNIX
@@ -226,19 +204,6 @@
 
 /* */
 #undef _UNICODE
-
-/* Define to empty if `const' does not conform to ANSI C. */
-#undef const
-
-/* Define to `__inline__' or `__inline' if that's what the C compiler
-   calls it, or to nothing if 'inline' is not supported under any name.  */
-#ifndef __cplusplus
-#undef inline
-#endif
-
-/* Define to empty if the keyword `volatile' does not work. Warning: valid
-   code using `volatile' can become incorrect without. Disable with care. */
-#undef volatile
 
 
 #include "WebKitFeatures.h"

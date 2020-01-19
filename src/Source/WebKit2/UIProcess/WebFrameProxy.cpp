@@ -34,17 +34,16 @@
 #include "WebPageProxy.h"
 #include <WebCore/DOMImplementation.h>
 #include <WebCore/Image.h>
+#include <WebCore/MIMETypeRegistry.h>
 #include <stdio.h>
 #include <wtf/text/WTFString.h>
 
 using namespace WebCore;
-using namespace std;
 
 namespace WebKit {
 
 WebFrameProxy::WebFrameProxy(WebPageProxy* page, uint64_t frameID)
     : m_page(page)
-    , m_loadState(LoadStateFinished)
     , m_isFrameSet(false)
     , m_frameID(frameID)
 {
@@ -74,6 +73,14 @@ bool WebFrameProxy::isMainFrame() const
     return this == m_page->mainFrame();
 }
 
+void WebFrameProxy::loadURL(const String& url)
+{
+    if (!m_page)
+        return;
+
+    m_page->process().send(Messages::WebPage::LoadURLInFrame(url, m_frameID), m_page->pageID());
+}
+
 void WebFrameProxy::stopLoading() const
 {
     if (!m_page)
@@ -82,7 +89,7 @@ void WebFrameProxy::stopLoading() const
     if (!m_page->isValid())
         return;
 
-    m_page->process()->send(Messages::WebPage::StopLoadingFrame(m_frameID), m_page->pageID());
+    m_page->process().send(Messages::WebPage::StopLoadingFrame(m_frameID), m_page->pageID());
 }
     
 bool WebFrameProxy::canProvideSource() const
@@ -95,16 +102,7 @@ bool WebFrameProxy::canShowMIMEType(const String& mimeType) const
     if (!m_page)
         return false;
 
-    if (m_page->canShowMIMEType(mimeType))
-        return true;
-
-#if PLATFORM(MAC)
-    // On Mac, we can show PDFs.
-    if (!mimeType.isEmpty())
-        return WebContext::pdfAndPostScriptMIMETypes().contains(mimeType) && !WebContext::omitPDFSupport();
-#endif
-
-    return false;
+    return m_page->canShowMIMEType(mimeType);
 }
 
 bool WebFrameProxy::isDisplayingStandaloneImageDocument() const
@@ -115,8 +113,7 @@ bool WebFrameProxy::isDisplayingStandaloneImageDocument() const
 bool WebFrameProxy::isDisplayingMarkupDocument() const
 {
     // FIXME: This check should be moved to somewhere in WebCore.
-    // FIXME: This returns false when displaying a web archive.
-    return m_MIMEType == "text/html" || m_MIMEType == "image/svg+xml" || DOMImplementation::isXMLMIMEType(m_MIMEType);
+    return m_MIMEType == "text/html" || m_MIMEType == "image/svg+xml" || m_MIMEType == "application/x-webarchive" || DOMImplementation::isXMLMIMEType(m_MIMEType);
 }
 
 bool WebFrameProxy::isDisplayingPDFDocument() const
@@ -124,36 +121,28 @@ bool WebFrameProxy::isDisplayingPDFDocument() const
     if (m_MIMEType.isEmpty())
         return false;
 
-    return WebContext::pdfAndPostScriptMIMETypes().contains(m_MIMEType);
+    return MIMETypeRegistry::isPDFOrPostScriptMIMEType(m_MIMEType);
 }
 
 void WebFrameProxy::didStartProvisionalLoad(const String& url)
 {
-    ASSERT(m_provisionalURL.isEmpty());
-    m_loadState = LoadStateProvisional;
-    m_provisionalURL = url;
+    m_frameLoadState.didStartProvisionalLoad(url);
 }
 
 void WebFrameProxy::didReceiveServerRedirectForProvisionalLoad(const String& url)
 {
-    ASSERT(m_loadState == LoadStateProvisional);
-    m_provisionalURL = url;
+    m_frameLoadState.didReceiveServerRedirectForProvisionalLoad(url);
 }
 
 void WebFrameProxy::didFailProvisionalLoad()
 {
-    ASSERT(m_loadState == LoadStateProvisional);
-    m_loadState = LoadStateFinished;
-    m_provisionalURL = String();
-    m_unreachableURL = m_lastUnreachableURL;
+    m_frameLoadState.didFailProvisionalLoad();
 }
 
-void WebFrameProxy::didCommitLoad(const String& contentType, const PlatformCertificateInfo& certificateInfo)
+void WebFrameProxy::didCommitLoad(const String& contentType, const WebCore::CertificateInfo& certificateInfo)
 {
-    ASSERT(m_loadState == LoadStateProvisional);
-    m_loadState = LoadStateCommitted;
-    m_url = m_provisionalURL;
-    m_provisionalURL = String();
+    m_frameLoadState.didCommitLoad();
+
     m_title = String();
     m_MIMEType = contentType;
     m_isFrameSet = false;
@@ -162,22 +151,17 @@ void WebFrameProxy::didCommitLoad(const String& contentType, const PlatformCerti
 
 void WebFrameProxy::didFinishLoad()
 {
-    ASSERT(m_loadState == LoadStateCommitted);
-    ASSERT(m_provisionalURL.isEmpty());
-    m_loadState = LoadStateFinished;
+    m_frameLoadState.didFinishLoad();
 }
 
 void WebFrameProxy::didFailLoad()
 {
-    ASSERT(m_loadState == LoadStateCommitted);
-    ASSERT(m_provisionalURL.isEmpty());
-    m_loadState = LoadStateFinished;
-    m_title = String();
+    m_frameLoadState.didFailLoad();
 }
 
 void WebFrameProxy::didSameDocumentNavigation(const String& url)
 {
-    m_url = url;
+    m_frameLoadState.didSameDocumentNotification(url);
 }
 
 void WebFrameProxy::didChangeTitle(const String& title)
@@ -231,7 +215,7 @@ void WebFrameProxy::getMainResourceData(PassRefPtr<DataCallback> callback)
     m_page->getMainResourceDataOfFrame(this, callback);
 }
 
-void WebFrameProxy::getResourceData(WebURL* resourceURL, PassRefPtr<DataCallback> callback)
+void WebFrameProxy::getResourceData(API::URL* resourceURL, PassRefPtr<DataCallback> callback)
 {
     if (!m_page) {
         callback->invalidate();
@@ -243,8 +227,7 @@ void WebFrameProxy::getResourceData(WebURL* resourceURL, PassRefPtr<DataCallback
 
 void WebFrameProxy::setUnreachableURL(const String& unreachableURL)
 {
-    m_lastUnreachableURL = m_unreachableURL;
-    m_unreachableURL = unreachableURL;
+    m_frameLoadState.setUnreachableURL(unreachableURL);
 }
 
 } // namespace WebKit

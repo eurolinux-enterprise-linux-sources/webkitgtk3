@@ -25,7 +25,11 @@
 messages -> WebInspector LegacyReceiver {
     Show()
     Close()
-    SetAttachedWindow(bool attached)
+    AttachedBottom()
+    AttachedRight()
+    Detached()
+    DidSave(String url)
+    DidAppend(String url)
     ShowConsole()
     ShowResources()
     ShowMainResourceForFrame(uint64_t frameID)
@@ -37,7 +41,7 @@ messages -> WebInspector LegacyReceiver {
     StopPageProfiling()
 
 #if ENABLE(INSPECTOR_SERVER)
-    DispatchMessageFromRemoteFrontend(WTF::String message)
+    DispatchMessageFromRemoteFrontend(String message)
     RemoteFrontendConnected()
     RemoteFrontendDisconnected()
 #endif

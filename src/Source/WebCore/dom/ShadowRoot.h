@@ -28,20 +28,16 @@
 #define ShadowRoot_h
 
 #include "ContainerNode.h"
+#include "ContentDistributor.h"
 #include "Document.h"
 #include "DocumentFragment.h"
 #include "Element.h"
 #include "ExceptionCode.h"
 #include "TreeScope.h"
-#include <wtf/DoublyLinkedList.h>
 
 namespace WebCore {
 
-class ElementShadow;
-class ScopeContentDistribution;
-
-class ShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
-    friend class WTF::DoublyLinkedListNode<ShadowRoot>;
+class ShadowRoot final : public DocumentFragment, public TreeScope {
 public:
     // FIXME: We will support multiple shadow subtrees, however current implementation does not work well
     // if a shadow root is dynamically created. So we prohibit multiple shadow subtrees
@@ -52,78 +48,60 @@ public:
         AuthorShadowRoot
     };
 
-    static PassRefPtr<ShadowRoot> create(Document* document, ShadowRootType type)
+    static PassRefPtr<ShadowRoot> create(Document& document, ShadowRootType type)
     {
         return adoptRef(new ShadowRoot(document, type));
     }
 
-    void recalcStyle(StyleChange);
+    virtual ~ShadowRoot();
 
-    virtual bool applyAuthorStyles() const OVERRIDE { return m_applyAuthorStyles; }
+    virtual bool applyAuthorStyles() const override { return m_applyAuthorStyles; }
     void setApplyAuthorStyles(bool);
-    virtual bool resetStyleInheritance() const OVERRIDE { return m_resetStyleInheritance; }
+    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
     void setResetStyleInheritance(bool);
 
-    Element* host() const { return toElement(parentOrShadowHostNode()); }
-    ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
+    Element* hostElement() const { return m_hostElement; }
+    void setHostElement(Element* hostElement) { m_hostElement = hostElement; }
 
     String innerHTML() const;
     void setInnerHTML(const String&, ExceptionCode&);
 
     Element* activeElement() const;
 
-    ShadowRoot* youngerShadowRoot() const { return prev(); }
-    ShadowRoot* olderShadowRoot() const { return next(); }
-
-    bool isYoungest() const { return !youngerShadowRoot(); }
-    bool isOldest() const { return !olderShadowRoot(); }
-
-    virtual void attach();
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-
-    virtual void registerScopedHTMLStyleChild() OVERRIDE;
-    virtual void unregisterScopedHTMLStyleChild() OVERRIDE;
-
-    ScopeContentDistribution* scopeDistribution() { return m_scopeDistribution.get(); }
-    const ScopeContentDistribution* scopeDistribution() const { return m_scopeDistribution.get(); }
-    ScopeContentDistribution* ensureScopeDistribution();
-
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
 
     PassRefPtr<Node> cloneNode(bool, ExceptionCode&);
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const OVERRIDE;
+    ContentDistributor& distributor() { return m_distributor; }
+    void invalidateDistribution() { m_distributor.invalidateDistribution(hostElement()); }
+
+    virtual void removeAllEventListeners() override;
 
 private:
-    ShadowRoot(Document*, ShadowRootType);
-    virtual ~ShadowRoot();
+    ShadowRoot(Document&, ShadowRootType);
 
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
-    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
+    virtual void dropChildren() override;
+    virtual bool childTypeAllowed(NodeType) const override;
+    virtual void childrenChanged(const ChildChange&) override;
 
     // ShadowRoots should never be cloned.
-    virtual PassRefPtr<Node> cloneNode(bool) OVERRIDE { return 0; }
+    virtual PassRefPtr<Node> cloneNode(bool) override { return 0; }
 
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
-    bool isOrphan() const { return !host(); }
+    bool isOrphan() const { return !hostElement(); }
 
-    ShadowRoot* m_prev;
-    ShadowRoot* m_next;
-    OwnPtr<ScopeContentDistribution> m_scopeDistribution;
-    unsigned m_numberOfStyles : 28;
     unsigned m_applyAuthorStyles : 1;
     unsigned m_resetStyleInheritance : 1;
     unsigned m_type : 1;
-    unsigned m_registeredWithParentShadowRoot : 1;
+
+    Element* m_hostElement;
+
+    ContentDistributor m_distributor;
 };
 
 inline Element* ShadowRoot::activeElement() const
 {
-    if (Node* node = treeScope()->focusedNode())
-        return node->isElementNode() ? toElement(node) : 0;
-    return 0;
+    return treeScope().focusedElement();
 }
 
 inline const ShadowRoot* toShadowRoot(const Node* node)
@@ -135,6 +113,26 @@ inline const ShadowRoot* toShadowRoot(const Node* node)
 inline ShadowRoot* toShadowRoot(Node* node)
 {
     return const_cast<ShadowRoot*>(toShadowRoot(static_cast<const Node*>(node)));
+}
+
+inline ShadowRoot* Node::shadowRoot() const
+{
+    if (!isElementNode())
+        return 0;
+    return toElement(this)->shadowRoot();
+}
+
+inline ContainerNode* Node::parentOrShadowHostNode() const
+{
+    ASSERT(isMainThreadOrGCThread());
+    if (isShadowRoot())
+        return toShadowRoot(this)->hostElement();
+    return parentNode();
+}
+
+inline bool hasShadowRootParent(const Node& node)
+{
+    return node.parentNode() && node.parentNode()->isShadowRoot();
 }
 
 } // namespace

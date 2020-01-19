@@ -45,8 +45,8 @@ public:
     explicit AudioNodeInput(AudioNode*);
 
     // AudioSummingJunction
-    virtual bool canUpdateState() OVERRIDE { return !node()->isMarkedForDeletion(); }
-    virtual void didUpdate() OVERRIDE;
+    virtual bool canUpdateState() override { return !node()->isMarkedForDeletion(); }
+    virtual void didUpdate() override;
 
     // Can be called from any thread.
     AudioNode* node() const { return m_node; }
@@ -82,9 +82,6 @@ public:
 private:
     AudioNode* m_node;
 
-    // The number of channels of the rendering connection with the largest number of channels.
-    unsigned numberOfRenderingChannels();
-
     // m_disabledOutputs contains the AudioNodeOutputs which are disabled (will not be processed) by the audio graph rendering.
     // But, from JavaScript's perspective, these outputs are still connected to us.
     // Generally, these represent disabled connections from "notes" which have finished playing but are not yet garbage collected.
@@ -94,7 +91,7 @@ private:
     AudioBus* internalSummingBus();
     void sumAllConnections(AudioBus* summingBus, size_t framesToProcess);
 
-    OwnPtr<AudioBus> m_internalSummingBus;
+    RefPtr<AudioBus> m_internalSummingBus;
 };
 
 } // namespace WebCore

@@ -55,7 +55,6 @@
 #endif
 
 #if ENABLE(DATALIST_ELEMENT)
-#include "ElementShadow.h"
 #include "HTMLCollection.h"
 #include "HTMLDataListElement.h"
 #include "HTMLOptionElement.h"
@@ -81,31 +80,31 @@ RenderTheme::RenderTheme()
 {
 }
 
-void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, Element* e, bool UAHasAppearance, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
+void RenderTheme::adjustStyle(StyleResolver& styleResolver, RenderStyle& style, Element* e, bool UAHasAppearance, const BorderData& border, const FillLayer& background, const Color& backgroundColor)
 {
     // Force inline and table display styles to be inline-block (except for table- which is block)
-    ControlPart part = style->appearance();
-    if (style->display() == INLINE || style->display() == INLINE_TABLE || style->display() == TABLE_ROW_GROUP
-        || style->display() == TABLE_HEADER_GROUP || style->display() == TABLE_FOOTER_GROUP
-        || style->display() == TABLE_ROW || style->display() == TABLE_COLUMN_GROUP || style->display() == TABLE_COLUMN
-        || style->display() == TABLE_CELL || style->display() == TABLE_CAPTION)
-        style->setDisplay(INLINE_BLOCK);
-    else if (style->display() == COMPACT || style->display() == RUN_IN || style->display() == LIST_ITEM || style->display() == TABLE)
-        style->setDisplay(BLOCK);
+    ControlPart part = style.appearance();
+    if (style.display() == INLINE || style.display() == INLINE_TABLE || style.display() == TABLE_ROW_GROUP
+        || style.display() == TABLE_HEADER_GROUP || style.display() == TABLE_FOOTER_GROUP
+        || style.display() == TABLE_ROW || style.display() == TABLE_COLUMN_GROUP || style.display() == TABLE_COLUMN
+        || style.display() == TABLE_CELL || style.display() == TABLE_CAPTION)
+        style.setDisplay(INLINE_BLOCK);
+    else if (style.display() == COMPACT || style.display() == RUN_IN || style.display() == LIST_ITEM || style.display() == TABLE)
+        style.setDisplay(BLOCK);
 
-    if (UAHasAppearance && isControlStyled(style, border, background, backgroundColor)) {
+    if (UAHasAppearance && isControlStyled(&style, border, background, backgroundColor)) {
         if (part == MenulistPart) {
-            style->setAppearance(MenulistButtonPart);
+            style.setAppearance(MenulistButtonPart);
             part = MenulistButtonPart;
         } else
-            style->setAppearance(NoControlPart);
+            style.setAppearance(NoControlPart);
     }
 
-    if (!style->hasAppearance())
+    if (!style.hasAppearance())
         return;
 
     // Never support box-shadow on native controls.
-    style->setBoxShadow(nullptr);
+    style.setBoxShadow(nullptr);
     
 #if USE(NEW_THEME)
     switch (part) {
@@ -117,99 +116,100 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
     case DefaultButtonPart:
     case ButtonPart: {
         // Border
-        LengthBox borderBox(style->borderTopWidth(), style->borderRightWidth(), style->borderBottomWidth(), style->borderLeftWidth());
-        borderBox = m_theme->controlBorder(part, style->font(), borderBox, style->effectiveZoom());
-        if (borderBox.top().value() != static_cast<int>(style->borderTopWidth())) {
+        LengthBox borderBox(style.borderTopWidth(), style.borderRightWidth(), style.borderBottomWidth(), style.borderLeftWidth());
+        borderBox = m_theme->controlBorder(part, style.font(), borderBox, style.effectiveZoom());
+        if (borderBox.top().value() != static_cast<int>(style.borderTopWidth())) {
             if (borderBox.top().value())
-                style->setBorderTopWidth(borderBox.top().value());
+                style.setBorderTopWidth(borderBox.top().value());
             else
-                style->resetBorderTop();
+                style.resetBorderTop();
         }
-        if (borderBox.right().value() != static_cast<int>(style->borderRightWidth())) {
+        if (borderBox.right().value() != static_cast<int>(style.borderRightWidth())) {
             if (borderBox.right().value())
-                style->setBorderRightWidth(borderBox.right().value());
+                style.setBorderRightWidth(borderBox.right().value());
             else
-                style->resetBorderRight();
+                style.resetBorderRight();
         }
-        if (borderBox.bottom().value() != static_cast<int>(style->borderBottomWidth())) {
-            style->setBorderBottomWidth(borderBox.bottom().value());
+        if (borderBox.bottom().value() != static_cast<int>(style.borderBottomWidth())) {
+            style.setBorderBottomWidth(borderBox.bottom().value());
             if (borderBox.bottom().value())
-                style->setBorderBottomWidth(borderBox.bottom().value());
+                style.setBorderBottomWidth(borderBox.bottom().value());
             else
-                style->resetBorderBottom();
+                style.resetBorderBottom();
         }
-        if (borderBox.left().value() != static_cast<int>(style->borderLeftWidth())) {
-            style->setBorderLeftWidth(borderBox.left().value());
+        if (borderBox.left().value() != static_cast<int>(style.borderLeftWidth())) {
+            style.setBorderLeftWidth(borderBox.left().value());
             if (borderBox.left().value())
-                style->setBorderLeftWidth(borderBox.left().value());
+                style.setBorderLeftWidth(borderBox.left().value());
             else
-                style->resetBorderLeft();
+                style.resetBorderLeft();
         }
 
         // Padding
-        LengthBox paddingBox = m_theme->controlPadding(part, style->font(), style->paddingBox(), style->effectiveZoom());
-        if (paddingBox != style->paddingBox())
-            style->setPaddingBox(paddingBox);
+        LengthBox paddingBox = m_theme->controlPadding(part, style.font(), style.paddingBox(), style.effectiveZoom());
+        if (paddingBox != style.paddingBox())
+            style.setPaddingBox(paddingBox);
 
         // Whitespace
         if (m_theme->controlRequiresPreWhiteSpace(part))
-            style->setWhiteSpace(PRE);
+            style.setWhiteSpace(PRE);
             
         // Width / Height
         // The width and height here are affected by the zoom.
         // FIXME: Check is flawed, since it doesn't take min-width/max-width into account.
-        LengthSize controlSize = m_theme->controlSize(part, style->font(), LengthSize(style->width(), style->height()), style->effectiveZoom());
-        if (controlSize.width() != style->width())
-            style->setWidth(controlSize.width());
-        if (controlSize.height() != style->height())
-            style->setHeight(controlSize.height());
+        LengthSize controlSize = m_theme->controlSize(part, style.font(), LengthSize(style.width(), style.height()), style.effectiveZoom());
+        if (controlSize.width() != style.width())
+            style.setWidth(controlSize.width());
+        if (controlSize.height() != style.height())
+            style.setHeight(controlSize.height());
                 
         // Min-Width / Min-Height
-        LengthSize minControlSize = m_theme->minimumControlSize(part, style->font(), style->effectiveZoom());
-        if (minControlSize.width() != style->minWidth())
-            style->setMinWidth(minControlSize.width());
-        if (minControlSize.height() != style->minHeight())
-            style->setMinHeight(minControlSize.height());
+        LengthSize minControlSize = m_theme->minimumControlSize(part, style.font(), style.effectiveZoom());
+        if (minControlSize.width() != style.minWidth())
+            style.setMinWidth(minControlSize.width());
+        if (minControlSize.height() != style.minHeight())
+            style.setMinHeight(minControlSize.height());
                 
         // Font
-        FontDescription controlFont = m_theme->controlFont(part, style->font(), style->effectiveZoom());
-        if (controlFont != style->font().fontDescription()) {
+        FontDescription controlFont = m_theme->controlFont(part, style.font(), style.effectiveZoom());
+        if (controlFont != style.font().fontDescription()) {
             // Reset our line-height
-            style->setLineHeight(RenderStyle::initialLineHeight());
+            style.setLineHeight(RenderStyle::initialLineHeight());
 
             // Now update our font.
-            if (style->setFontDescription(controlFont))
-                style->font().update(0);
+            if (style.setFontDescription(controlFont))
+                style.font().update(0);
         }
     }
+    break;
     default:
         break;
     }
 #endif
 
     // Call the appropriate style adjustment method based off the appearance value.
-    switch (style->appearance()) {
+    switch (style.appearance()) {
 #if !USE(NEW_THEME)
     case CheckboxPart:
-        return adjustCheckboxStyle(styleResolver, style, e);
+        return adjustCheckboxStyle(&styleResolver, &style, e);
     case RadioPart:
-        return adjustRadioStyle(styleResolver, style, e);
+        return adjustRadioStyle(&styleResolver, &style, e);
     case PushButtonPart:
     case SquareButtonPart:
     case DefaultButtonPart:
     case ButtonPart:
-        return adjustButtonStyle(styleResolver, style, e);
+        return adjustButtonStyle(&styleResolver, &style, e);
     case InnerSpinButtonPart:
-        return adjustInnerSpinButtonStyle(styleResolver, style, e);
+        return adjustInnerSpinButtonStyle(&styleResolver, &style, e);
 #endif
     case TextFieldPart:
-        return adjustTextFieldStyle(styleResolver, style, e);
+        return adjustTextFieldStyle(&styleResolver, &style, e);
     case TextAreaPart:
-        return adjustTextAreaStyle(styleResolver, style, e);
+        return adjustTextAreaStyle(&styleResolver, &style, e);
     case MenulistPart:
-        return adjustMenuListStyle(styleResolver, style, e);
+        return adjustMenuListStyle(&styleResolver, &style, e);
     case MenulistButtonPart:
-        return adjustMenuListButtonStyle(styleResolver, style, e);
+        return adjustMenuListButtonStyle(&styleResolver, &style, e);
     case MediaPlayButtonPart:
     case MediaCurrentTimePart:
     case MediaTimeRemainingPart:
@@ -217,29 +217,29 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
     case MediaExitFullscreenButtonPart:
     case MediaMuteButtonPart:
     case MediaVolumeSliderContainerPart:
-        return adjustMediaControlStyle(styleResolver, style, e);
+        return adjustMediaControlStyle(&styleResolver, &style, e);
     case MediaSliderPart:
     case MediaVolumeSliderPart:
     case MediaFullScreenVolumeSliderPart:
     case SliderHorizontalPart:
     case SliderVerticalPart:
-        return adjustSliderTrackStyle(styleResolver, style, e);
+        return adjustSliderTrackStyle(&styleResolver, &style, e);
     case SliderThumbHorizontalPart:
     case SliderThumbVerticalPart:
-        return adjustSliderThumbStyle(styleResolver, style, e);
+        return adjustSliderThumbStyle(&styleResolver, &style, e);
     case SearchFieldPart:
-        return adjustSearchFieldStyle(styleResolver, style, e);
+        return adjustSearchFieldStyle(&styleResolver, &style, e);
     case SearchFieldCancelButtonPart:
-        return adjustSearchFieldCancelButtonStyle(styleResolver, style, e);
+        return adjustSearchFieldCancelButtonStyle(&styleResolver, &style, e);
     case SearchFieldDecorationPart:
-        return adjustSearchFieldDecorationStyle(styleResolver, style, e);
+        return adjustSearchFieldDecorationPartStyle(&styleResolver, &style, e);
     case SearchFieldResultsDecorationPart:
-        return adjustSearchFieldResultsDecorationStyle(styleResolver, style, e);
+        return adjustSearchFieldResultsDecorationPartStyle(&styleResolver, &style, e);
     case SearchFieldResultsButtonPart:
-        return adjustSearchFieldResultsButtonStyle(styleResolver, style, e);
+        return adjustSearchFieldResultsButtonStyle(&styleResolver, &style, e);
 #if ENABLE(PROGRESS_ELEMENT)
     case ProgressBarPart:
-        return adjustProgressBarStyle(styleResolver, style, e);
+        return adjustProgressBarStyle(&styleResolver, &style, e);
 #endif
 #if ENABLE(METER_ELEMENT)
     case MeterPart:
@@ -247,11 +247,11 @@ void RenderTheme::adjustStyle(StyleResolver* styleResolver, RenderStyle* style, 
     case ContinuousCapacityLevelIndicatorPart:
     case DiscreteCapacityLevelIndicatorPart:
     case RatingLevelIndicatorPart:
-        return adjustMeterStyle(styleResolver, style, e);
+        return adjustMeterStyle(&styleResolver, &style, e);
 #endif
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
-        return adjustInputFieldSpeechButtonStyle(styleResolver, style, e);
+        return adjustInputFieldSpeechButtonStyle(&styleResolver, &style, e);
 #endif
     default:
         break;
@@ -271,7 +271,7 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
     if (paintInfo.context->paintingDisabled())
         return false;
 
-    ControlPart part = o->style()->appearance();
+    ControlPart part = o->style().appearance();
 
 #if USE(NEW_THEME)
     switch (part) {
@@ -282,7 +282,7 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
     case DefaultButtonPart:
     case ButtonPart:
     case InnerSpinButtonPart:
-        m_theme->paint(part, controlStatesForRenderer(o), const_cast<GraphicsContext*>(paintInfo.context), r, o->style()->effectiveZoom(), o->view()->frameView());
+        m_theme->paint(part, controlStatesForRenderer(o), const_cast<GraphicsContext*>(paintInfo.context), r, o->style().effectiveZoom(), &o->view().frameView());
         return false;
     default:
         break;
@@ -341,6 +341,8 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
         return paintMediaRewindButton(o, paintInfo, r);
     case MediaReturnToRealtimeButtonPart:
         return paintMediaReturnToRealtimeButton(o, paintInfo, r);
+    case MediaToggleClosedCaptionsButtonPart:
+        return paintMediaToggleClosedCaptionsButton(o, paintInfo, r);
     case MediaSliderPart:
         return paintMediaSliderTrack(o, paintInfo, r);
     case MediaSliderThumbPart:
@@ -373,11 +375,13 @@ bool RenderTheme::paint(RenderObject* o, const PaintInfo& paintInfo, const IntRe
     case SearchFieldCancelButtonPart:
         return paintSearchFieldCancelButton(o, paintInfo, r);
     case SearchFieldDecorationPart:
-        return paintSearchFieldDecoration(o, paintInfo, r);
+        return paintSearchFieldDecorationPart(o, paintInfo, r);
     case SearchFieldResultsDecorationPart:
-        return paintSearchFieldResultsDecoration(o, paintInfo, r);
+        return paintSearchFieldResultsDecorationPart(o, paintInfo, r);
     case SearchFieldResultsButtonPart:
         return paintSearchFieldResultsButton(o, paintInfo, r);
+    case SnapshottedPluginOverlayPart:
+        return paintSnapshottedPluginOverlay(o, paintInfo, r);
 #if ENABLE(INPUT_SPEECH)
     case InputSpeechButtonPart:
         return paintInputFieldSpeechButton(o, paintInfo, r);
@@ -394,8 +398,12 @@ bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, c
     if (paintInfo.context->paintingDisabled())
         return false;
 
+#if PLATFORM(IOS)
+    UNUSED_PARAM(r);
+    return o->style().appearance() != NoControlPart;
+#else
     // Call the appropriate paint method based off the appearance value.
-    switch (o->style()->appearance()) {
+    switch (o->style().appearance()) {
     case TextFieldPart:
         return paintTextField(o, paintInfo, r);
     case ListboxPart:
@@ -437,27 +445,39 @@ bool RenderTheme::paintBorderOnly(RenderObject* o, const PaintInfo& paintInfo, c
     }
 
     return false;
+#endif
 }
 
-bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
+bool RenderTheme::paintDecorations(RenderObject* renderer, const PaintInfo& paintInfo, const IntRect& rect)
 {
     if (paintInfo.context->paintingDisabled())
         return false;
 
     // Call the appropriate paint method based off the appearance value.
-    switch (o->style()->appearance()) {
+    switch (renderer->style().appearance()) {
     case MenulistButtonPart:
-        return paintMenuListButton(o, paintInfo, r);
+        return paintMenuListButtonDecorations(renderer, paintInfo, rect);
     case TextFieldPart:
+        return paintTextFieldDecorations(renderer, paintInfo, rect);
     case TextAreaPart:
-    case ListboxPart:
+        return paintTextAreaDecorations(renderer, paintInfo, rect);
     case CheckboxPart:
+        return paintCheckboxDecorations(renderer, paintInfo, rect);
     case RadioPart:
+        return paintRadioDecorations(renderer, paintInfo, rect);
     case PushButtonPart:
+        return paintPushButtonDecorations(renderer, paintInfo, rect);
     case SquareButtonPart:
-    case DefaultButtonPart:
+        return paintSquareButtonDecorations(renderer, paintInfo, rect);
     case ButtonPart:
+        return paintButtonDecorations(renderer, paintInfo, rect);
     case MenulistPart:
+        return paintMenuListDecorations(renderer, paintInfo, rect);
+    case SliderThumbHorizontalPart:
+    case SliderThumbVerticalPart:
+        return paintSliderThumbDecorations(renderer, paintInfo, rect);
+    case SearchFieldPart:
+        return paintSearchFieldDecorations(renderer, paintInfo, rect);
 #if ENABLE(METER_ELEMENT)
     case MeterPart:
     case RelevancyLevelIndicatorPart:
@@ -470,9 +490,8 @@ bool RenderTheme::paintDecorations(RenderObject* o, const PaintInfo& paintInfo, 
 #endif
     case SliderHorizontalPart:
     case SliderVerticalPart:
-    case SliderThumbHorizontalPart:
-    case SliderThumbVerticalPart:
-    case SearchFieldPart:
+    case ListboxPart:
+    case DefaultButtonPart:
     case SearchFieldCancelButtonPart:
     case SearchFieldDecorationPart:
     case SearchFieldResultsDecorationPart:
@@ -637,7 +656,7 @@ int RenderTheme::baselinePosition(const RenderObject* o) const
     const RenderBox* box = toRenderBox(o);
 
 #if USE(NEW_THEME)
-    return box->height() + box->marginTop() + m_theme->baselinePositionAdjustment(o->style()->appearance()) * o->style()->effectiveZoom();
+    return box->height() + box->marginTop() + m_theme->baselinePositionAdjustment(o->style().appearance()) * o->style().effectiveZoom();
 #else
     return box->height() + box->marginTop();
 #endif
@@ -665,8 +684,7 @@ bool RenderTheme::isControlStyled(const RenderStyle* style, const BorderData& bo
     case ContinuousCapacityLevelIndicatorPart:
     case DiscreteCapacityLevelIndicatorPart:
     case RatingLevelIndicatorPart:
-    // FIXME: Uncomment this when making search fields style-able.
-    // case SearchFieldPart:
+    case SearchFieldPart:
     case TextFieldPart:
     case TextAreaPart:
         // Test the style to see if the UA border and background match.
@@ -681,7 +699,7 @@ bool RenderTheme::isControlStyled(const RenderStyle* style, const BorderData& bo
 void RenderTheme::adjustRepaintRect(const RenderObject* o, IntRect& r)
 {
 #if USE(NEW_THEME)
-    m_theme->inflateControlPaintRect(o->style()->appearance(), controlStatesForRenderer(o), r, o->style()->effectiveZoom());
+    m_theme->inflateControlPaintRect(o->style().appearance(), controlStatesForRenderer(o), r, o->style().effectiveZoom());
 #else
     UNUSED_PARAM(o);
     UNUSED_PARAM(r);
@@ -696,7 +714,7 @@ bool RenderTheme::supportsFocusRing(const RenderStyle* style) const
 bool RenderTheme::stateChanged(RenderObject* o, ControlState state) const
 {
     // Default implementation assumes the controls don't respond to changes in :hover state
-    if (state == HoverState && !supportsHover(o->style()))
+    if (state == HoverState && !supportsHover(&o->style()))
         return false;
 
     // Assume pressed state is only responded to if the control is enabled.
@@ -721,7 +739,7 @@ ControlStates RenderTheme::controlStatesForRenderer(const RenderObject* o) const
         if (isSpinUpButtonPartPressed(o))
             result |= SpinUpState;
     }
-    if (isFocused(o) && o->style()->outlineStyleIsAuto())
+    if (isFocused(o) && o->style().outlineStyleIsAuto())
         result |= FocusState;
     if (isEnabled(o))
         result |= EnabledState;
@@ -744,7 +762,7 @@ bool RenderTheme::isActive(const RenderObject* o) const
     if (!node)
         return false;
 
-    Frame* frame = node->document()->frame();
+    Frame* frame = node->document().frame();
     if (!frame)
         return false;
 
@@ -752,7 +770,7 @@ bool RenderTheme::isActive(const RenderObject* o) const
     if (!page)
         return false;
 
-    return page->focusController()->isActive();
+    return page->focusController().isActive();
 }
 
 bool RenderTheme::isChecked(const RenderObject* o) const
@@ -776,7 +794,7 @@ bool RenderTheme::isIndeterminate(const RenderObject* o) const
     if (!inputElement)
         return false;
 
-    return inputElement->isIndeterminate();
+    return inputElement->shouldAppearIndeterminate();
 }
 
 bool RenderTheme::isEnabled(const RenderObject* o) const
@@ -784,36 +802,37 @@ bool RenderTheme::isEnabled(const RenderObject* o) const
     Node* node = o->node();
     if (!node || !node->isElementNode())
         return true;
-    return static_cast<Element*>(node)->isEnabledFormControl();
+    return !toElement(node)->isDisabledFormControl();
 }
 
 bool RenderTheme::isFocused(const RenderObject* o) const
 {
     Node* node = o->node();
-    if (!node)
+    if (!node || !node->isElementNode())
         return false;
 
-    node = node->focusDelegate();
-    Document* document = node->document();
-    Frame* frame = document->frame();
-    return node == document->focusedNode() && frame && frame->selection()->isFocusedAndActive();
+    Element* focusDelegate = toElement(node)->focusDelegate();
+    Document& document = focusDelegate->document();
+    Frame* frame = document.frame();
+    return focusDelegate == document.focusedElement() && frame && frame->selection().isFocusedAndActive();
 }
 
 bool RenderTheme::isPressed(const RenderObject* o) const
 {
-    if (!o->node())
+    if (!o->node() || !o->node()->isElementNode())
         return false;
-    return o->node()->active();
+    return toElement(o->node())->active();
 }
 
 bool RenderTheme::isSpinUpButtonPartPressed(const RenderObject* o) const
 {
     Node* node = o->node();
-    if (!node || !node->active() || !node->isElementNode()
-        || !static_cast<Element*>(node)->isSpinButtonElement())
+    if (!node || !node->isElementNode())
         return false;
-    SpinButtonElement* element = static_cast<SpinButtonElement*>(node);
-    return element->upDownState() == SpinButtonElement::Up;
+    Element* element = toElement(node);
+    if (!element->active() || !element->isSpinButtonElement())
+        return false;
+    return static_cast<SpinButtonElement*>(element)->upDownState() == SpinButtonElement::Up;
 }
 
 bool RenderTheme::isReadOnlyControl(const RenderObject* o) const
@@ -827,10 +846,10 @@ bool RenderTheme::isReadOnlyControl(const RenderObject* o) const
 bool RenderTheme::isHovered(const RenderObject* o) const
 {
     Node* node = o->node();
-    if (!node)
+    if (!node || !node->isElementNode())
         return false;
-    if (!node->isElementNode() || !static_cast<Element*>(node)->isSpinButtonElement())
-        return node->hovered();
+    if (!toElement(node)->isSpinButtonElement())
+        return toElement(node)->hovered();
     SpinButtonElement* element = static_cast<SpinButtonElement*>(node);
     return element->hovered() && element->upDownState() != SpinButtonElement::Indeterminate;
 }
@@ -838,7 +857,7 @@ bool RenderTheme::isHovered(const RenderObject* o) const
 bool RenderTheme::isSpinUpButtonPartHovered(const RenderObject* o) const
 {
     Node* node = o->node();
-    if (!node || !node->isElementNode() || !static_cast<Element*>(node)->isSpinButtonElement())
+    if (!node || !node->isElementNode() || !toElement(node)->isSpinButtonElement())
         return false;
     SpinButtonElement* element = static_cast<SpinButtonElement*>(node);
     return element->upDownState() == SpinButtonElement::Up;
@@ -850,14 +869,10 @@ bool RenderTheme::isDefault(const RenderObject* o) const
     if (!isActive(o))
         return false;
 
-    if (!o->document())
-        return false;
-
-    Settings* settings = o->document()->settings();
-    if (!settings || !settings->applicationChromeMode())
+    if (!o->frame().settings().applicationChromeMode())
         return false;
     
-    return o->style()->appearance() == DefaultButtonPart;
+    return o->style().appearance() == DefaultButtonPart;
 }
 
 #if !USE(NEW_THEME)
@@ -972,13 +987,13 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     if (!input)
         return;
 
-    HTMLDataListElement* dataList = static_cast<HTMLDataListElement*>(input->list());
+    HTMLDataListElement* dataList = toHTMLDataListElement(input->list());
     if (!dataList)
         return;
 
     double min = input->minimum();
     double max = input->maximum();
-    ControlPart part = o->style()->appearance();
+    ControlPart part = o->style().appearance();
     // We don't support ticks on alternate sliders like MediaVolumeSliders.
     if (part !=  SliderHorizontalPart && part != SliderVerticalPart)
         return;
@@ -987,15 +1002,15 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     IntSize thumbSize;
     RenderObject* thumbRenderer = input->sliderThumbElement()->renderer();
     if (thumbRenderer) {
-        RenderStyle* thumbStyle = thumbRenderer->style();
-        int thumbWidth = thumbStyle->width().intValue();
-        int thumbHeight = thumbStyle->height().intValue();
+        const RenderStyle& thumbStyle = thumbRenderer->style();
+        int thumbWidth = thumbStyle.width().intValue();
+        int thumbHeight = thumbStyle.height().intValue();
         thumbSize.setWidth(isHorizontal ? thumbWidth : thumbHeight);
         thumbSize.setHeight(isHorizontal ? thumbHeight : thumbWidth);
     }
 
     IntSize tickSize = sliderTickSize();
-    float zoomFactor = o->style()->effectiveZoom();
+    float zoomFactor = o->style().effectiveZoom();
     FloatRect tickRect;
     int tickRegionSideMargin = 0;
     int tickRegionWidth = 0;
@@ -1025,16 +1040,16 @@ void RenderTheme::paintSliderTicks(RenderObject* o, const PaintInfo& paintInfo, 
     }
     RefPtr<HTMLCollection> options = dataList->options();
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
-    paintInfo.context->setFillColor(o->style()->visitedDependentColor(CSSPropertyColor), ColorSpaceDeviceRGB);
+    paintInfo.context->setFillColor(o->style().visitedDependentColor(CSSPropertyColor), ColorSpaceDeviceRGB);
     for (unsigned i = 0; Node* node = options->item(i); i++) {
-        ASSERT(node->hasTagName(optionTag));
-        HTMLOptionElement* optionElement = static_cast<HTMLOptionElement*>(node);
+        ASSERT(isHTMLOptionElement(node));
+        HTMLOptionElement* optionElement = toHTMLOptionElement(node);
         String value = optionElement->value();
         if (!input->isValidValue(value))
             continue;
         double parsedValue = parseToDoubleForNumberType(input->sanitizeValue(value));
         double tickFraction = (parsedValue - min) / (max - min);
-        double tickRatio = isHorizontal && o->style()->isLeftToRightDirection() ? tickFraction : 1.0 - tickFraction;
+        double tickRatio = isHorizontal && o->style().isLeftToRightDirection() ? tickFraction : 1.0 - tickFraction;
         double tickPosition = round(tickRegionSideMargin + tickRegionWidth * tickRatio);
         if (isHorizontal)
             tickRect.setX(tickPosition);
@@ -1058,6 +1073,11 @@ double RenderTheme::animationDurationForProgressBar(RenderProgress*) const
 
 void RenderTheme::adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const
 {
+}
+
+IntRect RenderTheme::progressBarRectForBounds(const RenderObject*, const IntRect& bounds) const
+{
+    return bounds;
 }
 #endif
 
@@ -1095,11 +1115,11 @@ void RenderTheme::adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle
 {
 }
 
-void RenderTheme::adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldDecorationPartStyle(StyleResolver*, RenderStyle*, Element*) const
 {
 }
 
-void RenderTheme::adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const
+void RenderTheme::adjustSearchFieldResultsDecorationPartStyle(StyleResolver*, RenderStyle*, Element*) const
 {
 }
 
@@ -1119,10 +1139,10 @@ void RenderTheme::platformColorsDidChange()
     m_activeListBoxSelectionBackgroundColor = Color();
     m_inactiveListBoxSelectionForegroundColor = Color();
 
-    Page::scheduleForcedStyleRecalcForAllPages();
+    Page::updateStyleForAllPagesAfterGlobalChangeInEnvironment();
 }
 
-Color RenderTheme::systemColor(int cssValueId) const
+Color RenderTheme::systemColor(CSSValueID cssValueId) const
 {
     switch (cssValueId) {
     case CSSValueActiveborder:
@@ -1183,6 +1203,8 @@ Color RenderTheme::systemColor(int cssValueId) const
         return 0xFFCCCCCC;
     case CSSValueWindowtext:
         return 0xFF000000;
+    default:
+        break;
     }
     return Color();
 }
@@ -1259,11 +1281,6 @@ String RenderTheme::fileListNameForWidth(const FileList* fileList, const Font& f
         return StringTruncator::rightTruncate(multipleFileUploadText(fileList->length()), width, font, StringTruncator::EnableRoundingHacks);
 
     return StringTruncator::centerTruncate(string, width, font, StringTruncator::EnableRoundingHacks);
-}
-
-bool RenderTheme::shouldOpenPickerWithF4Key() const
-{
-    return false;
 }
 
 } // namespace WebCore

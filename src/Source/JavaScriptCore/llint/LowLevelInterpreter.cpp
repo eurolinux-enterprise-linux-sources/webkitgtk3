@@ -33,6 +33,7 @@
 
 #if ENABLE(LLINT_C_LOOP)
 #include "CodeBlock.h"
+#include "CommonSlowPaths.h"
 #include "LLIntCLoop.h"
 #include "LLIntSlowPaths.h"
 #include "Operations.h"
@@ -89,15 +90,22 @@ using namespace JSC::LLInt;
 #define OFFLINE_ASM_BEGIN
 #define OFFLINE_ASM_END
 
+// To keep compilers happy in case of unused labels, force usage of the label:
+#define USE_LABEL(label) \
+    do { \
+        if (false) \
+            goto label; \
+    } while (false)
 
-#define OFFLINE_ASM_OPCODE_LABEL(opcode) DEFINE_OPCODE(opcode)
+#define OFFLINE_ASM_OPCODE_LABEL(opcode) DEFINE_OPCODE(opcode) USE_LABEL(opcode);
+
 #if ENABLE(COMPUTED_GOTO_OPCODES)
-    #define OFFLINE_ASM_GLUE_LABEL(label)  label:
+#define OFFLINE_ASM_GLUE_LABEL(label)  label: USE_LABEL(label);
 #else
-    #define OFFLINE_ASM_GLUE_LABEL(label)  case label: label:
+#define OFFLINE_ASM_GLUE_LABEL(label)  case label: label: USE_LABEL(label);
 #endif
 
-#define OFFLINE_ASM_LOCAL_LABEL(label)   label:
+#define OFFLINE_ASM_LOCAL_LABEL(label) label: USE_LABEL(label);
 
 
 //============================================================================
@@ -116,6 +124,17 @@ static double Ints2Double(uint32_t lo, uint32_t hi)
     } u;
     u.ival64 = (static_cast<uint64_t>(hi) << 32) | lo;
     return u.dval;
+}
+
+static void Double2Ints(double val, uint32_t& lo, uint32_t& hi)
+{
+    union {
+        double dval;
+        uint64_t ival64;
+    } u;
+    u.dval = val;
+    hi = static_cast<uint32_t>(u.ival64 >> 32);
+    lo = static_cast<uint32_t>(u.ival64);
 }
 #endif // USE(JSVALUE32_64)
 
@@ -218,8 +237,7 @@ struct CLoopRegister {
 // The llint C++ interpreter loop:
 //
 
-JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
-                       bool isInitializationPass)
+JSValue CLoop::execute(CallFrame* callFrame, Opcode entryOpcode, bool isInitializationPass)
 {
     #define CAST reinterpret_cast
     #define SIGN_BIT32(x) ((x) & 0x80000000)
@@ -254,7 +272,7 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
         return JSValue();
     }
 
-    ASSERT(callFrame->globalData().topCallFrame == callFrame);
+    ASSERT(callFrame->vm().topCallFrame == callFrame);
 
     // Define the pseudo registers used by the LLINT C Loop backend:
     ASSERT(sizeof(CLoopRegister) == sizeof(intptr_t));
@@ -297,23 +315,12 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
     CLoopRegister rRetVPC;
     CLoopDoubleRegister d0, d1;
 
-#if COMPILER(MSVC)
     // Keep the compiler happy. We don't really need this, but the compiler
     // will complain. This makes the warning go away.
     t0.i = 0;
     t1.i = 0;
-#endif
 
-    // Instantiate the pseudo JIT stack frame used by the LLINT C Loop backend:
-    JITStackFrame jitStackFrame;
-
-    // The llint expects the native stack pointer, sp, to be pointing to the
-    // jitStackFrame (which is the simulation of the native stack frame):
-    JITStackFrame* const sp = &jitStackFrame;
-    sp->globalData = &callFrame->globalData();
-
-    // Set up an alias for the globalData ptr in the JITStackFrame:
-    JSGlobalData* &globalData = sp->globalData;
+    VM* vm = &callFrame->vm();
 
     CodeBlock* codeBlock = callFrame->codeBlock();
     Instruction* vPC;
@@ -344,7 +351,7 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
     JSValue functionReturnValue;
     Opcode opcode;
 
-    opcode = LLInt::getOpcode(bootstrapOpcodeId);
+    opcode = entryOpcode;
 
     #if ENABLE(OPCODE_STATS)
         #define RECORD_OPCODE_STATS(__opcode) \
@@ -414,7 +421,7 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
             callFrame = callFrame->callerFrame();
 
             // The part in getHostCallReturnValueWithExecState():
-            JSValue result = globalData->hostCallReturnValue;
+            JSValue result = vm->hostCallReturnValue;
 #if USE(JSVALUE32_64)
             t1.i = result.tag();
             t0.i = result.payload();
@@ -424,9 +431,9 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
             goto doReturnHelper;
         }
 
-        OFFLINE_ASM_GLUE_LABEL(ctiOpThrowNotCaught)
+        OFFLINE_ASM_GLUE_LABEL(returnFromJavaScript)
         {
-            return globalData->exception;
+            return vm->exception();
         }
 
 #if !ENABLE(COMPUTED_GOTO_OPCODES)
@@ -441,7 +448,7 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
 
     doReturnHelper: {
         ASSERT(!!callFrame);
-        if (callFrame->hasHostCallFrameFlag()) {
+        if (callFrame->isVMEntrySentinel()) {
 #if USE(JSVALUE32_64)
             return JSValue(t1.i, t0.i); // returning JSValue(tag, payload);
 #else
@@ -454,9 +461,8 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
         // from ArgumentCount.tag() (see the dispatchAfterCall() macro used in
         // the callTargetFunction() macro in the llint asm files).
         //
-        // For the C loop, we don't have the JIT stub to this work for us.
-        // So, we need to implement the equivalent of dispatchAfterCall() here
-        // before dispatching to the PC.
+        // For the C loop, we don't have the JIT stub to do this work for us. So,
+        // we jump to llint_generic_return_point.
 
         vPC = callFrame->currentVPC();
 
@@ -481,11 +487,12 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
         rBasePC.vp = codeBlock->instructions().begin();
 #endif // USE(JSVALUE64)
 
-        NEXT_INSTRUCTION();
+        goto llint_generic_return_point;
 
     } // END doReturnHelper.
 
 
+#if ENABLE(COMPUTED_GOTO_OPCODES)
     // Keep the compiler happy so that it doesn't complain about unused
     // labels for the LLInt trampoline glue. The labels are automatically
     // emitted by label macros above, and some of them are referenced by
@@ -496,7 +503,7 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
         UNUSED_LABEL(__opcode);
         FOR_EACH_OPCODE_ID(LLINT_OPCODE_ENTRY);
     #undef LLINT_OPCODE_ENTRY
-
+#endif
 
     #undef NEXT_INSTRUCTION
     #undef DEFINE_OPCODE
@@ -515,21 +522,41 @@ JSValue CLoop::execute(CallFrame* callFrame, OpcodeID bootstrapOpcodeId,
 //
 
 // These are for building an interpreter from generated assembly code:
+#if CPU(X86_64) && COMPILER(CLANG)
+#define OFFLINE_ASM_BEGIN   asm ( \
+    ".cfi_startproc\n"
+
+#define OFFLINE_ASM_END     \
+    ".cfi_endproc\n" \
+);
+#else
 #define OFFLINE_ASM_BEGIN   asm (
 #define OFFLINE_ASM_END     );
+#endif
 
 #define OFFLINE_ASM_OPCODE_LABEL(__opcode) OFFLINE_ASM_GLOBAL_LABEL(llint_##__opcode)
 #define OFFLINE_ASM_GLUE_LABEL(__opcode)   OFFLINE_ASM_GLOBAL_LABEL(__opcode)
 
 #if CPU(ARM_THUMB2)
 #define OFFLINE_ASM_GLOBAL_LABEL(label)          \
+    ".text\n"                                    \
     ".globl " SYMBOL_STRING(label) "\n"          \
     HIDE_SYMBOL(label) "\n"                      \
     ".thumb\n"                                   \
     ".thumb_func " THUMB_FUNC_PARAM(label) "\n"  \
     SYMBOL_STRING(label) ":\n"
+#elif CPU(X86_64) && COMPILER(CLANG)
+#define OFFLINE_ASM_GLOBAL_LABEL(label)         \
+    ".text\n"                                   \
+    ".globl " SYMBOL_STRING(label) "\n"         \
+    HIDE_SYMBOL(label) "\n"                     \
+    SYMBOL_STRING(label) ":\n"                  \
+    ".cfi_def_cfa rbp, 0\n"                     \
+    ".cfi_offset 16, 8\n"                       \
+    ".cfi_offset 6, 0\n"
 #else
 #define OFFLINE_ASM_GLOBAL_LABEL(label)         \
+    ".text\n"                                   \
     ".globl " SYMBOL_STRING(label) "\n"         \
     HIDE_SYMBOL(label) "\n"                     \
     SYMBOL_STRING(label) ":\n"

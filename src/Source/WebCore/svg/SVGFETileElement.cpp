@@ -40,14 +40,14 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFETileElement)
     REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
 END_REGISTER_ANIMATED_PROPERTIES
 
-inline SVGFETileElement::SVGFETileElement(const QualifiedName& tagName, Document* document)
+inline SVGFETileElement::SVGFETileElement(const QualifiedName& tagName, Document& document)
     : SVGFilterPrimitiveStandardAttributes(tagName, document)
 {
     ASSERT(hasTagName(SVGNames::feTileTag));
     registerAnimatedPropertiesForSVGFETileElement();
 }
 
-PassRefPtr<SVGFETileElement> SVGFETileElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<SVGFETileElement> SVGFETileElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new SVGFETileElement(tagName, document));
 }
@@ -57,7 +57,7 @@ bool SVGFETileElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::inAttr);
-    return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
+    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
 void SVGFETileElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

@@ -29,7 +29,6 @@
 #include "MessageSender.h"
 #include <WebCore/ResourceRequest.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/PassOwnPtr.h>
 
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
@@ -47,7 +46,7 @@ OBJC_CLASS WKDownloadAsDelegate;
 #include <CFNetwork/CFURLDownloadPriv.h>
 #endif
 
-namespace CoreIPC {
+namespace IPC {
     class DataReference;
 }
 
@@ -66,19 +65,11 @@ class DownloadManager;
 class SandboxExtension;
 class WebPage;
 
-#if PLATFORM(QT)
-class QtFileDownloader;
-#endif
-
-class Download : public CoreIPC::MessageSender<Download> {
+class Download : public IPC::MessageSender {
     WTF_MAKE_NONCOPYABLE(Download);
 public:
-    static PassOwnPtr<Download> create(DownloadManager&, uint64_t downloadID, const WebCore::ResourceRequest&);
+    Download(DownloadManager&, uint64_t downloadID, const WebCore::ResourceRequest&);
     ~Download();
-
-    // Used by MessageSender.
-    CoreIPC::Connection* connection() const;
-    uint64_t destinationID() const { return downloadID(); }
 
     void start();
     void startWithHandle(WebCore::ResourceHandle*, const WebCore::ResourceResponse&);
@@ -95,13 +86,9 @@ public:
     void didCreateDestination(const String& path);
     void didFinish();
     void platformDidFinish();
-    void didFail(const WebCore::ResourceError&, const CoreIPC::DataReference& resumeData);
-    void didCancel(const CoreIPC::DataReference& resumeData);
+    void didFail(const WebCore::ResourceError&, const IPC::DataReference& resumeData);
+    void didCancel(const IPC::DataReference& resumeData);
     void didDecideDestination(const String&, bool allowOverwrite);
-
-#if PLATFORM(QT)
-    void startTransfer(const String& destination);
-#endif
 
 #if USE(CFNETWORK)
     const String& destination() const { return m_destination; }
@@ -118,7 +105,9 @@ public:
     void cancelAuthenticationChallenge(const WebCore::AuthenticationChallenge&);
 
 private:
-    Download(DownloadManager&, uint64_t downloadID, const WebCore::ResourceRequest&);
+    // IPC::MessageSender
+    virtual IPC::Connection* messageSenderConnection() override;
+    virtual uint64_t messageSenderDestinationID() override;
 
     void platformInvalidate();
 
@@ -140,9 +129,6 @@ private:
 #if USE(CFNETWORK)
     RetainPtr<CFURLDownloadRef> m_download;
     RefPtr<DownloadAuthenticationClient> m_authenticationClient;
-#endif
-#if PLATFORM(QT)
-    QtFileDownloader* m_qtDownloader;
 #endif
 #if PLATFORM(GTK) || PLATFORM(EFL)
     OwnPtr<WebCore::ResourceHandleClient> m_downloadClient;

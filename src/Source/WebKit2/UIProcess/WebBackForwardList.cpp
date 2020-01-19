@@ -26,19 +26,19 @@
 #include "config.h"
 #include "WebBackForwardList.h"
 
+#include "APIArray.h"
 #include "WebPageProxy.h"
 
 namespace WebKit {
 
 static const unsigned DefaultCapacity = 100;
 
-WebBackForwardList::WebBackForwardList(WebPageProxy* page)
-    : m_page(page)
+WebBackForwardList::WebBackForwardList(WebPageProxy& page)
+    : m_page(&page)
     , m_hasCurrentIndex(false)
     , m_currentIndex(0)
     , m_capacity(DefaultCapacity)
 {
-    ASSERT(m_page);
 }
 
 WebBackForwardList::~WebBackForwardList()
@@ -74,7 +74,7 @@ void WebBackForwardList::addItem(WebBackForwardListItem* newItem)
     if (!m_capacity || !newItem || !m_page)
         return;
 
-    Vector<RefPtr<APIObject> > removedItems;
+    Vector<RefPtr<API::Object>> removedItems;
     
     if (m_hasCurrentIndex) {
         // Toss everything in the forward list.
@@ -148,40 +148,40 @@ void WebBackForwardList::goToItem(WebBackForwardListItem* item)
     }
 }
 
-WebBackForwardListItem* WebBackForwardList::currentItem()
+WebBackForwardListItem* WebBackForwardList::currentItem() const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
-    return m_page && m_hasCurrentIndex ? m_entries[m_currentIndex].get() : 0;
+    return m_page && m_hasCurrentIndex ? m_entries[m_currentIndex].get() : nullptr;
 }
 
-WebBackForwardListItem* WebBackForwardList::backItem()
+WebBackForwardListItem* WebBackForwardList::backItem() const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
-    return m_page && m_hasCurrentIndex && m_currentIndex ? m_entries[m_currentIndex - 1].get() : 0;
+    return m_page && m_hasCurrentIndex && m_currentIndex ? m_entries[m_currentIndex - 1].get() : nullptr;
 }
 
-WebBackForwardListItem* WebBackForwardList::forwardItem()
+WebBackForwardListItem* WebBackForwardList::forwardItem() const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
-    return m_page && m_hasCurrentIndex && m_entries.size() && m_currentIndex < m_entries.size() - 1 ? m_entries[m_currentIndex + 1].get() : 0;
+    return m_page && m_hasCurrentIndex && m_entries.size() && m_currentIndex < m_entries.size() - 1 ? m_entries[m_currentIndex + 1].get() : nullptr;
 }
 
-WebBackForwardListItem* WebBackForwardList::itemAtIndex(int index)
+WebBackForwardListItem* WebBackForwardList::itemAtIndex(int index) const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
     if (!m_hasCurrentIndex || !m_page)
-        return 0;
+        return nullptr;
     
     // Do range checks without doing math on index to avoid overflow.
     if (index < -backListCount())
-        return 0;
+        return nullptr;
     
     if (index > forwardListCount())
-        return 0;
+        return nullptr;
         
     return m_entries[index + m_currentIndex].get();
 }
@@ -200,19 +200,19 @@ int WebBackForwardList::forwardListCount() const
     return m_page && m_hasCurrentIndex ? m_entries.size() - (m_currentIndex + 1) : 0;
 }
 
-PassRefPtr<ImmutableArray> WebBackForwardList::backListAsImmutableArrayWithLimit(unsigned limit) const
+PassRefPtr<API::Array> WebBackForwardList::backListAsAPIArrayWithLimit(unsigned limit) const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
     if (!m_page || !m_hasCurrentIndex)
-        return ImmutableArray::create();
+        return API::Array::create();
 
     unsigned backListSize = static_cast<unsigned>(backListCount());
     unsigned size = std::min(backListSize, limit);
     if (!size)
-        return ImmutableArray::create();
+        return API::Array::create();
 
-    Vector<RefPtr<APIObject> > vector;
+    Vector<RefPtr<API::Object>> vector;
     vector.reserveInitialCapacity(size);
 
     ASSERT(backListSize >= size);
@@ -221,21 +221,21 @@ PassRefPtr<ImmutableArray> WebBackForwardList::backListAsImmutableArrayWithLimit
         vector.uncheckedAppend(m_entries[i].get());
     }
 
-    return ImmutableArray::adopt(vector);
+    return API::Array::create(std::move(vector));
 }
 
-PassRefPtr<ImmutableArray> WebBackForwardList::forwardListAsImmutableArrayWithLimit(unsigned limit) const
+PassRefPtr<API::Array> WebBackForwardList::forwardListAsAPIArrayWithLimit(unsigned limit) const
 {
     ASSERT(!m_hasCurrentIndex || m_currentIndex < m_entries.size());
 
     if (!m_page || !m_hasCurrentIndex)
-        return ImmutableArray::create();
+        return API::Array::create();
 
     unsigned size = std::min(static_cast<unsigned>(forwardListCount()), limit);
     if (!size)
-        return ImmutableArray::create();
+        return API::Array::create();
 
-    Vector<RefPtr<APIObject> > vector;
+    Vector<RefPtr<API::Object>> vector;
     vector.reserveInitialCapacity(size);
 
     unsigned last = m_currentIndex + size;
@@ -245,7 +245,7 @@ PassRefPtr<ImmutableArray> WebBackForwardList::forwardListAsImmutableArrayWithLi
         vector.uncheckedAppend(m_entries[i].get());
     }
 
-    return ImmutableArray::adopt(vector);
+    return API::Array::create(std::move(vector));
 }
 
 void WebBackForwardList::clear()
@@ -257,7 +257,7 @@ void WebBackForwardList::clear()
         return;
 
     RefPtr<WebBackForwardListItem> currentItem = this->currentItem();
-    Vector<RefPtr<APIObject> > removedItems;
+    Vector<RefPtr<API::Object>> removedItems;
 
     if (!currentItem) {
         // We should only ever have no current item if we also have no current item index.

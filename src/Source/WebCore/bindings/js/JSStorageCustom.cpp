@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "JSStorageCustom.h"
+#include "JSStorage.h"
 
 #include "Storage.h"
 #include <runtime/PropertyNameArray.h>
@@ -42,18 +42,18 @@ bool JSStorage::canGetItemsForName(ExecState* exec, Storage* impl, PropertyName 
     return result;
 }
 
-JSValue JSStorage::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+EncodedJSValue JSStorage::nameGetter(ExecState* exec, EncodedJSValue slotBase, EncodedJSValue, PropertyName propertyName)
 {
-    JSStorage* thisObj = jsCast<JSStorage*>(asObject(slotBase));
+    JSStorage* thisObj = jsCast<JSStorage*>(JSValue::decode(slotBase));
         
-    JSValue prototype = asObject(slotBase)->prototype();
+    JSValue prototype = asObject(JSValue::decode(slotBase))->prototype();
     if (prototype.isObject() && asObject(prototype)->hasProperty(exec, propertyName))
-        return asObject(prototype)->get(exec, propertyName);
+        return JSValue::encode(asObject(prototype)->get(exec, propertyName));
  
     ExceptionCode ec = 0;
-    JSValue result = jsStringOrNull(exec, thisObj->impl()->getItem(propertyNameToString(propertyName), ec));
+    JSValue result = jsStringOrNull(exec, thisObj->impl().getItem(propertyNameToString(propertyName), ec));
     setDOMException(exec, ec);
-    return result;
+    return JSValue::encode(result);
 }
 
 bool JSStorage::deleteProperty(JSCell* cell, ExecState* exec, PropertyName propertyName)
@@ -62,8 +62,8 @@ bool JSStorage::deleteProperty(JSCell* cell, ExecState* exec, PropertyName prope
     // Only perform the custom delete if the object doesn't have a native property by this name.
     // Since hasProperty() would end up calling canGetItemsForName() and be fooled, we need to check
     // the native property slots manually.
-    PropertySlot slot;
-    if (getStaticValueSlot<JSStorage, Base>(exec, s_info.propHashTable(exec), thisObject, propertyName, slot))
+    PropertySlot slot(thisObject);
+    if (getStaticValueSlot<JSStorage, Base>(exec, *s_info.propHashTable(exec), thisObject, propertyName, slot))
         return false;
         
     JSValue prototype = thisObject->prototype();
@@ -104,8 +104,8 @@ bool JSStorage::putDelegate(ExecState* exec, PropertyName propertyName, JSValue 
     // Only perform the custom put if the object doesn't have a native property by this name.
     // Since hasProperty() would end up calling canGetItemsForName() and be fooled, we need to check
     // the native property slots manually.
-    PropertySlot slot;
-    if (getStaticValueSlot<JSStorage, Base>(exec, s_info.propHashTable(exec), this, propertyName, slot))
+    PropertySlot slot(this);
+    if (getStaticValueSlot<JSStorage, Base>(exec, *s_info.propHashTable(exec), this, propertyName, slot))
         return false;
         
     JSValue prototype = this->prototype();
@@ -117,7 +117,7 @@ bool JSStorage::putDelegate(ExecState* exec, PropertyName propertyName, JSValue 
         return true;
     
     ExceptionCode ec = 0;
-    impl()->setItem(propertyNameToString(propertyName), stringValue, ec);
+    impl().setItem(propertyNameToString(propertyName), stringValue, ec);
     setDOMException(exec, ec);
 
     return true;

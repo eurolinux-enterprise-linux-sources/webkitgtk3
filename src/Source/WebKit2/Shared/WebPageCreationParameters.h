@@ -27,17 +27,23 @@
 #define WebPageCreationParameters_h
 
 #include "DrawingAreaInfo.h"
+#include "LayerTreeContext.h"
 #include "SessionState.h"
+#include "WebCoreArgumentCoders.h"
 #include "WebPageGroupData.h"
 #include "WebPreferencesStore.h"
+#include <WebCore/Color.h>
 #include <WebCore/IntSize.h>
+#include <WebCore/Pagination.h>
+#include <WebCore/ScrollTypes.h>
+#include <WebCore/ViewState.h>
 #include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
 #include "ColorSpaceData.h"
 #endif
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentDecoder;
     class ArgumentEncoder;
 }
@@ -45,15 +51,12 @@ namespace CoreIPC {
 namespace WebKit {
 
 struct WebPageCreationParameters {
-    void encode(CoreIPC::ArgumentEncoder&) const;
-    static bool decode(CoreIPC::ArgumentDecoder&, WebPageCreationParameters&);
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, WebPageCreationParameters&);
 
     WebCore::IntSize viewSize;
 
-    bool isActive;
-    bool isFocused;
-    bool isVisible;
-    bool isInWindow;
+    WebCore::ViewState::Flags viewState;
     
     WebPreferencesStore store;
     DrawingAreaType drawingAreaType;
@@ -61,6 +64,8 @@ struct WebPageCreationParameters {
 
     bool drawsBackground;
     bool drawsTransparentBackground;
+
+    WebCore::Color underlayColor;
 
     bool areMemoryCacheClientCallsEnabled;
 
@@ -87,9 +92,16 @@ struct WebPageCreationParameters {
     float mediaVolume;
     bool mayStartMediaWhenInWindow;
 
-#if PLATFORM(MAC)
-    bool isSmartInsertDeleteEnabled;
+    WebCore::IntSize minimumLayoutSize;
+    bool autoSizingShouldExpandToViewHeight;
+    
+    WebCore::ScrollPinningBehavior scrollPinningBehavior;
+
+    bool backgroundExtendsBeyondPage;
+
     LayerHostingMode layerHostingMode;
+
+#if PLATFORM(MAC)
     ColorSpaceData colorSpace;
 #endif
 };

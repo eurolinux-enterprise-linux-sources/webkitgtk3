@@ -41,24 +41,24 @@ void WebEditorClient::getEditorCommandsForKeyEvent(const KeyboardEvent* event, V
 
     /* First try to interpret the command in the UI and get the commands.
        UI needs to receive event type because only knows current NativeWebKeyboardEvent.*/
-    WebProcess::shared().connection()->sendSync(Messages::WebPageProxy::GetEditorCommandsForKeyEvent(event->type()),
+    WebProcess::shared().parentProcessConnection()->sendSync(Messages::WebPageProxy::GetEditorCommandsForKeyEvent(event->type()),
                                                 Messages::WebPageProxy::GetEditorCommandsForKeyEvent::Reply(pendingEditorCommands),
-                                                m_page->pageID(), CoreIPC::Connection::NoTimeout);
+                                                m_page->pageID(), std::chrono::milliseconds::max());
 }
 
-bool WebEditorClient::executePendingEditorCommands(Frame* frame, Vector<WTF::String> pendingEditorCommands, bool allowTextInsertion)
+bool WebEditorClient::executePendingEditorCommands(Frame* frame, const Vector<WTF::String>& pendingEditorCommands, bool allowTextInsertion)
 {
     Vector<Editor::Command> commands;
-    for (size_t i = 0; i < pendingEditorCommands.size(); i++) {
-        Editor::Command command = frame->editor()->command(pendingEditorCommands.at(i).utf8().data());
+    for (auto& commandString : pendingEditorCommands) {
+        Editor::Command command = frame->editor().command(commandString.utf8().data());
         if (command.isTextInsertion() && !allowTextInsertion)
             return false;
 
-        commands.append(command);
+        commands.append(std::move(command));
     }
 
-    for (size_t i = 0; i < commands.size(); i++) {
-        if (!commands.at(i).execute())
+    for (auto& command : commands) {
+        if (!command.execute())
             return false;
     }
 
@@ -69,7 +69,7 @@ void WebEditorClient::handleKeyboardEvent(KeyboardEvent* event)
 {
     Node* node = event->target()->toNode();
     ASSERT(node);
-    Frame* frame = node->document()->frame();
+    Frame* frame = node->document().frame();
     ASSERT(frame);
 
     const PlatformKeyboardEvent* platformEvent = event->keyEvent();
@@ -95,14 +95,14 @@ void WebEditorClient::handleKeyboardEvent(KeyboardEvent* event)
         }
 
         // Only allow text insertion commands if the current node is editable.
-        if (executePendingEditorCommands(frame, pendingEditorCommands, frame->editor()->canEdit())) {
+        if (executePendingEditorCommands(frame, pendingEditorCommands, frame->editor().canEdit())) {
             event->setDefaultHandled();
             return;
         }
     }
 
     // Don't allow text insertion for nodes that cannot edit.
-    if (!frame->editor()->canEdit())
+    if (!frame->editor().canEdit())
         return;
 
     // This is just a normal text insertion, so wait to execute the insertion
@@ -119,7 +119,7 @@ void WebEditorClient::handleKeyboardEvent(KeyboardEvent* event)
     if (platformEvent->ctrlKey() || platformEvent->altKey())
         return;
 
-    if (frame->editor()->insertText(platformEvent->text(), event))
+    if (frame->editor().insertText(platformEvent->text(), event))
         event->setDefaultHandled();
 }
 
@@ -166,7 +166,7 @@ static void collapseSelection(GtkClipboard* clipboard, Frame* frame)
 
     // Collapse the selection without clearing it.
     ASSERT(frame);
-    frame->selection()->setBase(frame->selection()->extent(), frame->selection()->affinity());
+    frame->selection().setBase(frame->selection().extent(), frame->selection().affinity());
 }
 #endif
 
@@ -176,11 +176,11 @@ void WebEditorClient::updateGlobalSelection(Frame* frame)
     GtkClipboard* clipboard = PasteboardHelper::defaultPasteboardHelper()->getPrimarySelectionClipboard(frame);
     DataObjectGtk* dataObject = DataObjectGtk::forClipboard(clipboard);
 
-    if (!frame->selection()->isRange())
+    if (!frame->selection().isRange())
         return;
 
     dataObject->clearAll();
-    dataObject->setRange(frame->selection()->toNormalizedRange());
+    dataObject->setRange(frame->selection().toNormalizedRange());
 
     frameSettingClipboard = frame;
     GClosure* callback = g_cclosure_new(G_CALLBACK(collapseSelection), frame, 0);

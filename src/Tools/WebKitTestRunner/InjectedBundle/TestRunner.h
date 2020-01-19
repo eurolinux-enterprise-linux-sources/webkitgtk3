@@ -37,16 +37,11 @@
 #include <wtf/RetainPtr.h>
 #include <CoreFoundation/CFRunLoop.h>
 typedef RetainPtr<CFRunLoopTimerRef> PlatformTimerRef;
-#elif PLATFORM(WIN)
-typedef UINT_PTR PlatformTimerRef;
-#elif PLATFORM(QT)
-#include <QTimer>
-typedef QTimer PlatformTimerRef;
 #elif PLATFORM(GTK)
 typedef unsigned int PlatformTimerRef;
 #elif PLATFORM(EFL)
 #if USE(EO)
-typedef struct _Eo Ecore_Timer;
+typedef struct _Eo_Opaque Ecore_Timer;
 #else
 typedef struct _Ecore_Timer Ecore_Timer;
 #endif
@@ -88,6 +83,7 @@ public:
     void dumpWillCacheResponse() { m_dumpWillCacheResponse = true; }
     void dumpApplicationCacheDelegateCallbacks() { m_dumpApplicationCacheDelegateCallbacks = true; }
     void dumpDatabaseCallbacks() { m_dumpDatabaseCallbacks = true; }
+    void dumpDOMAsWebArchive() { m_whatToDump = DOMAsWebArchive; }
 
     void setShouldDumpFrameLoadCallbacks(bool value) { m_dumpFrameLoadCallbacks = value; }
     void setShouldDumpProgressFinishedCallback(bool value) { m_dumpProgressFinishedCallback = value; }
@@ -115,13 +111,12 @@ public:
     void setSerializeHTTPLoads();
     void dispatchPendingLoadRequests();
     void setCacheModel(int);
+    void setAsynchronousSpellCheckingEnabled(bool);
 
     // Special DOM functions.
-    JSValueRef computedStyleIncludingVisitedInfo(JSValueRef element);
     void clearBackForwardList();
     void execCommand(JSStringRef name, JSStringRef argument);
     bool isCommandEnabled(JSStringRef name);
-    JSRetainPtr<JSStringRef> markerTextForListItem(JSValueRef element);
     unsigned windowCount();
 
     // Repaint testing.
@@ -146,13 +141,14 @@ public:
     void clearApplicationCacheForOrigin(JSStringRef origin);
     void setAppCacheMaximumSize(uint64_t);
     long long applicationCacheDiskUsageForOrigin(JSStringRef origin);
-    void setApplicationCacheOriginQuota(unsigned long long);
     void disallowIncreaseForApplicationCacheQuota();
     bool shouldDisallowIncreaseForApplicationCacheQuota() { return m_disallowIncreaseForApplicationCacheQuota; }
     JSValueRef originsWithApplicationCache();
 
     // Printing
     bool isPageBoxVisible(int pageIndex);
+    bool isPrinting() { return m_isPrinting; }
+    void setPrinting() { m_isPrinting = true; }
 
     // Authentication
     void setHandlesAuthenticationChallenges(bool);
@@ -162,9 +158,11 @@ public:
     void setValueForUser(JSContextRef, JSValueRef element, JSStringRef value);
 
     // Audio testing.
-    void setAudioData(JSContextRef, JSValueRef data);
+    void setAudioResult(JSContextRef, JSValueRef data);
 
-    enum WhatToDump { RenderTree, MainFrameText, AllFramesText, Audio };
+    void setBlockAllPlugins(bool shouldBlock);
+
+    enum WhatToDump { RenderTree, MainFrameText, AllFramesText, Audio, DOMAsWebArchive };
     WhatToDump whatToDump() const { return m_whatToDump; }
 
     bool shouldDumpAllFrameScrollPositions() const { return m_shouldDumpAllFrameScrollPositions; }
@@ -221,6 +219,12 @@ public:
     bool globalFlag() const { return m_globalFlag; }
     void setGlobalFlag(bool value) { m_globalFlag = value; }
 
+    double databaseDefaultQuota() const { return m_databaseDefaultQuota; }
+    void setDatabaseDefaultQuota(double quota) { m_databaseDefaultQuota = quota; }
+
+    double databaseMaxQuota() const { return m_databaseMaxQuota; }
+    void setDatabaseMaxQuota(double quota) { m_databaseMaxQuota = quota; }
+
     void addChromeInputField(JSValueRef);
     void removeChromeInputField(JSValueRef);
     void focusWebView(JSValueRef);
@@ -241,7 +245,6 @@ public:
     // Custom full screen behavior.
     void setHasCustomFullScreenBehavior(bool value) { m_customFullScreenBehavior = value; }
     bool hasCustomFullScreenBehavior() const { return m_customFullScreenBehavior; }
-    void setViewModeMediaFeature(JSStringRef);
 
     // Web notifications.
     void grantWebNotificationPermission(JSStringRef origin);
@@ -253,8 +256,6 @@ public:
     void setGeolocationPermission(bool);
     void setMockGeolocationPosition(double latitude, double longitude, double accuracy, JSValueRef altitude, JSValueRef altitudeAccuracy, JSValueRef heading, JSValueRef speed);
     void setMockGeolocationPositionUnavailableError(JSStringRef message);
-
-    JSRetainPtr<JSStringRef> platformName();
 
     void setPageVisibility(JSStringRef state);
     void resetPageVisibility();
@@ -271,6 +272,11 @@ public:
     void queueReload();
     void queueLoadingScript(JSStringRef script);
     void queueNonLoadingScript(JSStringRef script);
+
+    bool secureEventInputIsEnabled() const;
+    
+    JSValueRef numberOfDFGCompiles(JSValueRef theFunction);
+    JSValueRef neverInlineFunction(JSValueRef theFunction);
 
 private:
     static const double waitToDumpWatchdogTimerInterval;
@@ -304,6 +310,7 @@ private:
     bool m_waitToDump; // True if waitUntilDone() has been called, but notifyDone() has not yet been called.
     bool m_testRepaint;
     bool m_testRepaintSweepHorizontally;
+    bool m_isPrinting;
 
     bool m_willSendRequestReturnsNull;
     bool m_willSendRequestReturnsNullOnRedirect;
@@ -316,6 +323,9 @@ private:
     bool m_customFullScreenBehavior;
 
     int m_timeout;
+
+    double m_databaseDefaultQuota;
+    double m_databaseMaxQuota;
 
     bool m_userStyleSheetEnabled;
     WKRetainPtr<WKStringRef> m_userStyleSheetLocation;

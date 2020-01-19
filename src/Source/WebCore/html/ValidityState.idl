@@ -21,8 +21,8 @@
  */
 
 [
-    OmitConstructor,
-    ImplementationLacksVTable
+    NoInterfaceObject,
+    SkipVTableValidation
 ] interface ValidityState {
     readonly attribute boolean         valueMissing;
     readonly attribute boolean         typeMismatch;

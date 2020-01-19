@@ -28,7 +28,6 @@
 
 #include "APIObject.h"
 #include "GenericCallback.h"
-#include "ImmutableArray.h"
 #include "MessageReceiver.h"
 #include "WebContextSupplement.h"
 #include "WebCookieManagerProxyClient.h"
@@ -40,6 +39,10 @@
 #include "SoupCookiePersistentStorageType.h"
 #endif
 
+namespace API {
+class Array;
+}
+
 namespace WebKit {
 
 class WebContext;
@@ -48,16 +51,14 @@ class WebProcessProxy;
 typedef GenericCallback<WKArrayRef> ArrayCallback;
 typedef GenericCallback<WKHTTPCookieAcceptPolicy, HTTPCookieAcceptPolicy> HTTPCookieAcceptPolicyCallback;
 
-class WebCookieManagerProxy : public APIObject, public WebContextSupplement, private CoreIPC::MessageReceiver {
+class WebCookieManagerProxy : public API::ObjectImpl<API::Object::Type::CookieManager>, public WebContextSupplement, private IPC::MessageReceiver {
 public:
-    static const Type APIType = TypeCookieManager;
-
     static const char* supplementName();
 
     static PassRefPtr<WebCookieManagerProxy> create(WebContext*);
     virtual ~WebCookieManagerProxy();
 
-    void initializeClient(const WKCookieManagerClient*);
+    void initializeClient(const WKCookieManagerClientBase*);
     
     void getHostnamesWithCookies(PassRefPtr<ArrayCallback>);
     void deleteCookiesForHostname(const String& hostname);
@@ -74,13 +75,11 @@ public:
     void getCookiePersistentStorage(String& storagePath, uint32_t& storageType) const;
 #endif
 
-    using APIObject::ref;
-    using APIObject::deref;
+    using API::Object::ref;
+    using API::Object::deref;
 
 private:
     WebCookieManagerProxy(WebContext*);
-
-    virtual Type type() const { return APIType; }
 
     void didGetHostnamesWithCookies(const Vector<String>&, uint64_t callbackID);
     void didGetHTTPCookieAcceptPolicy(uint32_t policy, uint64_t callbackID);
@@ -88,22 +87,22 @@ private:
     void cookiesDidChange();
 
     // WebContextSupplement
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void processDidClose(WebProcessProxy*) OVERRIDE;
-    virtual void processDidClose(NetworkProcessProxy*) OVERRIDE;
-    virtual bool shouldTerminate(WebProcessProxy*) const OVERRIDE;
-    virtual void refWebContextSupplement() OVERRIDE;
-    virtual void derefWebContextSupplement() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void processDidClose(WebProcessProxy*) override;
+    virtual void processDidClose(NetworkProcessProxy*) override;
+    virtual bool shouldTerminate(WebProcessProxy*) const override;
+    virtual void refWebContextSupplement() override;
+    virtual void derefWebContextSupplement() override;
 
-    // CoreIPC::MessageReceiver
-    virtual void didReceiveMessage(CoreIPC::Connection*, CoreIPC::MessageDecoder&) OVERRIDE;
+    // IPC::MessageReceiver
+    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
 
 #if PLATFORM(MAC)
     void persistHTTPCookieAcceptPolicy(HTTPCookieAcceptPolicy);
 #endif
 
-    HashMap<uint64_t, RefPtr<ArrayCallback> > m_arrayCallbacks;
-    HashMap<uint64_t, RefPtr<HTTPCookieAcceptPolicyCallback> > m_httpCookieAcceptPolicyCallbacks;
+    HashMap<uint64_t, RefPtr<ArrayCallback>> m_arrayCallbacks;
+    HashMap<uint64_t, RefPtr<HTTPCookieAcceptPolicyCallback>> m_httpCookieAcceptPolicyCallbacks;
 
     WebCookieManagerProxyClient m_client;
 

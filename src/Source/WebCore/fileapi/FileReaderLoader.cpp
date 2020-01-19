@@ -43,24 +43,28 @@
 #include "TextResourceDecoder.h"
 #include "ThreadableBlobRegistry.h"
 #include "ThreadableLoader.h"
-#include <wtf/ArrayBuffer.h>
+#include <runtime/ArrayBuffer.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 #include <wtf/text/Base64.h>
 #include <wtf/text/StringBuilder.h>
 
-using namespace std;
-
 namespace WebCore {
+
+const int defaultBufferLength = 32768;
 
 FileReaderLoader::FileReaderLoader(ReadType readType, FileReaderLoaderClient* client)
     : m_readType(readType)
     , m_client(client)
     , m_isRawDataConverted(false)
     , m_stringResult("")
+    , m_variableLength(false)
     , m_bytesLoaded(0)
     , m_totalBytes(0)
+    , m_hasRange(false)
+    , m_rangeStart(0)
+    , m_rangeEnd(0)
     , m_errorCode(0)
 {
 }
@@ -85,6 +89,8 @@ void FileReaderLoader::start(ScriptExecutionContext* scriptExecutionContext, Blo
     // Construct and load the request.
     ResourceRequest request(m_urlForReading);
     request.setHTTPMethod("GET");
+    if (m_hasRange)
+        request.setHTTPHeaderField("Range", String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd));
 
     ThreadableLoaderOptions options;
     options.sendLoadCallbacks = SendCallbacks;
@@ -133,10 +139,20 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
 
     unsigned long long length = response.expectedContentLength();
 
+    // A value larger than INT_MAX means that the content length wasn't
+    // specified, so the buffer will need to be dynamically grown.
+    if (length > INT_MAX) {
+        m_variableLength = true;
+        if (m_hasRange)
+            length = 1 + m_rangeEnd - m_rangeStart;
+        else
+            length = defaultBufferLength;
+    }
+
     // Check that we can cast to unsigned since we have to do
     // so to call ArrayBuffer's create function.
     // FIXME: Support reading more than the current size limit of ArrayBuffer.
-    if (length > numeric_limits<unsigned>::max()) {
+    if (length > std::numeric_limits<unsigned>::max()) {
         failed(FileError::NOT_READABLE_ERR);
         return;
     }
@@ -166,8 +182,25 @@ void FileReaderLoader::didReceiveData(const char* data, int dataLength)
 
     int length = dataLength;
     unsigned remainingBufferSpace = m_totalBytes - m_bytesLoaded;
-    if (length > static_cast<long long>(remainingBufferSpace))
-        length = static_cast<int>(remainingBufferSpace);
+    if (length > static_cast<long long>(remainingBufferSpace)) {
+        // If the buffer has hit maximum size, it can't be grown any more.
+        if (m_totalBytes >= std::numeric_limits<unsigned>::max()) {
+            failed(FileError::NOT_READABLE_ERR);
+            return;
+        }
+        if (m_variableLength) {
+            unsigned long long newLength = m_totalBytes * 2;
+            if (newLength > std::numeric_limits<unsigned>::max())
+                newLength = std::numeric_limits<unsigned>::max();
+            RefPtr<ArrayBuffer> newData =
+                ArrayBuffer::create(static_cast<unsigned>(newLength), 1);
+            memcpy(static_cast<char*>(newData->data()), static_cast<char*>(m_rawData->data()), m_bytesLoaded);
+
+            m_rawData = newData;
+            m_totalBytes = static_cast<unsigned>(newLength);
+        } else
+            length = remainingBufferSpace;
+    }
 
     if (length <= 0)
         return;
@@ -183,6 +216,12 @@ void FileReaderLoader::didReceiveData(const char* data, int dataLength)
 
 void FileReaderLoader::didFinishLoading(unsigned long, double)
 {
+    if (m_variableLength && m_totalBytes > m_bytesLoaded) {
+        RefPtr<ArrayBuffer> newData = m_rawData->slice(0, m_bytesLoaded);
+
+        m_rawData = newData;
+        m_totalBytes = m_bytesLoaded;
+    }
     cleanup();
     if (m_client)
         m_client->didFinishLoading();
@@ -235,7 +274,7 @@ PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
 
 String FileReaderLoader::stringResult()
 {
-    ASSERT(m_readType != ReadAsArrayBuffer);
+    ASSERT(m_readType != ReadAsArrayBuffer && m_readType != ReadAsBlob);
 
     // If the loading is not started or an error occurs, return an empty result.
     if (!m_rawData || m_errorCode)
@@ -302,7 +341,7 @@ void FileReaderLoader::convertToDataURL()
     builder.append(";base64,");
 
     Vector<char> out;
-    base64Encode(static_cast<const char*>(m_rawData->data()), m_bytesLoaded, out);
+    base64Encode(m_rawData->data(), m_bytesLoaded, out);
     out.append('\0');
     builder.append(out.data());
 

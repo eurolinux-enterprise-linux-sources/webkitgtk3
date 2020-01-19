@@ -27,20 +27,20 @@
 #include "config.h"
 #include "ShadowRoot.h"
 
-#include "ContentDistributor.h"
-#include "ElementShadow.h"
+#include "ElementTraversal.h"
 #include "HistogramSupport.h"
 #include "InsertionPoint.h"
+#include "RenderElement.h"
 #include "RuntimeEnabledFeatures.h"
 #include "StyleResolver.h"
-#include "Text.h"
 #include "markup.h"
 
 namespace WebCore {
 
-struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
-    void* pointers[3];
+struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope {
     unsigned countersAndFlags[1];
+    ContentDistributor distributor;
+    void* host;
 };
 
 COMPILE_ASSERT(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), shadowroot_should_stay_small);
@@ -51,32 +51,23 @@ enum ShadowRootUsageOriginType {
     ShadowRootUsageOriginMax
 };
 
-ShadowRoot::ShadowRoot(Document* document, ShadowRootType type)
-    : DocumentFragment(document, CreateShadowRoot)
-    , TreeScope(this, document)
-    , m_prev(0)
-    , m_next(0)
-    , m_numberOfStyles(0)
+ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
+    : DocumentFragment(0, CreateShadowRoot)
+    , TreeScope(this, &document)
     , m_applyAuthorStyles(false)
     , m_resetStyleInheritance(false)
     , m_type(type)
-    , m_registeredWithParentShadowRoot(false)
+    , m_hostElement(0)
 {
-    ASSERT(document);
-    setTreeScope(this);
-
-#if PLATFORM(CHROMIUM)
-    if (type == ShadowRoot::AuthorShadowRoot) {
-        ShadowRootUsageOriginType usageType = document->url().protocolIsInHTTPFamily() ? ShadowRootUsageOriginWeb : ShadowRootUsageOriginNotWeb;
-        HistogramSupport::histogramEnumeration("WebCore.ShadowRoot.constructor", usageType, ShadowRootUsageOriginMax);
-    }
-#endif
 }
 
 ShadowRoot::~ShadowRoot()
 {
-    ASSERT(!m_prev);
-    ASSERT(!m_next);
+    // We cannot let ContainerNode destructor call willBeDeletedFrom()
+    // for this ShadowRoot instance because TreeScope destructor
+    // clears Node::m_treeScope thus ContainerNode is no longer able
+    // to access it Document reference after that.
+    willBeDeletedFrom(documentInternal());
 
     // We must remove all of our children first before the TreeScope destructor
     // runs so we don't go through TreeScopeAdopter for each child with a
@@ -89,6 +80,11 @@ ShadowRoot::~ShadowRoot()
         clearRareData();
 }
 
+void ShadowRoot::dropChildren()
+{
+    removeDetachedChildren();
+}
+
 PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionCode& ec)
 {
     ec = DATA_CLONE_ERR;
@@ -97,7 +93,7 @@ PassRefPtr<Node> ShadowRoot::cloneNode(bool, ExceptionCode& ec)
 
 String ShadowRoot::innerHTML() const
 {
-    return createMarkup(this, ChildrenOnly);
+    return createMarkup(*this, ChildrenOnly);
 }
 
 void ShadowRoot::setInnerHTML(const String& markup, ExceptionCode& ec)
@@ -107,8 +103,8 @@ void ShadowRoot::setInnerHTML(const String& markup, ExceptionCode& ec)
         return;
     }
 
-    if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, host(), AllowScriptingContent, ec))
-        replaceChildrenWithFragment(this, fragment.release(), ec);
+    if (RefPtr<DocumentFragment> fragment = createFragmentForInnerOuterHTML(markup, hostElement(), AllowScriptingContent, ec))
+        replaceChildrenWithFragment(*this, fragment.release(), ec);
 }
 
 bool ShadowRoot::childTypeAllowed(NodeType type) const
@@ -126,26 +122,6 @@ bool ShadowRoot::childTypeAllowed(NodeType type) const
     }
 }
 
-void ShadowRoot::recalcStyle(StyleChange change)
-{
-    // ShadowRoot doesn't support custom callbacks.
-    ASSERT(!hasCustomStyleCallbacks());
-
-    StyleResolver* styleResolver = document()->styleResolver();
-    styleResolver->pushParentShadowRoot(this);
-
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isElementNode())
-            static_cast<Element*>(child)->recalcStyle(change);
-        else if (child->isTextNode())
-            toText(child)->recalcTextStyle(change);
-    }
-
-    styleResolver->popParentShadowRoot(this);
-    clearNeedsStyleRecalc();
-    clearChildNeedsStyleRecalc();
-}
-
 void ShadowRoot::setApplyAuthorStyles(bool value)
 {
     if (isOrphan())
@@ -153,7 +129,7 @@ void ShadowRoot::setApplyAuthorStyles(bool value)
 
     if (m_applyAuthorStyles != value) {
         m_applyAuthorStyles = value;
-        host()->setNeedsStyleRecalc();
+        hostElement()->setNeedsStyleRecalc();
     }
 }
 
@@ -164,94 +140,25 @@ void ShadowRoot::setResetStyleInheritance(bool value)
 
     if (value != m_resetStyleInheritance) {
         m_resetStyleInheritance = value;
-        if (attached() && owner())
-            owner()->recalcStyle(Force);
+        if (hostElement())
+            setNeedsStyleRecalc();
     }
 }
 
-void ShadowRoot::attach()
-{
-    StyleResolver* styleResolver = document()->styleResolver();
-    styleResolver->pushParentShadowRoot(this);
-    DocumentFragment::attach();
-    styleResolver->popParentShadowRoot(this);
-}
-
-Node::InsertionNotificationRequest ShadowRoot::insertedInto(ContainerNode* insertionPoint)
-{
-    DocumentFragment::insertedInto(insertionPoint);
-
-    if (!insertionPoint->inDocument() || !isOldest())
-        return InsertionDone;
-
-    // FIXME: When parsing <video controls>, insertedInto() is called many times without invoking removedFrom.
-    // For now, we check m_registeredWithParentShadowroot. We would like to ASSERT(!m_registeredShadowRoot) here.
-    // https://bugs.webkit.org/show_bug.cig?id=101316
-    if (m_registeredWithParentShadowRoot)
-        return InsertionDone;
-
-    if (ShadowRoot* root = host()->containingShadowRoot()) {
-        root->ensureScopeDistribution()->registerElementShadow();
-        m_registeredWithParentShadowRoot = true;
-    }
-
-    return InsertionDone;
-}
-
-void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
-{
-    if (insertionPoint->inDocument() && m_registeredWithParentShadowRoot) {
-        ShadowRoot* root = host()->containingShadowRoot();
-        if (!root)
-            root = insertionPoint->containingShadowRoot();
-
-        if (root && root->scopeDistribution())
-            root->scopeDistribution()->unregisterElementShadow();
-        m_registeredWithParentShadowRoot = false;
-    }
-
-    DocumentFragment::removedFrom(insertionPoint);
-}
-
-void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void ShadowRoot::childrenChanged(const ChildChange& change)
 {
     if (isOrphan())
         return;
 
-    ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    owner()->invalidateDistribution();
+    ContainerNode::childrenChanged(change);
+    invalidateDistribution();
 }
 
-void ShadowRoot::registerScopedHTMLStyleChild()
+void ShadowRoot::removeAllEventListeners()
 {
-    ++m_numberOfStyles;
-    setHasScopedHTMLStyleChild(true);
-}
-
-void ShadowRoot::unregisterScopedHTMLStyleChild()
-{
-    ASSERT(hasScopedHTMLStyleChild() && m_numberOfStyles > 0);
-    --m_numberOfStyles;
-    setHasScopedHTMLStyleChild(m_numberOfStyles > 0);
-}
-
-ScopeContentDistribution* ShadowRoot::ensureScopeDistribution()
-{
-    if (m_scopeDistribution)
-        return m_scopeDistribution.get();
-
-    m_scopeDistribution = adoptPtr(new ScopeContentDistribution);
-    return m_scopeDistribution.get();
-}   
-
-void ShadowRoot::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::DOM);
-    DocumentFragment::reportMemoryUsage(memoryObjectInfo);
-    TreeScope::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_prev, "prev");
-    info.addMember(m_next, "next");
-    info.addMember(m_scopeDistribution, "scopeDistribution");
+    DocumentFragment::removeAllEventListeners();
+    for (Node* node = firstChild(); node; node = NodeTraversal::next(node))
+        node->removeAllEventListeners();
 }
 
 }

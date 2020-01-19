@@ -33,13 +33,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLTableCaptionElement::HTMLTableCaptionElement(const QualifiedName& tagName, Document* document)
+inline HTMLTableCaptionElement::HTMLTableCaptionElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(captionTag));
 }
 
-PassRefPtr<HTMLTableCaptionElement> HTMLTableCaptionElement::create(const QualifiedName& tagName, Document* document)
+PassRefPtr<HTMLTableCaptionElement> HTMLTableCaptionElement::create(const QualifiedName& tagName, Document& document)
 {
     return adoptRef(new HTMLTableCaptionElement(tagName, document));
 }
@@ -51,13 +51,13 @@ bool HTMLTableCaptionElement::isPresentationAttribute(const QualifiedName& name)
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLTableCaptionElement::collectStyleForPresentationAttribute(const Attribute& attribute, StylePropertySet* style)
+void HTMLTableCaptionElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
 {
-    if (attribute.name() == alignAttr) {
-        if (!attribute.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyCaptionSide, attribute.value());
+    if (name == alignAttr) {
+        if (!value.isEmpty())
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyCaptionSide, value);
     } else
-        HTMLElement::collectStyleForPresentationAttribute(attribute, style);
+        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
 
 }

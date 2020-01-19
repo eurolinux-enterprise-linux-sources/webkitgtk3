@@ -26,10 +26,12 @@
 #ifndef NetworkStateNotifier_h
 #define NetworkStateNotifier_h
 
-#include <wtf/FastAllocBase.h>
+#include <functional>
+#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/Vector.h>
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) && !PLATFORM(IOS)
 
 #include <wtf/RetainPtr.h>
 #include "Timer.h"
@@ -41,21 +43,14 @@ typedef const struct __SCDynamicStore * SCDynamicStoreRef;
 
 #include <windows.h>
 
-#elif PLATFORM(QT)
-
-#include <QtCore/qglobal.h>
-
 #elif PLATFORM(EFL)
 
 typedef struct _Ecore_Fd_Handler Ecore_Fd_Handler;
+typedef unsigned char Eina_Bool;
 
 #endif
 
 namespace WebCore {
-
-#if (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
-class NetworkStateNotifierPrivate;
-#endif
 
 class NetworkStateNotifier {
     WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); WTF_MAKE_FAST_ALLOCATED;
@@ -64,30 +59,23 @@ public:
 #if PLATFORM(EFL)
     ~NetworkStateNotifier();
 #endif
-    void setNetworkStateChangedFunction(void (*)());
+    void addNetworkStateChangeListener(std::function<void (bool isOnLine)>);
 
     bool onLine() const { return m_isOnLine; }
-
-#if (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
-    void setNetworkAccessAllowed(bool);
-#elif PLATFORM(CHROMIUM)
-    void setOnLine(bool);
-#elif PLATFORM(EFL)
-    void networkInterfaceChanged();
-#endif
-
-#if PLATFORM(BLACKBERRY)
-    void networkStateChange(bool online);
+    
+#if PLATFORM(IOS)
+    void setIsOnLine(bool);
 #endif
 
 private:
     bool m_isOnLine;
-    void (*m_networkStateChangedFunction)();
+    Vector<std::function<void (bool)>> m_listeners;
 
+    void notifyNetworkStateChange();
     void updateState();
 
-#if PLATFORM(MAC)
-    void networkStateChangeTimerFired(Timer<NetworkStateNotifier>*);
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    void networkStateChangeTimerFired(Timer<NetworkStateNotifier>&);
 
     static void dynamicStoreCallback(SCDynamicStoreRef, CFArrayRef changedKeys, void *info); 
 
@@ -104,19 +92,18 @@ private:
     OVERLAPPED m_overlapped;
 
 #elif PLATFORM(EFL)
-    Ecore_Fd_Handler* m_fdHandler;
+    void networkInterfaceChanged();
+    static Eina_Bool readSocketCallback(void* userData, Ecore_Fd_Handler*);
 
-#elif (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
-    friend class NetworkStateNotifierPrivate;
-    NetworkStateNotifierPrivate* p;
+    int m_netlinkSocket;
+    Ecore_Fd_Handler* m_fdHandler;
 #endif
 };
 
-#if !PLATFORM(MAC) && !PLATFORM(WIN) && !(PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT)) && !PLATFORM(BLACKBERRY) && !PLATFORM(EFL)
+#if !PLATFORM(MAC) && !PLATFORM(WIN) && !PLATFORM(EFL)
 
 inline NetworkStateNotifier::NetworkStateNotifier()
     : m_isOnLine(true)
-    , m_networkStateChangedFunction(0)
 {
 }
 

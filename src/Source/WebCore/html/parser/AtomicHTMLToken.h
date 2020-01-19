@@ -27,34 +27,15 @@
 #define AtomicHTMLToken_h
 
 #include "Attribute.h"
-#include "CompactHTMLToken.h"
 #include "HTMLToken.h"
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class AtomicHTMLToken : public RefCounted<AtomicHTMLToken> {
+class AtomicHTMLToken {
     WTF_MAKE_NONCOPYABLE(AtomicHTMLToken);
 public:
-    static PassRefPtr<AtomicHTMLToken> create(HTMLToken& token)
-    {
-        return adoptRef(new AtomicHTMLToken(token));
-    }
-
-#if ENABLE(THREADED_HTML_PARSER)
-
-    static PassRefPtr<AtomicHTMLToken> create(const CompactHTMLToken& token)
-    {
-        return adoptRef(new AtomicHTMLToken(token));
-    }
-
-#endif
-
-    static PassRefPtr<AtomicHTMLToken> create(HTMLToken::Type type, const AtomicString& name, const Vector<Attribute>& attributes = Vector<Attribute>())
-    {
-        return adoptRef(new AtomicHTMLToken(type, name, attributes));
-    }
 
     bool forceQuirks() const
     {
@@ -137,14 +118,6 @@ public:
         return m_doctypeData->m_systemIdentifier;
     }
 
-    void clearExternalCharacters()
-    {
-        m_externalCharacters = 0;
-        m_externalCharactersLength = 0;
-        m_isAll8BitData = false;
-    }
-
-private:
     explicit AtomicHTMLToken(HTMLToken& token)
         : m_type(token.type())
     {
@@ -153,7 +126,7 @@ private:
             ASSERT_NOT_REACHED();
             break;
         case HTMLToken::DOCTYPE:
-            m_name = AtomicString(token.nameString()); // FIXME: Should be AtomicString(token.name()) to avoid mallocing every time.
+            m_name = AtomicString(token.name());
             m_doctypeData = token.releaseDoctypeData();
             break;
         case HTMLToken::EndOfFile:
@@ -161,7 +134,7 @@ private:
         case HTMLToken::StartTag:
         case HTMLToken::EndTag: {
             m_selfClosing = token.selfClosing();
-            m_name = AtomicString(token.nameString()); // FIXME: Should be AtomicString(token.name()) to avoid mallocing every time.
+            m_name = AtomicString(token.name());
             initializeAttributes(token.attributes());
             break;
         }
@@ -178,48 +151,6 @@ private:
             break;
         }
     }
-
-#if ENABLE(THREADED_HTML_PARSER)
-
-    explicit AtomicHTMLToken(const CompactHTMLToken& token)
-        : m_type(token.type())
-    {
-        switch (m_type) {
-        case HTMLToken::Uninitialized:
-            ASSERT_NOT_REACHED();
-            break;
-        case HTMLToken::DOCTYPE:
-            m_name = token.data();
-            m_doctypeData = adoptPtr(new DoctypeData());
-            m_doctypeData->m_hasPublicIdentifier = true;
-            append(m_doctypeData->m_publicIdentifier, token.publicIdentifier());
-            m_doctypeData->m_hasSystemIdentifier = true;
-            append(m_doctypeData->m_systemIdentifier, token.systemIdentifier());
-            m_doctypeData->m_forceQuirks = token.doctypeForcesQuirks();
-            break;
-        case HTMLToken::EndOfFile:
-            break;
-        case HTMLToken::StartTag:
-            m_attributes.reserveInitialCapacity(token.attributes().size());
-            for (Vector<CompactHTMLToken::Attribute>::const_iterator it = token.attributes().begin(); it != token.attributes().end(); ++it)
-                m_attributes.append(Attribute(QualifiedName(nullAtom, it->name, nullAtom), it->value));
-            // Fall through!
-        case HTMLToken::EndTag:
-            m_selfClosing = token.selfClosing();
-            m_name = token.data();
-            break;
-        case HTMLToken::Comment:
-            m_data = token.data();
-            break;
-        case HTMLToken::Character:
-            m_externalCharacters = token.data().characters();
-            m_externalCharactersLength = token.data().length();
-            m_isAll8BitData = token.isAll8BitData();
-            break;
-        }
-    }
-
-#endif
 
     explicit AtomicHTMLToken(HTMLToken::Type type)
         : m_type(type)
@@ -242,6 +173,7 @@ private:
         ASSERT(usesName());
     }
 
+private:
     HTMLToken::Type m_type;
 
     void initializeAttributes(const HTMLToken::AttributeList& attributes);
@@ -270,7 +202,7 @@ private:
     bool m_isAll8BitData;
 
     // For DOCTYPE
-    OwnPtr<DoctypeData> m_doctypeData;
+    std::unique_ptr<DoctypeData> m_doctypeData;
 
     // For StartTag and EndTag
     bool m_selfClosing;
@@ -300,6 +232,7 @@ inline void AtomicHTMLToken::initializeAttributes(const HTMLToken::AttributeList
 
         AtomicString value(attribute.value);
         const QualifiedName& name = nameForAttribute(attribute);
+        // FIXME: This is N^2 for the number of attributes.
         if (!findAttributeInVector(m_attributes, name))
             m_attributes.append(Attribute(name, value));
     }

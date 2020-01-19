@@ -28,15 +28,17 @@
 
 #include "ArrayValue.h"
 #include "Dictionary.h"
+#include "JSCSSFontFaceRule.h"
+#include "JSDOMError.h"
 #include "JSDOMWindow.h"
 #include "JSEventTarget.h"
 #include "JSMessagePortCustom.h"
 #include "JSNode.h"
 #include "JSStorage.h"
 #include "JSTrackCustom.h"
-#include "JSUint8Array.h"
-#include "ScriptValue.h"
+#include "JSVoidCallback.h"
 #include "SerializedScriptValue.h"
+#include <runtime/JSTypedArrays.h>
 #include <wtf/HashMap.h>
 #include <wtf/MathExtras.h>
 #include <wtf/text/AtomicString.h>
@@ -47,6 +49,11 @@
 
 #if ENABLE(MEDIA_STREAM)
 #include "JSMediaStream.h"
+#include "JSMediaStreamTrack.h"
+#endif
+
+#if ENABLE(SCRIPTED_SPEECH)
+#include "JSSpeechRecognitionResultList.h"
 #endif
 
 using namespace JSC;
@@ -136,9 +143,9 @@ void JSDictionary::convertValue(ExecState* exec, JSValue value, Vector<String>& 
     }
 }
 
-void JSDictionary::convertValue(ExecState* exec, JSValue value, ScriptValue& result)
+void JSDictionary::convertValue(ExecState* exec, JSValue value, Deprecated::ScriptValue& result)
 {
-    result = ScriptValue(exec->globalData(), value);
+    result = Deprecated::ScriptValue(exec->vm(), value);
 }
 
 void JSDictionary::convertValue(ExecState* exec, JSValue value, RefPtr<SerializedScriptValue>& result)
@@ -223,6 +230,38 @@ void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<Medi
 void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<MediaStream>& result)
 {
     result = toMediaStream(value);
+}
+
+void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<MediaStreamTrack>& result)
+{
+    result = toMediaStreamTrack(value);
+}
+#endif
+
+#if ENABLE(FONT_LOAD_EVENTS)
+void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<CSSFontFaceRule>& result)
+{
+    result = toCSSFontFaceRule(value);
+}
+
+void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<DOMError>& result)
+{
+    result = toDOMError(value);
+}
+
+void JSDictionary::convertValue(JSC::ExecState* exec, JSC::JSValue value, RefPtr<VoidCallback>& result)
+{
+    if (!value.isFunction())
+        return;
+
+    result = JSVoidCallback::create(asObject(value), jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()));
+}
+#endif
+
+#if ENABLE(SCRIPTED_SPEECH)
+void JSDictionary::convertValue(JSC::ExecState*, JSC::JSValue value, RefPtr<SpeechRecognitionResultList>& result)
+{
+    result = toSpeechRecognitionResultList(value);
 }
 #endif
 

@@ -39,7 +39,12 @@
 #include <JavaScriptCore/SourceCode.h>
 #include <JavaScriptCore/Strong.h>
 #include <JavaScriptCore/StrongInlines.h>
+#include <WebCore/DOMWrapperWorld.h>
 #include <WebCore/Frame.h>
+#include <WebCore/Page.h>
+#include <WebCore/PageThrottler.h>
+#include <WebCore/ScriptController.h>
+#include <wtf/NeverDestroyed.h>
 
 using namespace JSC;
 using namespace WebCore;
@@ -64,11 +69,11 @@ NPRuntimeObjectMap::PluginProtector::~PluginProtector()
 {
 }
 
-NPObject* NPRuntimeObjectMap::getOrCreateNPObject(JSGlobalData& globalData, JSObject* jsObject)
+NPObject* NPRuntimeObjectMap::getOrCreateNPObject(VM& vm, JSObject* jsObject)
 {
     // If this is a JSNPObject, we can just get its underlying NPObject.
-    if (jsObject->classInfo() == &JSNPObject::s_info) {
-        JSNPObject* jsNPObject = static_cast<JSNPObject*>(jsObject);
+    if (jsObject->classInfo() == JSNPObject::info()) {
+        JSNPObject* jsNPObject = jsCast<JSNPObject*>(jsObject);
         NPObject* npObject = jsNPObject->npObject();
         
         retainNPObject(npObject);
@@ -81,7 +86,7 @@ NPObject* NPRuntimeObjectMap::getOrCreateNPObject(JSGlobalData& globalData, JSOb
         return npJSObject;
     }
 
-    NPJSObject* npJSObject = NPJSObject::create(globalData, this, jsObject);
+    NPJSObject* npJSObject = NPJSObject::create(vm, this, jsObject);
     m_npJSObjects.set(jsObject, npJSObject);
 
     return npJSObject;
@@ -104,7 +109,7 @@ JSObject* NPRuntimeObjectMap::getOrCreateJSObject(JSGlobalObject* globalObject, 
         return jsNPObject;
 
     JSNPObject* jsNPObject = JSNPObject::create(globalObject, this, npObject);
-    weakAdd(m_jsNPObjects, npObject, JSC::PassWeak<JSNPObject>(jsNPObject, this, npObject));
+    weakAdd(m_jsNPObjects, npObject, JSC::Weak<JSNPObject>(jsNPObject, this, npObject));
     return jsNPObject;
 }
 
@@ -170,7 +175,7 @@ void NPRuntimeObjectMap::convertJSValueToNPVariant(ExecState* exec, JSValue valu
     }
 
     if (value.isObject()) {
-        NPObject* npObject = getOrCreateNPObject(exec->globalData(), asObject(value));
+        NPObject* npObject = getOrCreateNPObject(exec->vm(), asObject(value));
         OBJECT_TO_NPVARIANT(npObject, variant);
         return;
     }
@@ -180,18 +185,21 @@ void NPRuntimeObjectMap::convertJSValueToNPVariant(ExecState* exec, JSValue valu
 
 bool NPRuntimeObjectMap::evaluate(NPObject* npObject, const String& scriptString, NPVariant* result)
 {
-    Strong<JSGlobalObject> globalObject(this->globalObject()->globalData(), this->globalObject());
+    Strong<JSGlobalObject> globalObject(this->globalObject()->vm(), this->globalObject());
     if (!globalObject)
         return false;
+
+    if (m_pluginView && !m_pluginView->isBeingDestroyed()) {
+        if (Page* page = m_pluginView->frame()->page())
+            page->pageThrottler().reportInterestingEvent();
+    }
 
     ExecState* exec = globalObject->globalExec();
     
     JSLockHolder lock(exec);
     JSValue thisValue = getOrCreateJSObject(globalObject.get(), npObject);
 
-    globalObject->globalData().timeoutChecker.start();
     JSValue resultValue = JSC::evaluate(exec, makeSource(scriptString), thisValue);
-    globalObject->globalData().timeoutChecker.stop();
 
     convertJSValueToNPVariant(exec, resultValue, *result);
     return true;
@@ -211,7 +219,7 @@ void NPRuntimeObjectMap::invalidate()
 
     Vector<NPObject*> objects;
 
-    for (HashMap<NPObject*, JSC::Weak<JSNPObject> >::iterator ptr = m_jsNPObjects.begin(), end = m_jsNPObjects.end(); ptr != end; ++ptr) {
+    for (HashMap<NPObject*, JSC::Weak<JSNPObject>>::iterator ptr = m_jsNPObjects.begin(), end = m_jsNPObjects.end(); ptr != end; ++ptr) {
         JSNPObject* jsNPObject = ptr->value.get();
         if (!jsNPObject) // Skip zombies.
             continue;
@@ -237,7 +245,7 @@ JSGlobalObject* NPRuntimeObjectMap::globalObject() const
     if (!frame)
         return 0;
 
-    return frame->script()->globalObject(pluginWorld());
+    return frame->script().globalObject(pluginWorld());
 }
 
 ExecState* NPRuntimeObjectMap::globalExec() const
@@ -251,7 +259,7 @@ ExecState* NPRuntimeObjectMap::globalExec() const
 
 static String& globalExceptionString()
 {
-    DEFINE_STATIC_LOCAL(String, exceptionString, ());
+    static NeverDestroyed<String> exceptionString;
     return exceptionString;
 }
 
@@ -267,7 +275,7 @@ void NPRuntimeObjectMap::moveGlobalExceptionToExecState(ExecState* exec)
 
     {
         JSLockHolder lock(exec);
-        throwError(exec, createError(exec, globalExceptionString()));
+        exec->vm().throwException(exec, createError(exec, globalExceptionString()));
     }
     
     globalExceptionString() = String();
@@ -295,7 +303,7 @@ void NPRuntimeObjectMap::addToInvalidationQueue(NPObject* npObject)
 
 void NPRuntimeObjectMap::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
 {
-    JSNPObject* object = static_cast<JSNPObject*>(handle.get().asCell());
+    JSNPObject* object = jsCast<JSNPObject*>(handle.get().asCell());
     weakRemove(m_jsNPObjects, static_cast<NPObject*>(context), object);
     addToInvalidationQueue(object->leakNPObject());
 }

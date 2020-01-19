@@ -2,7 +2,7 @@
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,7 +25,7 @@
 #define Event_h
 
 #include "DOMTimeStamp.h"
-#include "EventNames.h"
+#include "EventInterfaces.h"
 #include "ScriptWrappable.h"
 #include <wtf/HashMap.h>
 #include <wtf/ListHashSet.h>
@@ -36,14 +36,22 @@ namespace WebCore {
 
 class Clipboard;
 class EventTarget;
-class EventDispatcher;
 class HTMLIFrameElement;
 
 struct EventInit {
     EventInit();
-     
+    EventInit(bool bubbles, bool cancelable);
+
     bool bubbles;
     bool cancelable;
+};
+
+enum EventInterface {
+
+#define DOM_EVENT_INTERFACE_DECLARE(name) name##InterfaceType,
+DOM_EVENT_INTERFACES_FOR_EACH(DOM_EVENT_INTERFACE_DECLARE)
+#undef DOM_EVENT_INTERFACE_DECLARE
+
 };
 
 class Event : public ScriptWrappable, public RefCounted<Event> {
@@ -93,6 +101,7 @@ public:
     void initEvent(const AtomicString& type, bool canBubble, bool cancelable);
 
     const AtomicString& type() const { return m_type; }
+    void setType(const AtomicString& type) { m_type = type; }
     
     EventTarget* target() const { return m_target.get(); }
     void setTarget(PassRefPtr<EventTarget>);
@@ -113,13 +122,12 @@ public:
     // IE Extensions
     EventTarget* srcElement() const { return target(); } // MSIE extension - "the object that fired the event"
 
-    bool returnValue() const { return !defaultPrevented(); }
-    void setReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
+    bool legacyReturnValue() const { return !defaultPrevented(); }
+    void setLegacyReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
 
     Clipboard* clipboardData() const { return isClipboardEvent() ? clipboard() : 0; }
 
-    virtual const AtomicString& interfaceName() const;
-    bool hasInterface(const AtomicString&) const;
+    virtual EventInterface eventInterface() const;
 
     // These events are general classes of events.
     virtual bool isUIEvent() const;
@@ -134,6 +142,8 @@ public:
     // These events lack a DOM interface.
     virtual bool isClipboardEvent() const;
     virtual bool isBeforeTextInsertedEvent() const;
+
+    virtual bool isBeforeUnloadEvent() const;
 
     bool propagationStopped() const { return m_propagationStopped || m_immediatePropagationStopped; }
     bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
@@ -155,20 +165,18 @@ public:
     Event* underlyingEvent() const { return m_underlyingEvent.get(); }
     void setUnderlyingEvent(PassRefPtr<Event>);
 
-    virtual bool storesResultAsString() const;
-    virtual void storeResult(const String&);
-
     virtual Clipboard* clipboard() const { return 0; }
 
     bool isBeingDispatched() const { return eventPhase(); }
 
-    virtual void reportMemoryUsage(MemoryObjectInfo*) const;
-
     virtual PassRefPtr<Event> cloneFor(HTMLIFrameElement*) const;
+
+    virtual EventTarget* relatedTarget() const { return nullptr; }
 
 protected:
     Event();
     Event(const AtomicString& type, bool canBubble, bool cancelable);
+    Event(const AtomicString& type, bool canBubble, bool cancelable, double timestamp);
     Event(const AtomicString& type, const EventInit&);
 
     virtual void receivedTarget();

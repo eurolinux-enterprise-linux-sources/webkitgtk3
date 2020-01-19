@@ -38,6 +38,7 @@
 #include "DocumentLoader.h"
 #include "DocumentTiming.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "ResourceLoadTiming.h"
 #include "ResourceResponse.h"
 #include <wtf/CurrentTime.h>
@@ -314,7 +315,7 @@ DocumentLoader* PerformanceTiming::documentLoader() const
     if (!m_frame)
         return 0;
 
-    return m_frame->loader()->documentLoader();
+    return m_frame->loader().documentLoader();
 }
 
 const DocumentTiming* PerformanceTiming::documentTiming() const

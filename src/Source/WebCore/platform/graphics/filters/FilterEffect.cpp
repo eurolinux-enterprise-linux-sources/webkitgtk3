@@ -28,7 +28,9 @@
 #include "Filter.h"
 #include "ImageBuffer.h"
 #include "TextStream.h"
-#include <wtf/Uint8ClampedArray.h>
+#include <runtime/Operations.h>
+#include <runtime/TypedArrayInlines.h>
+#include <runtime/Uint8ClampedArray.h>
 
 #if HAVE(ARM_NEON_INTRINSICS)
 #include <arm_neon.h>
@@ -44,7 +46,7 @@ FilterEffect::FilterEffect(Filter* filter)
     , m_hasWidth(false)
     , m_hasHeight(false)
     , m_clipsToBounds(true)
-    , m_colorSpace(ColorSpaceLinearRGB)
+    , m_operatingColorSpace(ColorSpaceLinearRGB)
     , m_resultColorSpace(ColorSpaceDeviceRGB)
 {
     ASSERT(m_filter);
@@ -65,16 +67,18 @@ inline bool isFilterSizeValid(IntRect rect)
 void FilterEffect::determineAbsolutePaintRect()
 {
     m_absolutePaintRect = IntRect();
-    unsigned size = m_inputEffects.size();
-    for (unsigned i = 0; i < size; ++i)
-        m_absolutePaintRect.unite(m_inputEffects.at(i)->absolutePaintRect());
-    
+    for (auto& effect : m_inputEffects)
+        m_absolutePaintRect.unite(effect->absolutePaintRect());
+    clipAbsolutePaintRect();
+}
+
+void FilterEffect::clipAbsolutePaintRect()
+{
     // Filters in SVG clip to primitive subregion, while CSS doesn't.
     if (m_clipsToBounds)
         m_absolutePaintRect.intersect(enclosingIntRect(m_maxEffectRect));
     else
         m_absolutePaintRect.unite(enclosingIntRect(m_maxEffectRect));
-    
 }
 
 IntRect FilterEffect::requestedRegionOfInputImageData(const IntRect& effectRect) const
@@ -95,6 +99,23 @@ FilterEffect* FilterEffect::inputEffect(unsigned number) const
 {
     ASSERT_WITH_SECURITY_IMPLICATION(number < m_inputEffects.size());
     return m_inputEffects.at(number).get();
+}
+
+static unsigned collectEffects(const FilterEffect*effect, HashSet<const FilterEffect*>& allEffects)
+{
+    allEffects.add(effect);
+    unsigned size = effect->numberOfEffectInputs();
+    for (unsigned i = 0; i < size; ++i) {
+        FilterEffect* in = effect->inputEffect(i);
+        collectEffects(in, allEffects);
+    }
+    return allEffects.size();
+}
+
+unsigned FilterEffect::totalNumberOfEffectInputs() const
+{
+    HashSet<const FilterEffect*> allEffects;
+    return collectEffects(this, allEffects);
 }
 
 #if ENABLE(OPENCL)
@@ -127,11 +148,11 @@ void FilterEffect::apply()
             return;
 
         // Convert input results to the current effect's color space.
-        in->transformResultColorSpace(m_colorSpace);
+        transformResultColorSpace(in, i);
     }
 
     determineAbsolutePaintRect();
-    m_resultColorSpace = m_colorSpace;
+    setResultColorSpace(m_operatingColorSpace);
 
     if (!isFilterSizeValid(m_absolutePaintRect))
         return;
@@ -144,10 +165,6 @@ void FilterEffect::apply()
     // Add platform specific apply functions here and return earlier.
 #if ENABLE(OPENCL)
     if (platformApplyOpenCL())
-        return;
-#endif
-#if USE(SKIA)
-    if (platformApplySkia())
         return;
 #endif
     platformApplySoftware();
@@ -230,7 +247,7 @@ void FilterEffect::forceValidPreMultipliedPixels()
 void FilterEffect::clearResult()
 {
     if (m_imageBufferResult)
-        m_imageBufferResult.clear();
+        m_imageBufferResult.reset();
     if (m_unmultipliedImageResult)
         m_unmultipliedImageResult.clear();
     if (m_premultipliedImageResult)
@@ -428,7 +445,7 @@ ImageBuffer* FilterEffect::createImageBufferResult()
     ASSERT(!hasResult());
     if (m_absolutePaintRect.isEmpty())
         return 0;
-    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_colorSpace, m_filter->renderingMode());
+    m_imageBufferResult = ImageBuffer::create(m_absolutePaintRect.size(), 1, m_resultColorSpace, m_filter->renderingMode());
     if (!m_imageBufferResult)
         return 0;
     ASSERT(m_imageBufferResult->context());
@@ -474,8 +491,14 @@ OpenCLHandle FilterEffect::createOpenCLImageResult(uint8_t* source)
     clImageFormat.image_channel_data_type = CL_UNORM_INT8;
 
     int errorCode = 0;
+#ifdef CL_API_SUFFIX__VERSION_1_2
+    cl_image_desc imageDescriptor = { CL_MEM_OBJECT_IMAGE2D, m_absolutePaintRect.width(), m_absolutePaintRect.height(), 0, 0, 0, 0, 0, 0, 0};
+    m_openCLImageResult = clCreateImage(context->deviceContext(), CL_MEM_READ_WRITE | (source ? CL_MEM_COPY_HOST_PTR : 0),
+        &clImageFormat, &imageDescriptor, source, &errorCode);
+#else
     m_openCLImageResult = clCreateImage2D(context->deviceContext(), CL_MEM_READ_WRITE | (source ? CL_MEM_COPY_HOST_PTR : 0),
         &clImageFormat, m_absolutePaintRect.width(), m_absolutePaintRect.height(), 0, source, &errorCode);
+#endif
     if (context->isFailed(errorCode))
         return 0;
 

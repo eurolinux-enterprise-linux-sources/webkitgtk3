@@ -21,8 +21,11 @@
 #define WebKitSoupRequestGeneric_h
 
 #include <glib-object.h>
-#define LIBSOUP_USE_UNSTABLE_REQUEST_API
-#include <libsoup/soup-request.h>
+#include <libsoup/soup.h>
+
+#if ENABLE(CUSTOM_PROTOCOLS)
+#include "CustomProtocolManagerImpl.h"
+#endif
 
 G_BEGIN_DECLS
 
@@ -45,6 +48,10 @@ struct _WebKitSoupRequestGeneric {
 
 struct _WebKitSoupRequestGenericClass {
     SoupRequestClass parent;
+
+#if ENABLE(CUSTOM_PROTOCOLS)
+    WebKit::CustomProtocolManagerImpl* customProtocolManager;
+#endif
 };
 
 GType webkit_soup_request_generic_get_type();

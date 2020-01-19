@@ -48,24 +48,19 @@ const ClassInfo NamePrototype::s_info = { "Name", &Base::s_info, 0, ExecState::p
 */
 
 NamePrototype::NamePrototype(ExecState* exec, Structure* structure)
-    : Base(exec->globalData(), structure, jsEmptyString(exec))
+    : Base(exec->vm(), structure, jsEmptyString(exec))
 {
 }
 
-void NamePrototype::finishCreation(ExecState* exec)
+void NamePrototype::finishCreation(VM& vm)
 {
-    Base::finishCreation(exec->globalData());
-    ASSERT(inherits(&s_info));
+    Base::finishCreation(vm);
+    ASSERT(inherits(info()));
 }
 
-bool NamePrototype::getOwnPropertySlot(JSCell* cell, ExecState* exec, PropertyName propertyName, PropertySlot &slot)
+bool NamePrototype::getOwnPropertySlot(JSObject* object, ExecState* exec, PropertyName propertyName, PropertySlot &slot)
 {
-    return getStaticFunctionSlot<Base>(exec, ExecState::privateNamePrototypeTable(exec), jsCast<NamePrototype*>(cell), propertyName, slot);
-}
-
-bool NamePrototype::getOwnPropertyDescriptor(JSObject* object, ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
-{
-    return getStaticFunctionDescriptor<Base>(exec, ExecState::privateNamePrototypeTable(exec), jsCast<NamePrototype*>(object), propertyName, descriptor);
+    return getStaticFunctionSlot<Base>(exec, ExecState::privateNamePrototypeTable(exec->vm()), jsCast<NamePrototype*>(object), propertyName, slot);
 }
 
 // ------------------------------ Functions ---------------------------
@@ -77,7 +72,7 @@ EncodedJSValue JSC_HOST_CALL privateNameProtoFuncToString(ExecState* exec)
         return throwVMTypeError(exec);
 
     JSObject* thisObject = asObject(thisValue);
-    if (!thisObject->inherits(&NameInstance::s_info))
+    if (!thisObject->inherits(NameInstance::info()))
         return throwVMTypeError(exec);
 
     return JSValue::encode(jsCast<NameInstance*>(thisObject)->nameString());

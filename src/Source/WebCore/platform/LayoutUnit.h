@@ -31,6 +31,7 @@
 #ifndef LayoutUnit_h
 #define LayoutUnit_h
 
+#include "ValueToString.h"
 #include <limits.h>
 #include <limits>
 #include <math.h>
@@ -110,12 +111,17 @@ public:
 #else
     LayoutUnit(int value) { REPORT_OVERFLOW(isInBounds(value)); m_value = value; }
     LayoutUnit(unsigned short value) { REPORT_OVERFLOW(isInBounds(value)); m_value = value; }
-    LayoutUnit(unsigned value) { REPORT_OVERFLOW(isInBounds(value)); m_value = value; }
-    LayoutUnit(unsigned long long value) { REPORT_OVERFLOW(isInBounds(static_cast<unsigned>(value))); m_value = value; }
-    LayoutUnit(unsigned long value) { REPORT_OVERFLOW(isInBounds(static_cast<unsigned>(value))); m_value = value; }
-    LayoutUnit(float value) { REPORT_OVERFLOW(isInBounds(value)); m_value = value; }
-    LayoutUnit(double value) { REPORT_OVERFLOW(isInBounds(value)); m_value = value; }
+    LayoutUnit(unsigned value) { REPORT_OVERFLOW(isInBounds(value)); m_value = clampTo<int>(value); }
+    LayoutUnit(unsigned long long value) { REPORT_OVERFLOW(isInBounds(static_cast<unsigned>(value))); m_value = clampTo<int>(value); }
+    LayoutUnit(unsigned long value) { REPORT_OVERFLOW(isInBounds(static_cast<unsigned>(value))); m_value = clampTo<int>(value); }
+    LayoutUnit(float value) { REPORT_OVERFLOW(isInBounds(value)); m_value = clampTo<int>(value); }
+    LayoutUnit(double value) { REPORT_OVERFLOW(isInBounds(value)); m_value = clampTo<int>(value); }
 #endif
+
+    static LayoutUnit fromPixel(int value)
+    {
+        return LayoutUnit(value);
+    }
 
     static LayoutUnit fromFloatCeil(float value)
     {
@@ -262,6 +268,12 @@ public:
     }
 
 #if ENABLE(SUBPIXEL_LAYOUT)
+    bool mightBeSaturated() const
+    {
+        return rawValue() == std::numeric_limits<int>::max()
+            || rawValue() == std::numeric_limits<int>::min();
+    }
+
     static float epsilon() { return 1.0f / kEffectiveFixedPointDenominator; }
 #else
     static int epsilon() { return 0; }
@@ -946,15 +958,18 @@ inline LayoutUnit absoluteValue(const LayoutUnit& value)
     return value.abs();
 }
 
-inline LayoutUnit layoutMod(const LayoutUnit& numerator, const LayoutUnit& denominator)
-{
-    return numerator % denominator;
-}
-
 inline bool isIntegerValue(const LayoutUnit value)
 {
     return value.toInt() == value;
 }
+
+#ifndef NDEBUG
+// This structure is used by PODIntervalTree for debugging.
+template <>
+struct ValueToString<LayoutUnit> {
+    static String string(const LayoutUnit value) { return String::number(value.toFloat()); }
+};
+#endif
 
 } // namespace WebCore
 

@@ -30,11 +30,11 @@
 #define ReverbConvolverStage_h
 
 #include "AudioArray.h"
-#include "FFTFrame.h"
-#include <wtf/OwnPtr.h>
+#include <memory>
 
 namespace WebCore {
 
+class FFTFrame;
 class ReverbAccumulationBuffer;
 class ReverbConvolver;
 class FFTConvolver;
@@ -47,6 +47,7 @@ public:
     // renderPhase is useful to know so that we can manipulate the pre versus post delay so that stages will perform
     // their heavy work (FFT processing) on different slices to balance the load in a real-time thread.
     ReverbConvolverStage(const float* impulseResponse, size_t responseLength, size_t reverbTotalLatency, size_t stageOffset, size_t stageLength, size_t fftSize, size_t renderPhase, size_t renderSliceSize, ReverbAccumulationBuffer*, bool directMode = false);
+    ~ReverbConvolverStage();
 
     // WARNING: framesToProcess must be such that it evenly divides the delay buffer size (stage_offset).
     void process(const float* source, size_t framesToProcess);
@@ -59,8 +60,8 @@ public:
     int inputReadIndex() const { return m_inputReadIndex; }
 
 private:
-    OwnPtr<FFTFrame> m_fftKernel;
-    OwnPtr<FFTConvolver> m_fftConvolver;
+    std::unique_ptr<FFTFrame> m_fftKernel;
+    std::unique_ptr<FFTConvolver> m_fftConvolver;
 
     AudioFloatArray m_preDelayBuffer;
 
@@ -76,8 +77,8 @@ private:
     AudioFloatArray m_temporaryBuffer;
 
     bool m_directMode;
-    OwnPtr<AudioFloatArray> m_directKernel;
-    OwnPtr<DirectConvolver> m_directConvolver;
+    std::unique_ptr<AudioFloatArray> m_directKernel;
+    std::unique_ptr<DirectConvolver> m_directConvolver;
 };
 
 } // namespace WebCore

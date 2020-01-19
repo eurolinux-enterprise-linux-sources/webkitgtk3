@@ -38,12 +38,6 @@
 #include "VectorMath.h"
 #include <math.h>
 #include <wtf/MathExtras.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-
-#if OS(DARWIN)
-using namespace std;
-#endif
 
 namespace WebCore {
 
@@ -123,8 +117,7 @@ void Reverb::initialize(AudioBus* impulseResponseBuffer, size_t renderSliceSize,
     for (size_t i = 0; i < numResponseChannels; ++i) {
         AudioChannel* channel = impulseResponseBuffer->channel(i);
 
-        OwnPtr<ReverbConvolver> convolver = adoptPtr(new ReverbConvolver(channel, renderSliceSize, maxFFTSize, convolverRenderPhase, useBackgroundThreads));
-        m_convolvers.append(convolver.release());
+        m_convolvers.append(std::make_unique<ReverbConvolver>(channel, renderSliceSize, maxFFTSize, convolverRenderPhase, useBackgroundThreads));
 
         convolverRenderPhase += renderSliceSize;
     }
@@ -132,7 +125,7 @@ void Reverb::initialize(AudioBus* impulseResponseBuffer, size_t renderSliceSize,
     // For "True" stereo processing we allocate a temporary buffer to avoid repeatedly allocating it in the process() method.
     // It can be bad to allocate memory in a real-time thread.
     if (numResponseChannels == 4)
-        m_tempBuffer = adoptPtr(new AudioBus(2, MaxFrameSize));
+        m_tempBuffer = AudioBus::create(2, MaxFrameSize);
 }
 
 void Reverb::process(const AudioBus* sourceBus, AudioBus* destinationBus, size_t framesToProcess)

@@ -27,11 +27,13 @@
 #define PageOverlay_h
 
 #include "APIObject.h"
-#include <WebCore/RunLoop.h>
+#include "WKBase.h"
 #include <wtf/PassRefPtr.h>
+#include <wtf/RunLoop.h>
 
 namespace WebCore {
     class GraphicsContext;
+    class IntPoint;
     class IntRect;
 }
 
@@ -40,7 +42,7 @@ namespace WebKit {
 class WebMouseEvent;
 class WebPage;
 
-class PageOverlay : public APIObject {
+class PageOverlay : public API::ObjectImpl<API::Object::Type::BundlePageOverlay> {
 public:
     class Client {
     protected:
@@ -52,9 +54,10 @@ public:
         virtual void didMoveToWebPage(PageOverlay*, WebPage*) = 0;
         virtual void drawRect(PageOverlay*, WebCore::GraphicsContext&, const WebCore::IntRect& dirtyRect) = 0;
         virtual bool mouseEvent(PageOverlay*, const WebMouseEvent&) = 0;
-    };
 
-    static const Type APIType = TypeBundlePageOverlay;
+        virtual WKTypeRef copyAccessibilityAttributeValue(PageOverlay*, WKStringRef /* attribute */, WKTypeRef /* parameter */) { return 0; }
+        virtual WKArrayRef copyAccessibilityAttributeNames(PageOverlay*, bool /* parameterizedNames */) { return 0; }
+    };
 
     static PassRefPtr<PageOverlay> create(Client*);
     virtual ~PageOverlay();
@@ -66,18 +69,21 @@ public:
     void drawRect(WebCore::GraphicsContext&, const WebCore::IntRect& dirtyRect);
     bool mouseEvent(const WebMouseEvent&);
 
+    WKTypeRef copyAccessibilityAttributeValue(WKStringRef attribute, WKTypeRef parameter);
+    WKArrayRef copyAccessibilityAttributeNames(bool parameterizedNames);
+    
     void startFadeInAnimation();
     void startFadeOutAnimation();
+    void stopFadeOutAnimation();
 
-    float fractionFadedIn() const { return m_fractionFadedIn; }
+    void clear();
 
+    Client* client() const { return m_client; }
+    
 protected:
     explicit PageOverlay(Client*);
 
 private:
-    // APIObject
-    virtual Type type() const { return APIType; }
-
     WebCore::IntRect bounds() const;
 
     void startFadeAnimation();
@@ -86,7 +92,7 @@ private:
     Client* m_client;
     WebPage* m_webPage;
 
-    WebCore::RunLoop::Timer<PageOverlay> m_fadeAnimationTimer;
+    RunLoop::Timer<PageOverlay> m_fadeAnimationTimer;
     double m_fadeAnimationStartTime;
     double m_fadeAnimationDuration;
 
@@ -98,7 +104,6 @@ private:
 
     FadeAnimationType m_fadeAnimationType;
     float m_fractionFadedIn;
-    bool m_pageOverlayShouldApplyFadeWhenPainting;
 };
 
 } // namespace WebKit

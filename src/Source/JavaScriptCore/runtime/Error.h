@@ -31,7 +31,7 @@
 namespace JSC {
 
     class ExecState;
-    class JSGlobalData;
+    class VM;
     class JSGlobalObject;
     class JSObject;
     class SourceCode;
@@ -62,21 +62,19 @@ namespace JSC {
     JSObject* addErrorInfo(ExecState*, JSObject* error, int line, const SourceCode&);
 
     // Methods to throw Errors.
-    JS_EXPORT_PRIVATE JSValue throwError(ExecState*, JSValue);
-    JS_EXPORT_PRIVATE JSObject* throwError(ExecState*, JSObject*);
 
     // Convenience wrappers, create an throw an exception with a default message.
     JS_EXPORT_PRIVATE JSObject* throwTypeError(ExecState*);
     JS_EXPORT_PRIVATE JSObject* throwSyntaxError(ExecState*);
 
     // Convenience wrappers, wrap result as an EncodedJSValue.
-    inline EncodedJSValue throwVMError(ExecState* exec, JSValue error) { return JSValue::encode(throwError(exec, error)); }
+    inline EncodedJSValue throwVMError(ExecState* exec, JSValue error) { return JSValue::encode(exec->vm().throwException(exec, error)); }
     inline EncodedJSValue throwVMTypeError(ExecState* exec) { return JSValue::encode(throwTypeError(exec)); }
 
     class StrictModeTypeErrorFunction : public InternalFunction {
     private:
-        StrictModeTypeErrorFunction(JSGlobalObject* globalObject, Structure* structure, const String& message)
-            : InternalFunction(globalObject, structure)
+        StrictModeTypeErrorFunction(VM& vm, Structure* structure, const String& message)
+            : InternalFunction(vm, structure)
             , m_message(message)
         {
         }
@@ -86,10 +84,10 @@ namespace JSC {
     public:
         typedef InternalFunction Base;
 
-        static StrictModeTypeErrorFunction* create(ExecState* exec, JSGlobalObject* globalObject, Structure* structure, const String& message)
+        static StrictModeTypeErrorFunction* create(VM& vm, Structure* structure, const String& message)
         {
-            StrictModeTypeErrorFunction* function = new (NotNull, allocateCell<StrictModeTypeErrorFunction>(*exec->heap())) StrictModeTypeErrorFunction(globalObject, structure, message);
-            function->finishCreation(exec->globalData(), String());
+            StrictModeTypeErrorFunction* function = new (NotNull, allocateCell<StrictModeTypeErrorFunction>(vm.heap)) StrictModeTypeErrorFunction(vm, structure, message);
+            function->finishCreation(vm, String());
             return function;
         }
     
@@ -117,11 +115,11 @@ namespace JSC {
             return CallTypeHost;
         }
 
-        static const ClassInfo s_info;
+        DECLARE_INFO;
 
-        static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype) 
+        static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue prototype) 
         { 
-            return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info); 
+            return Structure::create(vm, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), info()); 
         }
 
     private:

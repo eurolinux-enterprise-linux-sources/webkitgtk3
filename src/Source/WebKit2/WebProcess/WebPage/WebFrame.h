@@ -27,7 +27,6 @@
 #define WebFrame_h
 
 #include "APIObject.h"
-#include "ImmutableArray.h"
 #include "WKBase.h"
 #include "WebFrameLoaderClient.h"
 #include <JavaScriptCore/JSBase.h>
@@ -39,12 +38,16 @@
 #include <wtf/RefPtr.h>
 #include <wtf/RetainPtr.h>
 
+namespace API {
+class Array;
+}
+
 namespace WebCore {
 class Frame;
 class HTMLFrameOwnerElement;
 class IntPoint;
 class IntRect;
-class KURL;
+class URL;
 }
 
 namespace WebKit {
@@ -55,11 +58,9 @@ class InjectedBundleRangeHandle;
 class InjectedBundleScriptWorld;
 class WebPage;
 
-class WebFrame : public APIObject {
+class WebFrame : public API::ObjectImpl<API::Object::Type::BundleFrame> {
 public:
-    static const Type APIType = TypeBundleFrame;
-
-    static PassRefPtr<WebFrame> createMainFrame(WebPage*);
+    static PassRefPtr<WebFrame> createWithCoreMainFrame(WebPage*, WebCore::Frame*);
     static PassRefPtr<WebFrame> createSubframe(WebPage*, const String& frameName, WebCore::HTMLFrameOwnerElement*);
     ~WebFrame();
 
@@ -76,7 +77,7 @@ public:
     void didReceivePolicyDecision(uint64_t listenerID, WebCore::PolicyAction, uint64_t downloadID);
 
     void startDownload(const WebCore::ResourceRequest&);
-    void convertMainResourceLoadToDownload(WebCore::MainResourceLoader*, const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
+    void convertMainResourceLoadToDownload(WebCore::DocumentLoader*, const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
 
     String source() const;
     String contentsAsString() const;
@@ -91,8 +92,7 @@ public:
     String innerText() const;
     bool isFrameSet() const;
     WebFrame* parentFrame() const;
-    PassRefPtr<ImmutableArray> childFrames();
-    JSValueRef computedStyleIncludingVisitedInfo(JSObjectRef element);
+    PassRefPtr<API::Array> childFrames();
     JSGlobalContextRef jsContext();
     JSGlobalContextRef jsContextForWorld(InjectedBundleScriptWorld*);
     WebCore::IntRect contentBounds() const;
@@ -104,6 +104,7 @@ public:
     PassRefPtr<InjectedBundleHitTestResult> hitTest(const WebCore::IntPoint) const;
     bool getDocumentBackgroundColor(double* red, double* green, double* blue, double* alpha);
     bool containsAnyFormElements() const;
+    bool containsAnyFormControls() const;
     void stopLoading();
     bool handlesPageScaleGesture() const;
 
@@ -113,17 +114,16 @@ public:
     JSValueRef jsWrapperForWorld(InjectedBundleRangeHandle*, InjectedBundleScriptWorld*);
 
     static String counterValue(JSObjectRef element);
-    static String markerText(JSObjectRef element);
 
     String layerTreeAsText() const;
     
     unsigned pendingUnloadCount() const;
     
-    bool allowsFollowingLink(const WebCore::KURL&) const;
+    bool allowsFollowingLink(const WebCore::URL&) const;
 
     String provisionalURL() const;
-    String suggestedFilenameForResourceWithURL(const WebCore::KURL&) const;
-    String mimeTypeForResourceWithURL(const WebCore::KURL&) const;
+    String suggestedFilenameForResourceWithURL(const WebCore::URL&) const;
+    String mimeTypeForResourceWithURL(const WebCore::URL&) const;
 
     void setTextDirection(const String&);
 
@@ -144,12 +144,8 @@ public:
 #endif
 
 private:
-    static PassRefPtr<WebFrame> create();
-    WebFrame();
-
-    void init(WebPage*, const String& frameName, WebCore::HTMLFrameOwnerElement*);
-
-    virtual Type type() const { return APIType; }
+    static PassRefPtr<WebFrame> create(std::unique_ptr<WebFrameLoaderClient>);
+    WebFrame(std::unique_ptr<WebFrameLoaderClient>);
 
     WebCore::Frame* m_coreFrame;
 
@@ -157,7 +153,7 @@ private:
     WebCore::FramePolicyFunction m_policyFunction;
     uint64_t m_policyDownloadID;
 
-    WebFrameLoaderClient m_frameLoaderClient;
+    std::unique_ptr<WebFrameLoaderClient> m_frameLoaderClient;
     LoadListener* m_loadListener;
     
     uint64_t m_frameID;

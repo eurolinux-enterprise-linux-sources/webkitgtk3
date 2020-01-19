@@ -22,14 +22,12 @@
 
 #if ENABLE(SVG)
 #include "SVGTextLayoutAttributes.h"
-#include "SVGTextMetrics.h"
 #include "TextRun.h"
 #include "WidthIterator.h"
-#include <wtf/Vector.h>
 
 namespace WebCore {
 
-class RenderObject;
+class RenderElement;
 class RenderSVGInlineText;
 class RenderSVGText;
 struct MeasureTextData;
@@ -48,7 +46,7 @@ private:
     bool currentCharacterStartsSurrogatePair() const;
 
     void initializeMeasurementWithTextRenderer(RenderSVGInlineText*);
-    void walkTree(RenderObject*, RenderSVGInlineText* stopAtLeaf, MeasureTextData*);
+    void walkTree(RenderElement&, RenderSVGInlineText* stopAtLeaf, MeasureTextData*);
     void measureTextRenderer(RenderSVGInlineText*, MeasureTextData*);
 
     RenderSVGInlineText* m_text;

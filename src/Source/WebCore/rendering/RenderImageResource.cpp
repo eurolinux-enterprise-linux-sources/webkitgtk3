@@ -28,15 +28,15 @@
 #include "config.h"
 #include "RenderImageResource.h"
 
+#include "CachedImage.h"
 #include "Image.h"
+#include "RenderElement.h"
 #include "RenderImageResourceStyleImage.h"
-#include "RenderObject.h"
 
 namespace WebCore {
 
 RenderImageResource::RenderImageResource()
     : m_renderer(0)
-    , m_cachedImage(0)
 {
 }
 
@@ -44,7 +44,7 @@ RenderImageResource::~RenderImageResource()
 {
 }
 
-void RenderImageResource::initialize(RenderObject* renderer)
+void RenderImageResource::initialize(RenderElement* renderer)
 {
     ASSERT(!m_renderer);
     ASSERT(renderer);
@@ -89,16 +89,41 @@ void RenderImageResource::resetAnimation()
         m_renderer->repaint();
 }
 
+PassRefPtr<Image> RenderImageResource::image(int, int) const
+{
+    return m_cachedImage ? m_cachedImage->imageForRenderer(m_renderer) : Image::nullImage();
+}
+
+bool RenderImageResource::errorOccurred() const
+{
+    return m_cachedImage && m_cachedImage->errorOccurred();
+}
+
 void RenderImageResource::setContainerSizeForRenderer(const IntSize& imageContainerSize)
 {
     ASSERT(m_renderer);
     if (m_cachedImage)
-        m_cachedImage->setContainerSizeForRenderer(m_renderer, imageContainerSize, m_renderer->style()->effectiveZoom());
+        m_cachedImage->setContainerSizeForRenderer(m_renderer, imageContainerSize, m_renderer->style().effectiveZoom());
 }
 
-Image* RenderImageResource::nullImage()
+bool RenderImageResource::imageHasRelativeWidth() const
 {
-    return Image::nullImage();
+    return m_cachedImage ? m_cachedImage->imageHasRelativeWidth() : false;
+}
+
+bool RenderImageResource::imageHasRelativeHeight() const
+{
+    return m_cachedImage ? m_cachedImage->imageHasRelativeHeight() : false;
+}
+
+LayoutSize RenderImageResource::imageSize(float multiplier) const
+{
+    return m_cachedImage ? m_cachedImage->imageSizeForRenderer(m_renderer, multiplier) : LayoutSize();
+}
+
+LayoutSize RenderImageResource::intrinsicSize(float multiplier) const
+{
+    return m_cachedImage ? m_cachedImage->imageSizeForRenderer(m_renderer, multiplier, CachedImage::IntrinsicSize) : LayoutSize();
 }
 
 } // namespace WebCore

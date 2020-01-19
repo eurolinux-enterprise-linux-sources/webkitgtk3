@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2011 Nokia Inc. All rights reserved.
  * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,50 +23,39 @@
 #ifndef RenderQuote_h
 #define RenderQuote_h
 
-#include "QuotesData.h"
-#include "RenderStyle.h"
-#include "RenderStyleConstants.h"
-#include "RenderText.h"
+#include "RenderInline.h"
 
 namespace WebCore {
 
-class Document;
-
-class RenderQuote : public RenderText {
+class RenderQuote final : public RenderInline {
 public:
-    RenderQuote(Document*, const QuoteType);
+    RenderQuote(Document&, PassRef<RenderStyle>, QuoteType);
     virtual ~RenderQuote();
+
     void attachQuote();
 
 private:
     void detachQuote();
 
-    virtual void willBeDestroyed() OVERRIDE;
-    virtual const char* renderName() const OVERRIDE { return "RenderQuote"; };
-    virtual bool isQuote() const OVERRIDE { return true; };
-    virtual PassRefPtr<StringImpl> originalText() const OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
+    virtual void willBeDestroyed() override;
+    virtual const char* renderName() const override { return "RenderQuote"; }
+    virtual bool isQuote() const override { return true; };
+    virtual void styleDidChange(StyleDifference, const RenderStyle*) override;
+    virtual void willBeRemovedFromTree() override;
 
-    const QuotesData* quotesData() const;
+    String computeText() const;
+    void updateText();
     void updateDepth();
-    bool isAttached() { return m_attached; }
 
     QuoteType m_type;
     int m_depth;
     RenderQuote* m_next;
     RenderQuote* m_previous;
-    bool m_attached;
+    bool m_isAttached;
+    String m_text;
 };
 
-inline RenderQuote* toRenderQuote(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isQuote());
-    return static_cast<RenderQuote*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderQuote(const RenderQuote*);
+RENDER_OBJECT_TYPE_CASTS(RenderQuote, isQuote())
 
 } // namespace WebCore
 

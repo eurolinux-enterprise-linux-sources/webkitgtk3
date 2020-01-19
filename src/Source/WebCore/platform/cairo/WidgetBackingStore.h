@@ -21,7 +21,7 @@
 
 #include "IntRect.h"
 #include "IntSize.h"
-#include <wtf/FastAllocBase.h>
+#include <wtf/FastMalloc.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -35,8 +35,6 @@ typedef struct _cairo_surface cairo_surface_t;
 
 namespace WebCore {
 
-class WidgetBackingStorePrivate;
-
 #if PLATFORM(GTK)
 typedef GtkWidget* PlatformWidget;
 #elif PLATFORM(EFL)
@@ -48,18 +46,21 @@ class WidgetBackingStore {
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    static PassOwnPtr<WidgetBackingStore> create(PlatformWidget, const IntSize&);
-
-    ~WidgetBackingStore();
-    cairo_surface_t* cairoSurface();
-    void scroll(const IntRect& scrollRect, const IntSize& scrollOffset);
+    virtual cairo_surface_t* cairoSurface() = 0;
+    virtual void scroll(const IntRect& scrollRect, const IntSize& scrollOffset) = 0;
     const IntSize& size() { return m_size; }
+    float deviceScaleFactor() { return m_deviceScaleFactor; }
 
-private:
-    WidgetBackingStore(PlatformWidget, const IntSize&);
+    WidgetBackingStore(const IntSize& size, float deviceScaleFactor)
+        : m_size(size)
+        , m_deviceScaleFactor(deviceScaleFactor)
+    { }
 
-    OwnPtr<WidgetBackingStorePrivate> m_private;
+    virtual ~WidgetBackingStore() { }
+
+protected:
     IntSize m_size;
+    float m_deviceScaleFactor;
 };
 
 } // namespace WebCore

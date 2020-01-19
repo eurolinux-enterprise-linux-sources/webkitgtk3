@@ -29,20 +29,25 @@
 #include "CachedResourceClient.h"
 #include "CachedResourceClientWalker.h"
 #include "CachedResourceLoader.h"
+#include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameLoaderTypes.h"
 #include "FrameView.h"
 #include "MemoryCache.h"
 #include "Page.h"
-#include "RenderObject.h"
+#include "RenderElement.h"
 #include "ResourceBuffer.h"
+#include "SecurityOrigin.h"
 #include "Settings.h"
 #include "SubresourceLoader.h"
 #include <wtf/CurrentTime.h>
-#include <wtf/MemoryInstrumentationHashMap.h>
-#include <wtf/MemoryObjectInfo.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
+
+#if PLATFORM(IOS)
+#include "SystemMemory.h"
+#endif
 
 #if USE(CG)
 #include "PDFDocumentImage.h"
@@ -52,7 +57,9 @@
 #include "SVGImage.h"
 #endif
 
-using std::max;
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCacheIOS.h"
+#endif
 
 namespace WebCore {
 
@@ -66,6 +73,15 @@ CachedImage::CachedImage(const ResourceRequest& resourceRequest)
 
 CachedImage::CachedImage(Image* image)
     : CachedResource(ResourceRequest(), ImageResource)
+    , m_image(image)
+    , m_shouldPaintBrokenImage(true)
+{
+    setStatus(Cached);
+    setLoading(false);
+}
+
+CachedImage::CachedImage(const URL& url, Image* image)
+    : CachedResource(ResourceRequest(url), ImageResource)
     , m_image(image)
     , m_shouldPaintBrokenImage(true)
 {
@@ -141,7 +157,7 @@ void CachedImage::allClientsRemoved()
         m_image->resetAnimation();
 }
 
-pair<Image*, float> CachedImage::brokenImage(float deviceScaleFactor) const
+std::pair<Image*, float> CachedImage::brokenImage(float deviceScaleFactor) const
 {
     if (deviceScaleFactor >= 2) {
         DEFINE_STATIC_LOCAL(Image*, brokenImageHiRes, (Image::loadPlatformResource("missingImage@2x").leakRef()));
@@ -247,24 +263,42 @@ bool CachedImage::imageHasRelativeHeight() const
     return false;
 }
 
-LayoutSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float multiplier)
+LayoutSize CachedImage::imageSizeForRenderer(const RenderObject* renderer, float multiplier, SizeType sizeType)
 {
     ASSERT(!isPurgeable());
 
     if (!m_image)
         return IntSize();
 
-    LayoutSize imageSize;
+    LayoutSize imageSize(m_image->size());
 
+#if ENABLE(CSS_IMAGE_ORIENTATION)
+    if (renderer && m_image->isBitmapImage()) {
+        ImageOrientationDescription orientationDescription(renderer->shouldRespectImageOrientation(), renderer->style().imageOrientation());
+        if (orientationDescription.respectImageOrientation() == RespectImageOrientation)
+            imageSize = toBitmapImage(m_image.get())->sizeRespectingOrientation(orientationDescription);
+    }
+#else
     if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
-        imageSize = static_cast<BitmapImage*>(m_image.get())->sizeRespectingOrientation();
+#if !PLATFORM(IOS)
+        imageSize = toBitmapImage(m_image.get())->sizeRespectingOrientation();
+#else
+    {
+        // On iOS, the image may have been subsampled to accommodate our size restrictions. However
+        // we should tell the renderer what the original size was.
+        imageSize = toBitmapImage(m_image.get())->originalSizeRespectingOrientation();
+    } else if (m_image->isBitmapImage())
+        imageSize = toBitmapImage(m_image.get())->originalSize();
+#endif // !PLATFORM(IOS)
+#endif // ENABLE(CSS_IMAGE_ORIENTATION)
+
 #if ENABLE(SVG)
-    else if (m_image->isSVGImage()) {
+    else if (m_image->isSVGImage() && sizeType == UsedSize) {
         imageSize = m_svgImageCache->imageSizeForRenderer(renderer);
     }
+#else
+    UNUSED_PARAM(sizeType);
 #endif
-    else
-        imageSize = m_image->size();
 
     if (multiplier == 1.0f)
         return imageSize;
@@ -297,7 +331,7 @@ void CachedImage::checkShouldPaintBrokenImage()
     if (!m_loader || m_loader->reachedTerminalState())
         return;
 
-    m_shouldPaintBrokenImage = m_loader->frameLoader()->client()->shouldPaintBrokenImage(m_resourceRequest.url());
+    m_shouldPaintBrokenImage = m_loader->frameLoader()->client().shouldPaintBrokenImage(m_resourceRequest.url());
 }
 
 void CachedImage::clear()
@@ -315,12 +349,12 @@ inline void CachedImage::createImage()
         return;
 #if USE(CG) && !USE(WEBKIT_IMAGE_DECODERS)
     else if (m_response.mimeType() == "application/pdf")
-        m_image = PDFDocumentImage::create();
+        m_image = PDFDocumentImage::create(this);
 #endif
 #if ENABLE(SVG)
     else if (m_response.mimeType() == "image/svg+xml") {
         RefPtr<SVGImage> svgImage = SVGImage::create(this);
-        m_svgImageCache = SVGImageCache::create(svgImage.get());
+        m_svgImageCache = std::make_unique<SVGImageCache>(svgImage.get());
         m_image = svgImage.release();
     }
 #endif
@@ -346,56 +380,84 @@ inline void CachedImage::clearImage()
     m_image.clear();
 }
 
-size_t CachedImage::maximumDecodedImageSize()
+bool CachedImage::canBeDrawn() const
 {
+    if (!m_image || m_image->isNull())
+        return false;
+
     if (!m_loader || m_loader->reachedTerminalState())
-        return 0;
-    Settings* settings = m_loader->frameLoader()->frame()->settings();
-    return settings ? settings->maximumDecodedImageSize() : 0;
+        return true;
+
+    size_t estimatedDecodedImageSize = m_image->width() * m_image->height() * 4; // no overflow check
+    return estimatedDecodedImageSize <= m_loader->frameLoader()->frame().settings().maximumDecodedImageSize();
 }
 
-void CachedImage::data(PassRefPtr<ResourceBuffer> data, bool allDataReceived)
+void CachedImage::addIncrementalDataBuffer(ResourceBuffer* data)
 {
     m_data = data;
+    if (!data)
+        return;
 
-    if (m_data)
-        createImage();
-
-    bool sizeAvailable = false;
+    createImage();
 
     // Have the image update its data from its internal buffer.
-    // It will not do anything now, but will delay decoding until 
+    // It will not do anything now, but will delay decoding until
     // queried for info (like size or specific image frames).
+    bool sizeAvailable = m_image->setData(m_data->sharedBuffer(), false);
+    if (!sizeAvailable)
+        return;
+
+    if (!canBeDrawn()) {
+        // There's no image to draw or its decoded size is bigger than the maximum allowed.
+        error(errorOccurred() ? status() : DecodeError);
+        if (inCache())
+            memoryCache()->remove(this);
+        return;
+    }
+
+    // Go ahead and tell our observers to try to draw.
+    // Each chunk from the network causes observers to repaint, which will
+    // force that chunk to decode.
+    // It would be nice to only redraw the decoded band of the image, but with the current design
+    // (decoding delayed until painting) that seems hard.
+    notifyObservers();
+
+    setEncodedSize(m_image->data() ? m_image->data()->size() : 0);
+}
+
+void CachedImage::addDataBuffer(ResourceBuffer* data)
+{
+    ASSERT(m_options.dataBufferingPolicy == BufferData);
+    addIncrementalDataBuffer(data);
+}
+
+void CachedImage::addData(const char* data, unsigned length)
+{
+    ASSERT(m_options.dataBufferingPolicy == DoNotBufferData);
+    addIncrementalDataBuffer(ResourceBuffer::create(data, length).get());
+}
+
+void CachedImage::finishLoading(ResourceBuffer* data)
+{
+    m_data = data;
+    if (!m_image && data)
+        createImage();
+
     if (m_image)
-        sizeAvailable = m_image->setData(m_data ? m_data->sharedBuffer() : 0, allDataReceived);
+        m_image->setData(m_data->sharedBuffer(), true);
 
-    // Go ahead and tell our observers to try to draw if we have either
-    // received all the data or the size is known.  Each chunk from the
-    // network causes observers to repaint, which will force that chunk
-    // to decode.
-    if (sizeAvailable || allDataReceived) {
-        size_t maxDecodedImageSize = maximumDecodedImageSize();
-        IntSize s = m_image ? m_image->size() : IntSize();
-        size_t estimatedDecodedImageSize = s.width() * s.height() * 4; // no overflow check
-        if (!m_image || m_image->isNull() || (maxDecodedImageSize > 0 && estimatedDecodedImageSize > maxDecodedImageSize)) {
-            error(errorOccurred() ? status() : DecodeError);
-            if (inCache())
-                memoryCache()->remove(this);
-            return;
-        }
-        
-        // It would be nice to only redraw the decoded band of the image, but with the current design
-        // (decoding delayed until painting) that seems hard.
-        notifyObservers();
+    if (!canBeDrawn()) {
+        // There's no image to draw or its decoded size is bigger than the maximum allowed.
+        error(errorOccurred() ? status() : DecodeError);
+        if (inCache())
+            memoryCache()->remove(this);
+        return;
+    }
 
-        if (m_image)
-            setEncodedSize(m_image->data() ? m_image->data()->size() : 0);
-    }
-    
-    if (allDataReceived) {
-        setLoading(false);
-        checkNotify();
-    }
+    notifyObservers();
+    if (m_image)
+        setEncodedSize(m_image->data() ? m_image->data()->size() : 0);
+    CachedResource::finishLoading(data);
 }
 
 void CachedImage::error(CachedResource::Status status)
@@ -442,7 +504,7 @@ void CachedImage::didDraw(const Image* image)
     
     double timeStamp = FrameView::currentPaintTimeStamp();
     if (!timeStamp) // If didDraw is called outside of a Frame paint.
-        timeStamp = currentTime();
+        timeStamp = monotonicallyIncreasingTime();
     
     CachedResource::didAccessDecodedData(timeStamp);
 }
@@ -475,24 +537,104 @@ void CachedImage::changedInRect(const Image* image, const IntRect& rect)
     notifyObservers(&rect);
 }
 
-void CachedImage::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
+void CachedImage::resumeAnimatingImagesForLoader(CachedResourceLoader* loader)
 {
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CachedResourceImage);
-    memoryObjectInfo->setClassName("CachedImage");
-    CachedResource::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_pendingContainerSizeRequests, "pendingContainerSizeRequests");
-    info.addMember(m_image, "m_image");
-#if ENABLE(SVG)
-    info.addMember(m_svgImageCache, "svgImageCache");
-#endif
+    const CachedResourceLoader::DocumentResourceMap& resources = loader->allCachedResources();
+
+    for (CachedResourceLoader::DocumentResourceMap::const_iterator it = resources.begin(), end = resources.end(); it != end; ++it) {
+        const CachedResourceHandle<CachedResource>& resource = it->value;
+        if (!resource || !resource->isImage())
+            continue;
+        CachedImage* cachedImage = static_cast<CachedImage*>(resource.get());
+        if (!cachedImage->hasImage())
+            continue;
+        Image* image = cachedImage->image();
+        if (!image->isBitmapImage())
+            continue;
+        BitmapImage* bitmapImage = toBitmapImage(image);
+        if (!bitmapImage->canAnimate())
+            continue;
+        cachedImage->animationAdvanced(bitmapImage);
+    }
 }
 
-bool CachedImage::currentFrameKnownToBeOpaque(const RenderObject* renderer)
+bool CachedImage::currentFrameKnownToBeOpaque(const RenderElement* renderer)
 {
     Image* image = imageForRenderer(renderer);
     if (image->isBitmapImage())
         image->nativeImageForCurrentFrame(); // force decode
     return image->currentFrameKnownToBeOpaque();
 }
+
+#if ENABLE(DISK_IMAGE_CACHE)
+bool CachedImage::canUseDiskImageCache() const
+{
+    if (isLoading() || errorOccurred())
+        return false;
+
+    if (!m_data)
+        return false;
+
+    if (isPurgeable())
+        return false;
+
+    if (m_data->size() < diskImageCache().minimumImageSize())
+        return false;
+
+    // "Cache-Control: no-store" resources may be marked as such because they may
+    // contain sensitive information. We should not write these resources to disk.
+    if (m_response.cacheControlContainsNoStore())
+        return false;
+
+    // Testing shows that PDF images did not work when memory mapped.
+    // However, SVG images and Bitmap images were fine. See:
+    // <rdar://problem/8591834> Disk Image Cache should support PDF Images
+    if (m_response.mimeType() == "application/pdf")
+        return false;
+
+    return true;
+}
+
+void CachedImage::useDiskImageCache()
+{
+    ASSERT(canUseDiskImageCache());
+    ASSERT(!isUsingDiskImageCache());
+    m_data->sharedBuffer()->allowToBeMemoryMapped();
+}
+#endif
+
+bool CachedImage::isOriginClean(SecurityOrigin* securityOrigin)
+{
+    if (!image()->hasSingleSecurityOrigin())
+        return false;
+    if (passesAccessControlCheck(securityOrigin))
+        return true;
+    return !securityOrigin->taintsCanvas(response().url());
+}
+
+#if USE(CF)
+// FIXME: We should look to incorporate the functionality of CachedImageManual
+// into CachedImage or find a better place for this class.
+// FIXME: Remove the USE(CF) once we make MemoryCache::addImageToCache() platform-independent.
+CachedImageManual::CachedImageManual(const URL& url, Image* image)
+    : CachedImage(url, image)
+    , m_fakeClient(std::make_unique<CachedImageClient>())
+{
+    // Use the incoming URL in the response field. This ensures that code
+    // using the response directly, such as origin checks for security,
+    // actually see something.
+    m_response.setURL(url);
+}
+
+bool CachedImageManual::mustRevalidateDueToCacheHeaders(CachePolicy) const
+{
+    // Do not revalidate manually cached images. This mechanism is used as a
+    // way to efficiently share an image from the client to content and
+    // the URL for that image may not represent a resource that can be
+    // retrieved by standard means. If the manual caching SPI is used, it is
+    // incumbent on the client to only use valid resources.
+    return false;
+}
+#endif
 
 } // namespace WebCore

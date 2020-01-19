@@ -24,6 +24,7 @@
 #if ENABLE(SVG)
 
 #include "FloatRect.h"
+#include "SVGPoint.h"
 #include "UIEvent.h"
 
 namespace WebCore {
@@ -38,14 +39,14 @@ public:
     float previousScale() const;
     void setPreviousScale(float);
 
-    FloatPoint previousTranslate() const;
+    SVGPoint previousTranslate() const;
 
     float newScale() const;
     void setNewScale(float);
 
-    FloatPoint newTranslate() const;
+    SVGPoint newTranslate() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual EventInterface eventInterface() const override;
 
 private:
     SVGZoomEvent();
@@ -55,8 +56,8 @@ private:
 
     FloatRect m_zoomRectScreen;
 
-    FloatPoint m_newTranslate;
-    FloatPoint m_previousTranslate;
+    SVGPoint m_newTranslate;
+    SVGPoint m_previousTranslate;
 };
 
 } // namespace WebCore

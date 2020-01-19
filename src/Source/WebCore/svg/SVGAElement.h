@@ -25,43 +25,41 @@
 #if ENABLE(SVG)
 #include "SVGAnimatedBoolean.h"
 #include "SVGExternalResourcesRequired.h"
-#include "SVGLangSpace.h"
-#include "SVGStyledTransformableElement.h"
-#include "SVGTests.h"
+#include "SVGGraphicsElement.h"
 #include "SVGURIReference.h"
 
 namespace WebCore {
 
-class SVGAElement : public SVGStyledTransformableElement,
-                    public SVGURIReference,
-                    public SVGTests,
-                    public SVGLangSpace,
-                    public SVGExternalResourcesRequired {
+class SVGAElement final : public SVGGraphicsElement,
+                          public SVGURIReference,
+                          public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGAElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGAElement> create(const QualifiedName&, Document&);
 
 private:
-    SVGAElement(const QualifiedName&, Document*);
+    SVGAElement(const QualifiedName&, Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
+    virtual bool isValid() const override { return SVGTests::isValid(); }
     
-    virtual String title() const;
-    virtual String target() const { return svgTarget(); }
+    virtual String title() const override;
+    virtual String target() const override { return svgTarget(); }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
+    virtual bool childShouldCreateRenderer(const Node&) const override;
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) override;
     
-    virtual bool supportsFocus() const;
-    virtual bool isMouseFocusable() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
-    virtual bool isFocusable() const;
+    virtual bool supportsFocus() const override;
+    virtual bool isMouseFocusable() const override;
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const override;
+    virtual bool isFocusable() const override;
+    virtual bool isURLAttribute(const Attribute&) const override;
 
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
+    virtual bool willRespondToMouseClickEvents() override;
 
     BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGAElement)
         // This declaration used to define a non-virtual "String& target() const" method, that clashes with "virtual String Element::target() const".
@@ -70,11 +68,6 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
         DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
     END_DECLARE_ANIMATED_PROPERTIES
-
-    // SVGTests
-    virtual void synchronizeRequiredFeatures() { SVGTests::synchronizeRequiredFeatures(this); }
-    virtual void synchronizeRequiredExtensions() { SVGTests::synchronizeRequiredExtensions(this); }
-    virtual void synchronizeSystemLanguage() { SVGTests::synchronizeSystemLanguage(this); }
 };
 
 } // namespace WebCore

@@ -27,7 +27,6 @@
 #include "WebKitCSSTransformValue.h"
 
 #include "CSSValueList.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/text/WTFString.h>
 
@@ -74,17 +73,10 @@ WebKitCSSTransformValue::WebKitCSSTransformValue(TransformOperationType op)
 {
 }
 
-String WebKitCSSTransformValue::customCssText() const
+String WebKitCSSTransformValue::customCSSText() const
 {
-    return transformValueToCssString(m_type, CSSValueList::customCssText());
+    return transformValueToCssString(m_type, CSSValueList::customCSSText());
 }
-
-#if ENABLE(CSS_VARIABLES)
-String WebKitCSSTransformValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-{
-    return transformValueToCssString(m_type, CSSValueList::customSerializeResolvingVariables(variables));
-}
-#endif
 
 WebKitCSSTransformValue::WebKitCSSTransformValue(const WebKitCSSTransformValue& cloneFrom)
     : CSSValueList(cloneFrom)
@@ -95,12 +87,6 @@ WebKitCSSTransformValue::WebKitCSSTransformValue(const WebKitCSSTransformValue& 
 PassRefPtr<WebKitCSSTransformValue> WebKitCSSTransformValue::cloneForCSSOM() const
 {
     return adoptRef(new WebKitCSSTransformValue(*this));
-}
-
-void WebKitCSSTransformValue::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSValueList::reportDescendantMemoryUsage(memoryObjectInfo);
 }
 
 }

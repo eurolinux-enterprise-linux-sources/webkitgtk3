@@ -26,34 +26,53 @@
 #ifndef PlugInAutoStartProvider_h
 #define PlugInAutoStartProvider_h
 
+#include <functional>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/Vector.h>
 #include <wtf/text/StringHash.h>
+#include <wtf/text/WTFString.h>
+
+namespace API {
+class Array;
+}
 
 namespace WebKit {
 
 class ImmutableDictionary;
 class WebContext;
 
+typedef HashMap<unsigned, double> PlugInAutoStartOriginHash;
+typedef Vector<String> PlugInAutoStartOrigins;
+
 class PlugInAutoStartProvider {
     WTF_MAKE_NONCOPYABLE(PlugInAutoStartProvider);
 public:
     explicit PlugInAutoStartProvider(WebContext*);
 
-    void addAutoStartOrigin(const String& pageOrigin, unsigned plugInOriginHash);
+    void addAutoStartOriginHash(const String& pageOrigin, unsigned plugInOriginHash);
+    void didReceiveUserInteraction(unsigned plugInOriginHash);
 
-    HashMap<unsigned, double> autoStartOriginsCopy() const;
     PassRefPtr<ImmutableDictionary> autoStartOriginsTableCopy() const;
     void setAutoStartOriginsTable(ImmutableDictionary&);
-    void didReceiveUserInteraction(unsigned plugInOriginHash);
+    void setAutoStartOriginsFilteringOutEntriesAddedAfterTime(ImmutableDictionary&, double time);
+    void setAutoStartOriginsArray(API::Array&);
+
+    PlugInAutoStartOriginHash autoStartOriginHashesCopy() const;
+    const PlugInAutoStartOrigins& autoStartOrigins() const { return m_autoStartOrigins; }
 
 private:
     WebContext* m_context;
-    
-    typedef HashMap<String, HashMap<unsigned, double>, CaseFoldingHash> AutoStartTable;
+
+    void setAutoStartOriginsTableWithItemsPassingTest(ImmutableDictionary&, std::function<bool(double expirationTimestamp)>);
+
+    typedef HashMap<String, PlugInAutoStartOriginHash, CaseFoldingHash> AutoStartTable;
     AutoStartTable m_autoStartTable;
-    HashMap<unsigned, String> m_autoStartHashes;
+
+    HashMap<unsigned, String> m_hashToOriginMap;
+
+    PlugInAutoStartOrigins m_autoStartOrigins;
 };
 
 } // namespace WebKit

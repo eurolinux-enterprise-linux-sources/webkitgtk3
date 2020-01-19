@@ -28,7 +28,7 @@
 
 #include <WebCore/FindOptions.h>
 #include <WebCore/GraphicsLayer.h>
-#include <WebCore/KURL.h>
+#include <WebCore/URL.h>
 #include <WebCore/ScrollTypes.h>
 #include <WebCore/SecurityOrigin.h>
 #include <wtf/RefCounted.h>
@@ -38,12 +38,13 @@
 #if PLATFORM(MAC)
 #include "LayerHostingContext.h"
 
+OBJC_CLASS NSObject;
 OBJC_CLASS PDFDocument;
 #endif
 
 struct NPObject;
 
-namespace CoreIPC {
+namespace IPC {
     class ArgumentEncoder;
     class ArgumentDecoder;
 }
@@ -55,7 +56,9 @@ namespace WebCore {
     class IntPoint;
     class IntRect;
     class IntSize;
+    class FloatPoint;
     class Scrollbar;
+    class SharedBuffer;
 }
 
 namespace WebKit {
@@ -70,7 +73,7 @@ class PluginController;
 class Plugin : public ThreadSafeRefCounted<Plugin> {
 public:
     struct Parameters {
-        WebCore::KURL url;
+        WebCore::URL url;
         Vector<String> names;
         Vector<String> values;
         String mimeType;
@@ -80,8 +83,8 @@ public:
         LayerHostingMode layerHostingMode;
 #endif
 
-        void encode(CoreIPC::ArgumentEncoder&) const;
-        static bool decode(CoreIPC::ArgumentDecoder&, Parameters&);
+        void encode(IPC::ArgumentEncoder&) const;
+        static bool decode(IPC::ArgumentDecoder&, Parameters&);
     };
 
     // Sets the active plug-in controller and initializes the plug-in.
@@ -116,6 +119,9 @@ public:
     // Invalidate native tintable controls. The passed-in context is in window coordinates.
     virtual void updateControlTints(WebCore::GraphicsContext*);
 
+    // Returns whether the plug-in supports snapshotting or not.
+    virtual bool supportsSnapshotting() const = 0;
+
     // Tells the plug-in to draw itself into a bitmap, and return that.
     virtual PassRefPtr<ShareableBitmap> snapshot() = 0;
 
@@ -123,7 +129,7 @@ public:
     // If a plug-in is using the Core Animation drawing model, this returns its plug-in layer.
     virtual PlatformLayer* pluginLayer() = 0;
 #endif
-    
+
     // Returns whether the plug-in is transparent or not.
     virtual bool isTransparent() = 0;
 
@@ -135,7 +141,7 @@ public:
     virtual void geometryDidChange(const WebCore::IntSize& pluginSize, const WebCore::IntRect& clipRect, const WebCore::AffineTransform& pluginToRootViewTransform) = 0;
 
     // Tells the plug-in that it has been explicitly hidden or shown. (Note that this is not called when the plug-in becomes obscured from view on screen.)
-    virtual void visibilityDidChange() = 0;
+    virtual void visibilityDidChange(bool isVisible) = 0;
 
     // Tells the plug-in that a frame load request that the plug-in made by calling PluginController::loadURL has finished.
     virtual void frameDidFinishLoading(uint64_t requestID) = 0;
@@ -148,7 +154,7 @@ public:
     virtual void didEvaluateJavaScript(uint64_t requestID, const String& result) = 0;
 
     // Tells the plug-in that a stream has received its HTTP response.
-    virtual void streamDidReceiveResponse(uint64_t streamID, const WebCore::KURL& responseURL, uint32_t streamLength, 
+    virtual void streamDidReceiveResponse(uint64_t streamID, const WebCore::URL& responseURL, uint32_t streamLength, 
                                           uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName) = 0;
 
     // Tells the plug-in that a stream did receive data.
@@ -161,7 +167,7 @@ public:
     virtual void streamDidFail(uint64_t streamID, bool wasCancelled) = 0;
 
     // Tells the plug-in that the manual stream has received its HTTP response.
-    virtual void manualStreamDidReceiveResponse(const WebCore::KURL& responseURL, uint32_t streamLength, 
+    virtual void manualStreamDidReceiveResponse(const WebCore::URL& responseURL, uint32_t streamLength, 
                                                 uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName) = 0;
 
     // Tells the plug-in that the manual stream did receive data.
@@ -254,6 +260,7 @@ public:
 
 #if PLATFORM(MAC)
     virtual RetainPtr<PDFDocument> pdfDocumentForPrinting() const { return 0; }
+    virtual NSObject *accessibilityObject() const { return 0; }
 #endif
 
     virtual unsigned countFindMatches(const String& target, WebCore::FindOptions, unsigned maxMatchCount) = 0;
@@ -264,9 +271,11 @@ public:
 
     virtual bool shouldAlwaysAutoStart() const { return false; }
 
-    virtual bool getResourceData(const unsigned char*& bytes, unsigned& length) const = 0;
+    virtual PassRefPtr<WebCore::SharedBuffer> liveResourceData() const = 0;
 
     virtual bool performDictionaryLookupAtLocation(const WebCore::FloatPoint&) = 0;
+
+    virtual String getSelectionString() const = 0;
 
 protected:
     Plugin();

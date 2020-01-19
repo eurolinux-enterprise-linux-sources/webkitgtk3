@@ -26,7 +26,7 @@
 #include "config.h"
 #include "PluginProcessCreationParameters.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #include "ArgumentCoders.h"
 
@@ -37,7 +37,7 @@ PluginProcessCreationParameters::PluginProcessCreationParameters()
 {
 }
 
-void PluginProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) const
+void PluginProcessCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
 {
     encoder.encodeEnum(processType);
     encoder << supportsAsynchronousPluginInitialization;
@@ -48,7 +48,7 @@ void PluginProcessCreationParameters::encode(CoreIPC::ArgumentEncoder& encoder) 
 #endif
 }
 
-bool PluginProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, PluginProcessCreationParameters& result)
+bool PluginProcessCreationParameters::decode(IPC::ArgumentDecoder& decoder, PluginProcessCreationParameters& result)
 {
     if (!decoder.decodeEnum(result.processType))
         return false;
@@ -69,4 +69,4 @@ bool PluginProcessCreationParameters::decode(CoreIPC::ArgumentDecoder& decoder, 
 
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

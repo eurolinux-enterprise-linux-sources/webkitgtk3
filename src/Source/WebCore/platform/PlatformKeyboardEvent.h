@@ -28,9 +28,7 @@
 #define PlatformKeyboardEvent_h
 
 #include "PlatformEvent.h"
-#if OS(WINDOWS)
-#include "WindowsExtras.h"
-#endif
+#include <wtf/WindowsExtras.h>
 #include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
@@ -38,27 +36,17 @@
 OBJC_CLASS NSEvent;
 #endif
 
+#if PLATFORM(IOS)
+#ifdef __OBJC__
+@class WebEvent;
+#else
+class WebEvent;
+#endif
+#endif
+
 #if PLATFORM(GTK)
 typedef struct _GdkEventKey GdkEventKey;
 #include "CompositionResults.h"
-#endif
-
-#if PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QKeyEvent;
-QT_END_NAMESPACE
-#endif
-
-#if PLATFORM(WX)
-class wxKeyEvent;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class KeyboardEvent;
-}
-}
 #endif
 
 #if PLATFORM(EFL)
@@ -79,14 +67,8 @@ namespace WebCore {
             , m_autoRepeat(false)
             , m_isKeypad(false)
             , m_isSystemKey(false)
-#if PLATFORM(BLACKBERRY)
-            , m_unmodifiedCharacter(0)
-#endif
 #if PLATFORM(GTK)
             , m_gdkEventKey(0)
-#endif
-#if PLATFORM(QT)
-            , m_qtEvent(0)
 #endif
         {
         }
@@ -137,12 +119,12 @@ namespace WebCore {
         static bool currentCapsLockState();
         static void getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey);
 
-#if PLATFORM(BLACKBERRY)
-        unsigned unmodifiedCharacter() const { return m_unmodifiedCharacter; }
-#endif
-
 #if PLATFORM(MAC)
+#if !PLATFORM(IOS)
         NSEvent* macEvent() const { return m_macEvent.get(); }
+#else
+        WebEvent *event() const { return m_Event.get(); }
+#endif
 #endif
 
 #if PLATFORM(WIN)
@@ -158,21 +140,6 @@ namespace WebCore {
         static String keyIdentifierForGdkKeyCode(unsigned);
         static int windowsKeyCodeForGdkKeyCode(unsigned);
         static String singleCharacterString(unsigned);
-#endif
-
-#if PLATFORM(QT)
-        PlatformKeyboardEvent(QKeyEvent*);
-        QKeyEvent* qtEvent() const { return m_qtEvent; }
-        uint32_t nativeModifiers() const;
-        uint32_t nativeScanCode() const;
-#endif
-
-#if PLATFORM(WX)
-        PlatformKeyboardEvent(wxKeyEvent&);
-#endif
-
-#if PLATFORM(BLACKBERRY)
-        PlatformKeyboardEvent(const BlackBerry::Platform::KeyboardEvent&);
 #endif
 
 #if PLATFORM(EFL)
@@ -191,28 +158,19 @@ namespace WebCore {
         bool m_isKeypad;
         bool m_isSystemKey;
 
-#if PLATFORM(BLACKBERRY)
-        unsigned m_unmodifiedCharacter;
-#endif
-
 #if PLATFORM(MAC)
+#if !PLATFORM(IOS)
         RetainPtr<NSEvent> m_macEvent;
+#else
+        RetainPtr<WebEvent> m_Event;
+#endif
 #endif
 #if PLATFORM(GTK)
         GdkEventKey* m_gdkEventKey;
         CompositionResults m_compositionResults;
 #endif
-#if PLATFORM(QT)
-        QKeyEvent* m_qtEvent;
-#endif
     };
     
-#if PLATFORM(QT)
-// Used by WebKit2.
-String keyIdentifierForQtKeyCode(int keyCode);
-int windowsKeyCodeForKeyEvent(unsigned int keycode, bool isKeypad = false);    
-#endif
-
 } // namespace WebCore
 
 #endif // PlatformKeyboardEvent_h

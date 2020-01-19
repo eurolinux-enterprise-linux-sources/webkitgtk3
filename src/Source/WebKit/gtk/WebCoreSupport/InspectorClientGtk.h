@@ -30,13 +30,13 @@
 #define InspectorClientGtk_h
 
 #include "InspectorClient.h"
-#include "InspectorFrontendChannel.h"
+#include "InspectorForwarding.h"
 #include "InspectorFrontendClientLocal.h"
 #include "webkitwebinspector.h"
 #include "webkitwebview.h"
 #include <wtf/Forward.h>
-#include <wtf/gobject/GOwnPtr.h>
 #include <wtf/gobject/GRefPtr.h>
+#include <wtf/gobject/GUniquePtr.h>
 
 namespace WebCore {
 class Page;
@@ -71,7 +71,7 @@ private:
     WebKitWebView* m_inspectedWebView;
     WebCore::Page* m_frontendPage;
     InspectorFrontendClient* m_frontendClient;
-    GOwnPtr<gchar> m_inspectorFilesPath;
+    GUniquePtr<gchar> m_inspectorFilesPath;
 };
 
 class InspectorFrontendClient : public WebCore::InspectorFrontendClientLocal {
@@ -85,15 +85,15 @@ public:
 
     virtual WTF::String localizedStringsURL();
 
-    virtual WTF::String hiddenPanels();
-
     virtual void bringToFront();
     virtual void closeWindow();
 
-    virtual void attachWindow();
+    virtual void attachWindow(DockSide);
     virtual void detachWindow();
 
     virtual void setAttachedWindowHeight(unsigned);
+    virtual void setAttachedWindowWidth(unsigned);
+    virtual void setToolbarHeight(unsigned) override;
 
     virtual void inspectedURLChanged(const WTF::String& newURL);
 

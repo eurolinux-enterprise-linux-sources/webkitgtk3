@@ -26,7 +26,9 @@
 #ifndef TouchList_h
 #define TouchList_h
 
-#if ENABLE(TOUCH_EVENTS)
+#if PLATFORM(IOS)
+#include <WebKitAdditions/TouchListIOS.h>
+#elif ENABLE(TOUCH_EVENTS)
 
 #include "Touch.h"
 #include <wtf/RefCounted.h>
@@ -44,6 +46,7 @@ public:
     unsigned length() const { return m_values.size(); }
 
     Touch* item(unsigned);
+    const Touch* item(unsigned) const;
 
     void append(const PassRefPtr<Touch> touch) { m_values.append(touch); }
 

@@ -31,7 +31,7 @@
 #ifndef ResourceLoaderOptions_h
 #define ResourceLoaderOptions_h
 
-#include "ResourceHandle.h"
+#include "ResourceHandleTypes.h"
 
 namespace WebCore {
     
@@ -50,33 +50,46 @@ enum DataBufferingPolicy {
     DoNotBufferData
 };
 
-enum ClientCrossOriginCredentialPolicy {
-    AskClientForCrossOriginCredentials,
-    DoNotAskClientForCrossOriginCredentials
-};
-
 enum SecurityCheckPolicy {
     SkipSecurityCheck,
     DoSecurityCheck
 };
 
+enum RequestOriginPolicy {
+    UseDefaultOriginRestrictionsForType,
+    RestrictToSameOrigin,
+    PotentiallyCrossOriginEnabled // Indicates "potentially CORS-enabled fetch" in HTML standard.
+};
+
 struct ResourceLoaderOptions {
-    ResourceLoaderOptions() : sendLoadCallbacks(DoNotSendCallbacks), sniffContent(DoNotSniffContent), dataBufferingPolicy(BufferData), allowCredentials(DoNotAllowStoredCredentials), crossOriginCredentialPolicy(DoNotAskClientForCrossOriginCredentials), securityCheck(DoSecurityCheck) { }
-    ResourceLoaderOptions(SendCallbackPolicy sendLoadCallbacks, ContentSniffingPolicy sniffContent, DataBufferingPolicy dataBufferingPolicy, StoredCredentials allowCredentials, ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy, SecurityCheckPolicy securityCheck)
+    ResourceLoaderOptions()
+        : sendLoadCallbacks(DoNotSendCallbacks)
+        , sniffContent(DoNotSniffContent)
+        , dataBufferingPolicy(BufferData)
+        , allowCredentials(DoNotAllowStoredCredentials)
+        , clientCredentialPolicy(DoNotAskClientForAnyCredentials)
+        , securityCheck(DoSecurityCheck)
+        , requestOriginPolicy(UseDefaultOriginRestrictionsForType)
+    {
+    }
+
+    ResourceLoaderOptions(SendCallbackPolicy sendLoadCallbacks, ContentSniffingPolicy sniffContent, DataBufferingPolicy dataBufferingPolicy, StoredCredentials allowCredentials, ClientCredentialPolicy credentialPolicy, SecurityCheckPolicy securityCheck, RequestOriginPolicy requestOriginPolicy)
         : sendLoadCallbacks(sendLoadCallbacks)
         , sniffContent(sniffContent)
         , dataBufferingPolicy(dataBufferingPolicy)
         , allowCredentials(allowCredentials)
-        , crossOriginCredentialPolicy(crossOriginCredentialPolicy)
+        , clientCredentialPolicy(credentialPolicy)
         , securityCheck(securityCheck)
+        , requestOriginPolicy(requestOriginPolicy)
     {
     }
-    SendCallbackPolicy sendLoadCallbacks;
-    ContentSniffingPolicy sniffContent;
-    DataBufferingPolicy dataBufferingPolicy;
-    StoredCredentials allowCredentials; // Whether HTTP credentials and cookies are sent with the request.
-    ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy; // Whether we will ask the client for credentials (if we allow credentials at all).
-    SecurityCheckPolicy securityCheck;
+    SendCallbackPolicy sendLoadCallbacks : 1;
+    ContentSniffingPolicy sniffContent : 1;
+    DataBufferingPolicy dataBufferingPolicy : 1;
+    StoredCredentials allowCredentials : 1; // Whether HTTP credentials and cookies are sent with the request.
+    ClientCredentialPolicy clientCredentialPolicy : 2; // When we should ask the client for credentials (if we allow credentials at all).
+    SecurityCheckPolicy securityCheck : 1;
+    RequestOriginPolicy requestOriginPolicy : 2;
 };
 
 } // namespace WebCore    

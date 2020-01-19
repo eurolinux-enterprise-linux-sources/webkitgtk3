@@ -25,7 +25,6 @@
 #include "EventNames.h"
 #include "ExceptionCode.h"
 #include "FrameView.h"
-#include "NodeRenderingContext.h"
 #include "RenderView.h"
 #include "SVGElement.h"
 #include "SVGNames.h"
@@ -36,8 +35,8 @@
 
 namespace WebCore {
 
-SVGDocument::SVGDocument(Frame* frame, const KURL& url)
-    : Document(frame, url, false, false)
+SVGDocument::SVGDocument(Frame* frame, const URL& url)
+    : Document(frame, url, SVGDocumentClass)
 {
 }
 
@@ -45,7 +44,7 @@ SVGSVGElement* SVGDocument::rootElement() const
 {
     Element* elem = documentElement();
     if (elem && elem->hasTagName(SVGNames::svgTag))
-        return static_cast<SVGSVGElement*>(elem);
+        return toSVGSVGElement(elem);
 
     return 0;
 }
@@ -89,16 +88,21 @@ void SVGDocument::updatePan(const FloatPoint& pos) const
 {
     if (rootElement()) {
         rootElement()->setCurrentTranslate(FloatPoint(pos.x() - m_translate.x(), pos.y() - m_translate.y()));
-        if (renderer())
-            renderer()->repaint();
+        if (renderView())
+            renderView()->repaint();
     }
 }
 
-bool SVGDocument::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+bool SVGDocument::childShouldCreateRenderer(const Node& child) const
 {
-    if (childContext.node()->hasTagName(SVGNames::svgTag))
-        return static_cast<SVGSVGElement*>(childContext.node())->isValid();
+    if (isSVGSVGElement(child))
+        return toSVGSVGElement(child).isValid();
     return true;
+}
+
+PassRefPtr<Document> SVGDocument::cloneDocumentWithoutChildren() const
+{
+    return create(nullptr, url());
 }
 
 }

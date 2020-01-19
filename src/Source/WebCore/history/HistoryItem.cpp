@@ -29,15 +29,16 @@
 #include "CachedPage.h"
 #include "Document.h"
 #include "IconDatabase.h"
+#include "KeyedCoding.h"
 #include "PageCache.h"
 #include "ResourceRequest.h"
 #include "SerializedScriptValue.h"
 #include "SharedBuffer.h"
 #include <stdio.h>
 #include <wtf/CurrentTime.h>
+#include <wtf/DateMath.h>
 #include <wtf/Decoder.h>
 #include <wtf/Encoder.h>
-#include <wtf/MathExtras.h>
 #include <wtf/text/CString.h>
 
 namespace WebCore {
@@ -59,72 +60,80 @@ static void defaultNotifyHistoryItemChanged(HistoryItem*)
 void (*notifyHistoryItemChanged)(HistoryItem*) = defaultNotifyHistoryItemChanged;
 
 HistoryItem::HistoryItem()
-    : m_lastVisitedTime(0)
-    , m_lastVisitWasHTTPNonGet(false)
-    , m_pageScaleFactor(0)
+    : m_pageScaleFactor(0)
     , m_lastVisitWasFailure(false)
     , m_isTargetItem(false)
-    , m_visitCount(0)
     , m_itemSequenceNumber(generateSequenceNumber())
     , m_documentSequenceNumber(generateSequenceNumber())
     , m_next(0)
     , m_prev(0)
+#if PLATFORM(IOS)
+    , m_scale(0)
+    , m_scaleIsInitial(false)
+    , m_bookmarkID(0)
+#endif
 {
 }
 
-HistoryItem::HistoryItem(const String& urlString, const String& title, double time)
+HistoryItem::HistoryItem(const String& urlString, const String& title)
     : m_urlString(urlString)
     , m_originalURLString(urlString)
     , m_title(title)
-    , m_lastVisitedTime(time)
-    , m_lastVisitWasHTTPNonGet(false)
     , m_pageScaleFactor(0)
     , m_lastVisitWasFailure(false)
     , m_isTargetItem(false)
-    , m_visitCount(0)
     , m_itemSequenceNumber(generateSequenceNumber())
     , m_documentSequenceNumber(generateSequenceNumber())
     , m_next(0)
     , m_prev(0)
+#if PLATFORM(IOS)
+    , m_scale(0)
+    , m_scaleIsInitial(false)
+    , m_bookmarkID(0)
+#endif
 {    
     iconDatabase().retainIconForPageURL(m_urlString);
 }
 
-HistoryItem::HistoryItem(const String& urlString, const String& title, const String& alternateTitle, double time)
+HistoryItem::HistoryItem(const String& urlString, const String& title, const String& alternateTitle)
     : m_urlString(urlString)
     , m_originalURLString(urlString)
     , m_title(title)
     , m_displayTitle(alternateTitle)
-    , m_lastVisitedTime(time)
-    , m_lastVisitWasHTTPNonGet(false)
     , m_pageScaleFactor(0)
     , m_lastVisitWasFailure(false)
     , m_isTargetItem(false)
-    , m_visitCount(0)
     , m_itemSequenceNumber(generateSequenceNumber())
     , m_documentSequenceNumber(generateSequenceNumber())
     , m_next(0)
     , m_prev(0)
+#if PLATFORM(IOS)
+    , m_scale(0)
+    , m_scaleIsInitial(false)
+    , m_bookmarkID(0)
+#endif
 {
     iconDatabase().retainIconForPageURL(m_urlString);
 }
 
-HistoryItem::HistoryItem(const KURL& url, const String& target, const String& parent, const String& title)
+HistoryItem::HistoryItem(const URL& url, const String& target, const String& parent, const String& title)
     : m_urlString(url.string())
     , m_originalURLString(url.string())
     , m_target(target)
     , m_parent(parent)
     , m_title(title)
-    , m_lastVisitedTime(0)
-    , m_lastVisitWasHTTPNonGet(false)
     , m_pageScaleFactor(0)
     , m_lastVisitWasFailure(false)
     , m_isTargetItem(false)
-    , m_visitCount(0)
     , m_itemSequenceNumber(generateSequenceNumber())
     , m_documentSequenceNumber(generateSequenceNumber())
     , m_next(0)
     , m_prev(0)
+#if PLATFORM(IOS)
+    , m_scale(0)
+    , m_scaleIsInitial(false)
+    , m_bookmarkID(0)
+#endif
 {    
     iconDatabase().retainIconForPageURL(m_urlString);
 }
@@ -144,18 +153,19 @@ inline HistoryItem::HistoryItem(const HistoryItem& item)
     , m_parent(item.m_parent)
     , m_title(item.m_title)
     , m_displayTitle(item.m_displayTitle)
-    , m_lastVisitedTime(item.m_lastVisitedTime)
-    , m_lastVisitWasHTTPNonGet(item.m_lastVisitWasHTTPNonGet)
     , m_scrollPoint(item.m_scrollPoint)
     , m_pageScaleFactor(item.m_pageScaleFactor)
     , m_lastVisitWasFailure(item.m_lastVisitWasFailure)
     , m_isTargetItem(item.m_isTargetItem)
-    , m_visitCount(item.m_visitCount)
-    , m_dailyVisitCounts(item.m_dailyVisitCounts)
-    , m_weeklyVisitCounts(item.m_weeklyVisitCounts)
     , m_itemSequenceNumber(item.m_itemSequenceNumber)
     , m_documentSequenceNumber(item.m_documentSequenceNumber)
     , m_formContentType(item.m_formContentType)
+#if PLATFORM(IOS)
+    , m_scale(item.m_scale)
+    , m_scaleIsInitial(item.m_scaleIsInitial)
+    , m_bookmarkID(item.m_bookmarkID)
+    , m_sharedLinkUniqueIdentifier(item.m_sharedLinkUniqueIdentifier)
+#endif
 {
     if (item.m_formData)
         m_formData = item.m_formData->copy();
@@ -166,7 +176,7 @@ inline HistoryItem::HistoryItem(const HistoryItem& item)
         m_children.uncheckedAppend(item.m_children[i]->copy());
 
     if (item.m_redirectURLs)
-        m_redirectURLs = adoptPtr(new Vector<String>(*item.m_redirectURLs));
+        m_redirectURLs = std::make_unique<Vector<String>>(*item.m_redirectURLs);
 }
 
 PassRefPtr<HistoryItem> HistoryItem::copy() const
@@ -186,16 +196,10 @@ void HistoryItem::reset()
     m_title = String();
     m_displayTitle = String();
 
-    m_lastVisitedTime = 0;
-    m_lastVisitWasHTTPNonGet = false;
-
     m_lastVisitWasFailure = false;
     m_isTargetItem = false;
-    m_visitCount = 0;
-    m_dailyVisitCounts.clear();
-    m_weeklyVisitCounts.clear();
 
-    m_redirectURLs.clear();
+    m_redirectURLs = nullptr;
 
     m_itemSequenceNumber = generateSequenceNumber();
 
@@ -230,19 +234,19 @@ const String& HistoryItem::alternateTitle() const
     return m_displayTitle;
 }
 
-double HistoryItem::lastVisitedTime() const
+bool HistoryItem::hasCachedPageExpired() const
 {
-    return m_lastVisitedTime;
+    return m_cachedPage ? m_cachedPage->hasExpired() : false;
 }
 
-KURL HistoryItem::url() const
+URL HistoryItem::url() const
 {
-    return KURL(ParsedURLString, m_urlString);
+    return URL(ParsedURLString, m_urlString);
 }
 
-KURL HistoryItem::originalURL() const
+URL HistoryItem::originalURL() const
 {
-    return KURL(ParsedURLString, m_originalURLString);
+    return URL(ParsedURLString, m_originalURLString);
 }
 
 const String& HistoryItem::referrer() const
@@ -277,7 +281,7 @@ void HistoryItem::setURLString(const String& urlString)
     notifyHistoryItemChanged(this);
 }
 
-void HistoryItem::setURL(const KURL& url)
+void HistoryItem::setURL(const URL& url)
 {
     pageCache()->remove(this);
     setURLString(url.string());
@@ -311,95 +315,6 @@ void HistoryItem::setTarget(const String& target)
 void HistoryItem::setParent(const String& parent)
 {
     m_parent = parent;
-}
-
-static inline int timeToDay(double time)
-{
-    static const double secondsPerDay = 60 * 60 * 24;
-    return static_cast<int>(ceil(time / secondsPerDay));
-}
-
-void HistoryItem::padDailyCountsForNewVisit(double time)
-{
-    if (m_dailyVisitCounts.isEmpty())
-        m_dailyVisitCounts.prepend(m_visitCount);
-
-    int daysElapsed = timeToDay(time) - timeToDay(m_lastVisitedTime);
-
-    if (daysElapsed < 0)
-      daysElapsed = 0;
-
-    Vector<int> padding;
-    padding.fill(0, daysElapsed);
-    m_dailyVisitCounts.prepend(padding);
-}
-
-static const size_t daysPerWeek = 7;
-static const size_t maxDailyCounts = 2 * daysPerWeek - 1;
-static const size_t maxWeeklyCounts = 5;
-
-void HistoryItem::collapseDailyVisitsToWeekly()
-{
-    while (m_dailyVisitCounts.size() > maxDailyCounts) {
-        int oldestWeekTotal = 0;
-        for (size_t i = 0; i < daysPerWeek; i++)
-            oldestWeekTotal += m_dailyVisitCounts[m_dailyVisitCounts.size() - daysPerWeek + i];
-        m_dailyVisitCounts.shrink(m_dailyVisitCounts.size() - daysPerWeek);
-        m_weeklyVisitCounts.prepend(oldestWeekTotal);
-    }
-
-    if (m_weeklyVisitCounts.size() > maxWeeklyCounts)
-        m_weeklyVisitCounts.shrink(maxWeeklyCounts);
-}
-
-void HistoryItem::recordVisitAtTime(double time, VisitCountBehavior visitCountBehavior)
-{
-    padDailyCountsForNewVisit(time);
-
-    m_lastVisitedTime = time;
-
-    if (visitCountBehavior == IncreaseVisitCount) {
-        ++m_visitCount;
-        ++m_dailyVisitCounts[0];
-    }
-
-    collapseDailyVisitsToWeekly();
-}
-
-void HistoryItem::setLastVisitedTime(double time)
-{
-    if (m_lastVisitedTime != time)
-        recordVisitAtTime(time);
-}
-
-void HistoryItem::visited(const String& title, double time, VisitCountBehavior visitCountBehavior)
-{
-    m_title = title;
-    recordVisitAtTime(time, visitCountBehavior);
-}
-
-int HistoryItem::visitCount() const
-{
-    return m_visitCount;
-}
-
-void HistoryItem::recordInitialVisit()
-{
-    ASSERT(!m_visitCount);
-    recordVisitAtTime(m_lastVisitedTime);
-}
-
-void HistoryItem::setVisitCount(int count)
-{
-    m_visitCount = count;
-}
-
-void HistoryItem::adoptVisitCounts(Vector<int>& dailyCounts, Vector<int>& weeklyCounts)
-{
-    m_dailyVisitCounts.clear();
-    m_dailyVisitCounts.swap(dailyCounts);
-    m_weeklyVisitCounts.clear();
-    m_weeklyVisitCounts.swap(weeklyCounts);
 }
 
 const IntPoint& HistoryItem::scrollPoint() const
@@ -640,20 +555,10 @@ bool HistoryItem::isCurrentDocument(Document* doc) const
     return equalIgnoringFragmentIdentifier(url(), doc->url());
 }
 
-void HistoryItem::mergeAutoCompleteHints(HistoryItem* otherItem)
-{
-    // FIXME: this is broken - we should be merging the daily counts
-    // somehow.  but this is to support API that's not really used in
-    // practice so leave it broken for now.
-    ASSERT(otherItem);
-    if (otherItem != this)
-        m_visitCount += otherItem->m_visitCount;
-}
-
 void HistoryItem::addRedirectURL(const String& url)
 {
     if (!m_redirectURLs)
-        m_redirectURLs = adoptPtr(new Vector<String>);
+        m_redirectURLs = std::make_unique<Vector<String>>();
 
     // Our API allows us to store all the URLs in the redirect chain, but for
     // now we only have a use for the final URL.
@@ -666,9 +571,9 @@ Vector<String>* HistoryItem::redirectURLs() const
     return m_redirectURLs.get();
 }
 
-void HistoryItem::setRedirectURLs(PassOwnPtr<Vector<String> > redirectURLs)
+void HistoryItem::setRedirectURLs(std::unique_ptr<Vector<String>> redirectURLs)
 {
-    m_redirectURLs = redirectURLs;
+    m_redirectURLs = std::move(redirectURLs);
 }
 
 void HistoryItem::encodeBackForwardTree(Encoder& encoder) const
@@ -676,6 +581,15 @@ void HistoryItem::encodeBackForwardTree(Encoder& encoder) const
     encoder.encodeUInt32(backForwardTreeEncodingVersion);
 
     encodeBackForwardTreeNode(encoder);
+}
+
+void HistoryItem::encodeBackForwardTree(KeyedEncoder& encoder) const
+{
+    encoder.encodeUInt32("version", backForwardTreeEncodingVersion);
+
+    encoder.encodeObject("root", *this, [](KeyedEncoder& encoder, const HistoryItem& item) {
+        item.encodeBackForwardTreeNode(encoder);
+    });
 }
 
 void HistoryItem::encodeBackForwardTreeNode(Encoder& encoder) const
@@ -715,15 +629,49 @@ void HistoryItem::encodeBackForwardTreeNode(Encoder& encoder) const
     encoder.encodeFloat(m_pageScaleFactor);
 
     encoder.encodeBool(m_stateObject);
-    if (m_stateObject) {
-#if !USE(V8)
+    if (m_stateObject)
         encoder.encodeBytes(m_stateObject->data().data(), m_stateObject->data().size());
-#else
-        encoder.encodeString(m_stateObject->toWireString());
-#endif
-    }
 
     encoder.encodeString(m_target);
+}
+
+void HistoryItem::encodeBackForwardTreeNode(KeyedEncoder& encoder) const
+{
+    encoder.encodeObjects("children", m_children.begin(), m_children.end(), [](KeyedEncoder& encoder, const RefPtr<HistoryItem>& child) {
+        encoder.encodeString("originalURLString", child->m_originalURLString);
+        encoder.encodeString("urlString", child->m_urlString);
+
+        child->encodeBackForwardTreeNode(encoder);
+    });
+
+    encoder.encodeInt64("documentSequenceNumber", m_documentSequenceNumber);
+
+    encoder.encodeObjects("documentState", m_documentState.begin(), m_documentState.end(), [](KeyedEncoder& encoder, const String& string) {
+        encoder.encodeString("string", string);
+    });
+
+    encoder.encodeString("formContentType", m_formContentType);
+
+    encoder.encodeConditionalObject("formData", m_formData.get(), [](KeyedEncoder&, const FormData&) {
+        // FIXME: Implement.
+    });
+
+    encoder.encodeInt64("itemSequenceNumber", m_itemSequenceNumber);
+
+    encoder.encodeString("referrer", m_referrer);
+
+    encoder.encodeObject("scrollPoint", m_scrollPoint, [](KeyedEncoder& encoder, const IntPoint& scrollPoint) {
+        encoder.encodeInt32("x", scrollPoint.x());
+        encoder.encodeInt32("y", scrollPoint.y());
+    });
+
+    encoder.encodeFloat("pageScaleFactor", m_pageScaleFactor);
+
+    encoder.encodeConditionalObject("stateObject", m_stateObject.get(), [](KeyedEncoder& encoder, const SerializedScriptValue& stateObject) {
+        encoder.encodeBytes("data", stateObject.data().data(), stateObject.data().size());
+    });
+
+    encoder.encodeString("target", m_target);
 }
 
 struct DecodeRecursionStackElement {
@@ -757,7 +705,7 @@ PassRefPtr<HistoryItem> HistoryItem::decodeBackForwardTree(const String& topURLS
     Vector<DecodeRecursionStackElement, 16> recursionStack;
 
 recurse:
-    RefPtr<HistoryItem> node = create(urlString, title, 0);
+    RefPtr<HistoryItem> node = create(urlString, title);
 
     node->setOriginalURLString(originalURLString);
 
@@ -827,17 +775,10 @@ resume:
     if (!decoder.decodeBool(hasStateObject))
         return 0;
     if (hasStateObject) {
-#if !USE(V8)
         Vector<uint8_t> bytes;
         if (!decoder.decodeBytes(bytes))
             return 0;
         node->m_stateObject = SerializedScriptValue::adopt(bytes);
-#else
-        String string;
-        if (!decoder.decodeString(string))
-            return 0;
-        node->m_stateObject = SerializedScriptValue::createFromWire(string);
-#endif
     }
 
     if (!decoder.decodeString(node->m_target))
@@ -855,6 +796,19 @@ resume:
     }
 
     return node.release();
+}
+
+PassRefPtr<HistoryItem> HistoryItem::decodeBackForwardTree(const String&, const String&, const String&, KeyedDecoder& decoder)
+{
+    uint32_t version;
+    if (!decoder.decodeUInt32("version", version))
+        return nullptr;
+    
+    if (version != backForwardTreeEncodingVersion)
+        return nullptr;
+
+    // FIXME: Implement.
+    return nullptr;
 }
 
 #ifndef NDEBUG

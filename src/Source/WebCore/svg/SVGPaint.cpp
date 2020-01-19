@@ -26,7 +26,6 @@
 
 #include "SVGException.h"
 #include "SVGURIReference.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -72,14 +71,14 @@ void SVGPaint::setPaint(unsigned short, const String&, const String&, const Stri
     ec = NO_MODIFICATION_ALLOWED_ERR;
 }
 
-String SVGPaint::customCssText() const
+String SVGPaint::customCSSText() const
 {
     switch (m_paintType) {
     case SVG_PAINTTYPE_UNKNOWN:
     case SVG_PAINTTYPE_RGBCOLOR:
     case SVG_PAINTTYPE_RGBCOLOR_ICCCOLOR:
     case SVG_PAINTTYPE_CURRENTCOLOR:
-        return SVGColor::customCssText();
+        return SVGColor::customCSSText();
     case SVG_PAINTTYPE_NONE:
         return "none";
     case SVG_PAINTTYPE_URI_NONE:
@@ -87,13 +86,13 @@ String SVGPaint::customCssText() const
     case SVG_PAINTTYPE_URI_CURRENTCOLOR:
     case SVG_PAINTTYPE_URI_RGBCOLOR:
     case SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR: {
-        String color = SVGColor::customCssText();
+        String color = SVGColor::customCSSText();
         if (color.isEmpty())
             return m_uri;
-        return m_uri + ' ' + color;
+        return "url(" + m_uri + ") " + color;
     }
     case SVG_PAINTTYPE_URI:
-        return m_uri;
+        return "url(" + m_uri + ')';
     };
 
     ASSERT_NOT_REACHED();
@@ -115,12 +114,6 @@ PassRefPtr<SVGPaint> SVGPaint::cloneForCSSOM() const
 bool SVGPaint::equals(const SVGPaint& other) const
 {
     return m_paintType == other.m_paintType && m_uri == other.m_uri && SVGColor::equals(other);
-}
-
-void SVGPaint::reportDescendantMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    info.addMember(m_uri, "uri");
 }
 
 }

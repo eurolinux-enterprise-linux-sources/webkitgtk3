@@ -24,12 +24,12 @@
 #if ENABLE(SVG)
 #include "SVGLocatable.h"
 #include "SVGTransform.h"
-#include "SVGTransformList.h"
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
     
 class AffineTransform;
+class SVGTransformList;
 
 class SVGTransformable : virtual public SVGLocatable {
 public:
@@ -44,7 +44,7 @@ public:
     static bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform&);
     static SVGTransform::SVGTransformType parseTransformType(const String&);
 
-    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const { return animatedLocalTransform(); }
+    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const override { return animatedLocalTransform(); }
     virtual AffineTransform animatedLocalTransform() const = 0;
 };
 

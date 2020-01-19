@@ -1,7 +1,7 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2005, 2006, 2008, 2012, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,9 +27,9 @@
 #include "CSSStyleSheet.h"
 #include "Document.h"
 #include "PropertySetCSSStyleDeclaration.h"
-#include "StylePropertySet.h"
+#include "RuleSet.h"
+#include "StyleProperties.h"
 #include "StyleRule.h"
-#include "WebCoreMemoryInstrumentation.h"
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -58,10 +58,10 @@ CSSStyleRule::~CSSStyleRule()
     }
 }
 
-CSSStyleDeclaration* CSSStyleRule::style() const
+CSSStyleDeclaration* CSSStyleRule::style()
 {
     if (!m_propertiesCSSOMWrapper) {
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_styleRule->mutableProperties(), const_cast<CSSStyleRule*>(this));
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_styleRule->mutableProperties(), *this);
     }
     return m_propertiesCSSOMWrapper.get();
 }
@@ -71,7 +71,7 @@ String CSSStyleRule::generateSelectorText() const
     StringBuilder builder;
     for (const CSSSelector* selector = m_styleRule->selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
         if (selector != m_styleRule->selectorList().first())
-            builder.append(", ");
+            builder.appendLiteral(", ");
         builder.append(selector->selectorText());
     }
     return builder.toString();
@@ -93,10 +93,19 @@ String CSSStyleRule::selectorText() const
 
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
+    // FIXME: getMatchedCSSRules can return CSSStyleRules that are missing parent stylesheet pointer while
+    // referencing StyleRules that are part of stylesheet. Disallow mutations in this case.
+    if (!parentStyleSheet())
+        return;
+
     CSSParser p(parserContext());
     CSSSelectorList selectorList;
     p.parseSelector(selectorText, selectorList);
     if (!selectorList.isValid())
+        return;
+
+    // NOTE: The selector list has to fit into RuleData. <http://webkit.org/b/118369>
+    if (selectorList.componentCount() > RuleData::maximumSelectorComponentCount)
         return;
 
     CSSStyleSheet::RuleMutationScope mutationScope(this);
@@ -114,7 +123,7 @@ String CSSStyleRule::cssText() const
     StringBuilder result;
     result.append(selectorText());
     result.appendLiteral(" { ");
-    String decls = m_styleRule->properties()->asText();
+    String decls = m_styleRule->properties().asText();
     result.append(decls);
     if (!decls.isEmpty())
         result.append(' ');
@@ -129,14 +138,6 @@ void CSSStyleRule::reattach(StyleRuleBase* rule)
     m_styleRule = static_cast<StyleRule*>(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_styleRule->mutableProperties());
-}
-
-void CSSStyleRule::reportMemoryUsage(MemoryObjectInfo* memoryObjectInfo) const
-{
-    MemoryClassInfo info(memoryObjectInfo, this, WebCoreMemoryTypes::CSS);
-    CSSRule::reportMemoryUsage(memoryObjectInfo);
-    info.addMember(m_styleRule, "styleRule");
-    info.addMember(m_propertiesCSSOMWrapper, "propertiesCSSOMWrapper");
 }
 
 } // namespace WebCore

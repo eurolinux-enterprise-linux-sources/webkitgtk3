@@ -29,45 +29,28 @@
 #include "IntSize.h"
 #include <wtf/MathExtras.h>
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGPoint CGPoint;
 #endif
 
 
-#if OS(DARWIN) && !PLATFORM(QT)
+#if !PLATFORM(IOS)
+#if OS(DARWIN)
 #ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
 typedef struct CGPoint NSPoint;
 #else
 typedef struct _NSPoint NSPoint;
 #endif
 #endif
+#endif // !PLATFORM(IOS)
 
 #if PLATFORM(WIN)
 typedef struct tagPOINT POINT;
 typedef struct tagPOINTS POINTS;
-#elif PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QPoint;
-QT_END_NAMESPACE
 #elif PLATFORM(GTK)
 typedef struct _GdkPoint GdkPoint;
-#elif PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class IntPoint;
-}
-}
 #elif PLATFORM(EFL)
 typedef struct _Evas_Point Evas_Point;
-#endif
-
-#if PLATFORM(WX)
-class wxPoint;
-#endif
-
-#if USE(SKIA)
-struct SkPoint;
-struct SkIPoint;
 #endif
 
 namespace WebCore {
@@ -119,45 +102,32 @@ public:
         return IntPoint(m_y, m_x);
     }
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
     explicit IntPoint(const CGPoint&); // don't do this implicitly since it's lossy
     operator CGPoint() const;
 #endif
 
-#if OS(DARWIN) && !PLATFORM(QT) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if !PLATFORM(IOS)
+#if OS(DARWIN) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     explicit IntPoint(const NSPoint&); // don't do this implicitly since it's lossy
     operator NSPoint() const;
 #endif
+#endif // !PLATFORM(IOS)
 
 #if PLATFORM(WIN)
     IntPoint(const POINT&);
     operator POINT() const;
     IntPoint(const POINTS&);
     operator POINTS() const;
-#elif PLATFORM(QT)
-    IntPoint(const QPoint&);
-    operator QPoint() const;
 #elif PLATFORM(GTK)
     IntPoint(const GdkPoint&);
     operator GdkPoint() const;
-#elif PLATFORM(BLACKBERRY)
-    IntPoint(const BlackBerry::Platform::IntPoint&);
-    operator BlackBerry::Platform::IntPoint() const;
 #elif PLATFORM(EFL)
     explicit IntPoint(const Evas_Point&);
     operator Evas_Point() const;
 #endif
 
-#if PLATFORM(WX)
-    IntPoint(const wxPoint&);
-    operator wxPoint() const;
-#endif
-
-#if USE(SKIA)
-    IntPoint(const SkIPoint&);
-    operator SkIPoint() const;
-    operator SkPoint() const;
-#endif
+    void dump(PrintStream& out) const;
 
 private:
     int m_x, m_y;

@@ -35,22 +35,27 @@
 #include "MediaStreamTrack.h"
 #include "RTCStatsReport.h"
 #include "RTCStatsResponseBase.h"
+#include "ScriptWrappable.h"
+#include <wtf/HashMap.h>
 
 namespace WebCore {
 
-class RTCStatsResponse : public RTCStatsResponseBase {
+class RTCStatsResponse : public RTCStatsResponseBase, public ScriptWrappable {
 public:
     static PassRefPtr<RTCStatsResponse> create();
 
-    const Vector<RefPtr<RTCStatsReport> >& result() const { return m_result; };
+    const Vector<RefPtr<RTCStatsReport>>& result() const { return m_result; };
 
-    virtual size_t addReport() OVERRIDE;
-    virtual void addElement(size_t report, bool isLocal, double timestamp) OVERRIDE;
-    virtual void addStatistic(size_t report, bool isLocal, String name, String value) OVERRIDE;
+    PassRefPtr<RTCStatsReport> namedItem(const AtomicString&);
+    bool canGetItemsForName(const AtomicString&);
+
+    virtual size_t addReport(String id, String type, double timestamp) override;
+    virtual void addStatistic(size_t report, String name, String value) override;
 
 private:
     RTCStatsResponse();
-    Vector<RefPtr<RTCStatsReport> > m_result;
+    Vector<RefPtr<RTCStatsReport>> m_result;
+    HashMap<String, int> m_idmap;
 };
 
 } // namespace WebCore
