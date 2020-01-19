@@ -14,7 +14,7 @@
 
 Name:           webkitgtk3
 Version:        2.4.9
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        GTK+ Web content engine library
 
 Group:          Development/Libraries
@@ -251,6 +251,10 @@ find $RPM_BUILD_ROOT%{_libdir} -name "*.la" -delete
 %{_datadir}/gtk-doc/html/webkitdomgtk
 
 %changelog
+* Thu Jun 23 2016 Tomas Popela <tpopela@redhat.com> - 2.4.9-6
+- Update the translations
+- Resolves: rhbz#1302692
+
 * Mon Sep 14 2015 Tomas Popela <tpopela@redhat.com> - 2.4.9-5
 - Initialize string in SQLiteStatement before using it
 - Resolves: rhbz#1259283
