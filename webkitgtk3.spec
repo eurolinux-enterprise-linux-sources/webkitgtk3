@@ -11,7 +11,7 @@
 
 Name:           webkitgtk3
 Version:        2.0.4
-Release:        6%{?dist}
+Release:        6%{?dist}.1
 Summary:        GTK+ Web content engine library
 
 Group:          Development/Libraries
@@ -33,6 +33,8 @@ Patch5:         webkitgtk-aarch64.patch
 Patch6:         webkitgtk-2.0.4_translation-updates.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=1029783
 Patch7:         webkitgtk-2.0.4-volume.patch
+Patch8:         webkitgtk-2.0.4-ppc64_align.patch
+Patch9:         webkitgtk-2.0.4-cloop_fix.patch
 
 BuildRequires:  bison
 BuildRequires:  cairo-devel
@@ -122,6 +124,14 @@ This package contains developer documentation for %{name}.
 
 %ifarch aarch64
 %patch5 -p1 -b .aarch64
+%endif
+
+%ifarch ppc64
+%patch8 -p1 -b .ppc64_align
+%endif
+
+%ifarch ppc64 s390x
+%patch9 -p1 -b .cloop_fix
 %endif
 
 %build
@@ -237,6 +247,11 @@ find $RPM_BUILD_ROOT%{_libdir} -name "*.la" -delete
 
 
 %changelog
+* Mon May 12 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-6.1
+- Fix memory align in JSC for ppc64
+- Fix CLoop for ppc64 and s390x
+- Resolves: rhbz#1097138
+
 * Tue Jan 28 2014 Tomas Popela <tpopela@redhat.com> - 2.0.4-6
 - Enable higher compression for output rpms
 - Resolves: rhbz#1039590
